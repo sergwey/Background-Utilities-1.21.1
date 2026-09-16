@@ -1,5 +1,8 @@
 package net.xlebupaksa.backutils;
 
+import net.minecraft.world.item.CreativeModeTabs;
+import net.xlebupaksa.backutils.item.ModCreativeModeTabs;
+import net.xlebupaksa.backutils.item.ModItems;
 import org.slf4j.Logger;
 
 import com.mojang.logging.LogUtils;
@@ -32,6 +35,10 @@ public class BackUtils {
         // Do not add this line if there are no @SubscribeEvent-annotated functions in this class, like onServerStarting() below.
         NeoForge.EVENT_BUS.register(this);
 
+        // Регистрация модифицированных объектов
+        ModItems.register(modEventBus);
+        ModCreativeModeTabs.register(modEventBus);
+
         // Register the item to a creative tab
         modEventBus.addListener(this::addCreative);
 
@@ -45,7 +52,9 @@ public class BackUtils {
 
     // Add the example block item to the building blocks tab
     private void addCreative(BuildCreativeModeTabContentsEvent event) {
-
+        if(event.getTabKey() == CreativeModeTabs.INGREDIENTS){
+            event.accept(ModItems.WANDERLITE);
+        }
     }
 
     // You can use SubscribeEvent and let the Event Bus discover methods to call
