@@ -36,22 +36,22 @@ displayName="${mod_name}" #mandatory
 #displayURL="https://change.me.to.your.mods.homepage.example.invalid/" #optional
 
 # A file name (in the root of the mod JAR) containing a logo for display
-#logoFile="examplemod.png" #optional
+logoFile="src/donkey.png" #optional
 
 # A text field displayed in the mod UI
 #credits="" #optional
 
 # The authors of the mod, displayed in the mod UI (optional)
-#authors=""
+authors="xlebupaksa"
 
 # The description text for the mod (multi line!) (#mandatory)
 description='''
-Example mod description.
+Mod adding multiple utilities for background administration on roleplay-based servers.
 '''
 
 # The [[mixins]] block allows you to declare your mixin config to FML so that it gets loaded.
-#[[mixins]]
-#config="${mod_id}.mixins.json"
+[[mixins]]
+config="${mod_id}.mixins.json"
 
 # The [[accessTransformers]] block allows you to declare where your AT file is.
 # If this block is omitted, a fallback attempt will be made to load an AT from META-INF/accesstransformer.cfg
