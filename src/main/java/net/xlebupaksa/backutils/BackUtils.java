@@ -35,7 +35,7 @@ public class BackUtils {
         // Do not add this line if there are no @SubscribeEvent-annotated functions in this class, like onServerStarting() below.
         NeoForge.EVENT_BUS.register(this);
 
-        // Регистрация модифицированных объектов
+        // Регистрация объектов
         ModItems.register(modEventBus);
         ModCreativeModeTabs.register(modEventBus);
 

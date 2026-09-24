@@ -27,7 +27,12 @@ sourceSets.main.resources {
 }
 
 repositories {
-    // Add here additional repositories if required by some of the dependencies below.
+    // ember's text api
+    maven { url 'https://maven.tysontheember.dev' }
+
+    // owo-lib
+    maven { url 'https://maven.wispforest.io/releases/' }
+    maven { url 'https://jitpack.io' }
 }
 
 base {
@@ -123,20 +128,15 @@ dependencies {
     // We add the full version to localRuntime, not runtimeOnly, so that we do not publish a dependency on it
     // localRuntime "mezz.jei:jei-${mc_version}-neoforge:${jei_version}"
 
-    // Example mod dependency using a mod jar from ./libs with a flat dir repository
-    // This maps to ./libs/coolmod-${mc_version}-${coolmod_version}.jar
-    // The group id is ignored when searching -- in this case, it is "blank"
-    // implementation "blank:coolmod-${mc_version}:${coolmod_version}"
-
-    // Example mod dependency using a file as dependency
-    // implementation files("libs/coolmod-${mc_version}-${coolmod_version}.jar")
-
-    // Example project dependency using a sister or child project:
-    // implementation project(":myproject")
-
-    // For more info:
-    // http://www.gradle.org/docs/current/userguide/artifact_dependencies_tutorial.html
-    // http://www.gradle.org/docs/current/userguide/dependency_management.html
+    // Используется для текстовых эффектов и изменения цвета текста и прочего
+    implementation 'net.tysontheember.emberstextapi:emberstextapi-neoforge-1.21.1:3.0.3'
+    // База данных игроков и профилей
+    jarJar(implementation('org.xerial:sqlite-jdbc:3.53.2.0')) {
+        version {
+            strictly '[3.53.2.0]'
+            prefer '3.53.2.0'
+        }
+    }
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.
