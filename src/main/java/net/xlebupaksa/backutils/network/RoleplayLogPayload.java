@@ -10,10 +10,8 @@ import net.xlebupaksa.backutils.BackUtils;
 /**
  * One roleplay log line, on its way to a single player: the server renders the line for that viewer,
  * underlining the actor's name only on the actor's own screen, which a single broadcast payload could
- * not do.
- *
- * <p>Optional, so a client without it is not refused entry; vanilla ignores custom payloads it has no
- * handler for, and simply sees no roleplay log.
+ * not do. Optional, so a client without it is not refused entry; vanilla ignores custom payloads it has
+ * no handler for and simply sees no roleplay log.
  */
 public record RoleplayLogPayload(long id, String text) implements CustomPacketPayload {
 

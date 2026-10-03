@@ -25,12 +25,7 @@ public record AdminPlayerListPayload(boolean names, List<Player> players)
                     ResourceLocation.fromNamespaceAndPath(BackUtils.MOD_ID, "admin_player_list"));
 
     /**
-     * One player in the list.
-     *
-     * @param name       the account name, spelled the way the database or the server spells it
-     * @param online     whether they are connected right now
-     * @param chatCount  how many chat profiles they have
-     * @param nameCount  how many name profiles they have
+     * One player in the list, with the name spelled the way the database or the server spells it.
      */
     public record Player(String name, boolean online, int chatCount, int nameCount) {
 

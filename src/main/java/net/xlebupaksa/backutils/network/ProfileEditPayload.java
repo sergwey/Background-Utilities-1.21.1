@@ -43,7 +43,7 @@ public record ProfileEditPayload(int kind, String name, String newName, String c
             new CustomPacketPayload.Type<>(
                     ResourceLocation.fromNamespaceAndPath(BackUtils.MOD_ID, "profile_edit"));
 
-    /** Written out rather than composed: seven fields, and {@code StreamCodec.composite} takes six. */
+    /** Written out by hand: seven fields, and {@code StreamCodec.composite} takes six. */
     public static final StreamCodec<RegistryFriendlyByteBuf, ProfileEditPayload> STREAM_CODEC =
             StreamCodec.of(ProfileEditPayload::write, ProfileEditPayload::read);
 
