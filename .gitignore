@@ -38,3 +38,7 @@ run/
 **/src/generated/**/.cache/
 repo/
 !**/src/**/repo/
+
+### Runtime output ###
+# The game logs into run/logs; anything at the root is from a stray run.
+logs/

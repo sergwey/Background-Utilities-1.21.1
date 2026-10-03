@@ -1,25 +1,52 @@
+# Background Utilities
 
-Installation information
-=======
+A NeoForge mod for roleplay servers: a witness-based action log, two chat channels, and chat and
+display-name profiles written in markup.
 
-This template repository can be directly cloned to get you started with a new
-mod. Simply create a new repository cloned from this one, by following the
-instructions provided by [GitHub](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-repository-from-a-template).
+## What it adds
 
-Once you have your clone, simply open the repository in the IDE of your choice. The usual recommendation for an IDE is either IntelliJ IDEA or Eclipse.
+- **Action log.** `/me` and `*asterisk*` lines — `^caret^` for silent ones — are recorded with every
+  player who was within the witness radius, and shown to them in an on-screen log. Staff review,
+  hide or delete entries from the administrator menu, and each action raises an alert for operators.
+- **Chat channels.** A plain message goes to local chat, which reaches the players around you; a
+  leading `!` sends it to global chat. Each channel has its own separator and can be open to
+  everyone or restricted to staff, and a player can be silenced per channel or for actions.
+- **Profiles.** Players write their own chat formats — colour, weight, gradients, animations, an
+  optional typing sound — in the corner menu. Operators write display names and manage any player's
+  profiles from the administrator menu. A player's markup is checked against an allow-list; an
+  operator's is held to its shape only.
+- **Zone music.** `/playradius` and `/playbox` play a sound to the players inside a region, and
+  `/stopzone` ends one.
 
-If at any point you are missing libraries in your IDE, or you've run into problems you can
-run `gradlew --refresh-dependencies` to refresh the local cache. `gradlew clean` to reset everything 
-{this does not affect your code} and then start the process again.
+## Requirements
 
-Mapping Names:
-============
-By default, the MDK is configured to use the official mapping names from Mojang for methods and fields 
-in the Minecraft codebase. These names are covered by a specific license. All modders should be aware of this
-license. For the latest license text, refer to the mapping file itself, or the reference copy here:
-https://github.com/NeoForged/NeoForm/blob/main/Mojang.md
+Minecraft 1.21.1, NeoForge 21.1.250, Java 21, and:
 
-Additional Resources: 
-==========
-Community Documentation: https://docs.neoforged.net/  
-NeoForged Discord: https://discord.neoforged.net/
+- [ldlib2] 2.2.41 — the menus and their widgets (required)
+- [Ember's Text API] 3.0.3 — every styled line of chat, log and name (required)
+
+[ldlib2]: https://github.com/Low-Drag-MC/LDLib2
+[Ember's Text API]: https://github.com/TysonTheEmber/EmbersTextAPI
+
+## Configuration
+
+Server settings live in `config/backutils-server.toml` and can also be changed from the
+administrator menu's Config tab; client display settings are in `config/backutils-client.toml`.
+The mod's databases are SQLite files under `<world>/serverconfig/backutils/`.
+
+## Commands
+
+Everything is permission level 2:
+
+- `/backutils menu`, `radius`, `actions`, `typing`, `profiles sound add|remove|list`
+- `/chat radius`, `global`, `local`, `separator local|global`, `silence`
+- `/profile chat|name create|edit|delete|use`, `reload`
+- `/playradius`, `/playbox`, `/stopzone`, `/log`
+
+## Building
+
+```
+./gradlew build
+```
+
+The workflow in `.github/workflows/build.yml` does the same.

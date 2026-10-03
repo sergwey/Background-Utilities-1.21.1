@@ -29,10 +29,8 @@ sourceSets.main.resources {
 repositories {
     // ember's text api
     maven { url 'https://maven.tysontheember.dev' }
-
-    // owo-lib
-    maven { url 'https://maven.wispforest.io/releases/' }
-    maven { url 'https://jitpack.io' }
+    // ldlib2
+    maven { url = "https://maven.firstdark.dev/snapshots" }
 }
 
 base {
@@ -41,6 +39,11 @@ base {
 
 // Mojang ships Java 21 to end users in 1.21.1, so mods should target Java 21.
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+// Read once, here: reaching for `project` inside the run configurations below is what Gradle
+// deprecates (the closures may be evaluated after the project is configured), and a local
+// captures the value while it is still configuration time.
+def modId = mod_id
 
 neoForge {
     // Specify the version of NeoForge to use.
@@ -60,13 +63,13 @@ neoForge {
         client {
             client()
             // Comma-separated list of namespaces to load gametests from. Empty = all namespaces.
-            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+            systemProperty 'neoforge.enabledGameTestNamespaces', modId
         }
 
         server {
             server()
             programArgument '--nogui'
-            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+            systemProperty 'neoforge.enabledGameTestNamespaces', modId
         }
 
         // This run config launches GameTestServer and runs all registered gametests, then exits.
@@ -74,7 +77,7 @@ neoForge {
         // The gametest system is also enabled by default for other run configs under the /test command.
         gameTestServer {
             type = "gameTestServer"
-            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+            systemProperty 'neoforge.enabledGameTestNamespaces', modId
         }
 
         data {
@@ -83,7 +86,7 @@ neoForge {
             // gameDirectory = project.file('run-data')
 
             // Specify the modid for data generation, where to output the resulting resource, and where to look for existing resources.
-            programArguments.addAll '--mod', project.mod_id, '--all', '--output', file('src/generated/resources/').getAbsolutePath(), '--existing', file('src/main/resources/').getAbsolutePath()
+            programArguments.addAll '--mod', modId, '--all', '--output', file('src/generated/resources/').getAbsolutePath(), '--existing', file('src/main/resources/').getAbsolutePath()
         }
 
         // applies to all the run configs above
@@ -121,22 +124,18 @@ configurations {
 }
 
 dependencies {
-    // Example optional mod dependency with JEI
-    // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
-    // compileOnly "mezz.jei:jei-${mc_version}-common-api:${jei_version}"
-    // compileOnly "mezz.jei:jei-${mc_version}-neoforge-api:${jei_version}"
-    // We add the full version to localRuntime, not runtimeOnly, so that we do not publish a dependency on it
-    // localRuntime "mezz.jei:jei-${mc_version}-neoforge:${jei_version}"
-
-    // Используется для текстовых эффектов и изменения цвета текста и прочего
     implementation 'net.tysontheember.emberstextapi:emberstextapi-neoforge-1.21.1:3.0.3'
-    // База данных игроков и профилей
+
+    implementation("com.lowdragmc.ldlib2:ldlib2-neoforge-${minecraft_version}:${ldlib2_version}:all")
+
     jarJar(implementation('org.xerial:sqlite-jdbc:3.53.2.0')) {
         version {
             strictly '[3.53.2.0]'
             prefer '3.53.2.0'
         }
     }
+
+    additionalRuntimeClasspath 'org.xerial:sqlite-jdbc:3.53.2.0'
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.

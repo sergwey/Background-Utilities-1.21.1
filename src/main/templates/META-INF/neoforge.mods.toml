@@ -50,8 +50,8 @@ Mod adding multiple utilities for background administration on roleplay-based se
 '''
 
 # The [[mixins]] block allows you to declare your mixin config to FML so that it gets loaded.
-[[mixins]]
-config="${mod_id}.mixins.json"
+#[[mixins]]
+#config="${mod_id}.mixins.json"
 
 # The [[accessTransformers]] block allows you to declare where your AT file is.
 # If this block is omitted, a fallback attempt will be made to load an AT from META-INF/accesstransformer.cfg
@@ -59,7 +59,12 @@ config="${mod_id}.mixins.json"
 #file="META-INF/accesstransformer.cfg"
 
 # A dependency - use the . to indicate dependency for a specific modid. Dependencies are optional.
-[[dependencies.${mod_id}]] #optional
+#
+# The modid is written out rather than interpolated as ${mod_id}, because a placeholder in a TOML
+# *key* is not valid TOML: the game reads this file only after Gradle has expanded it, but every
+# editor and parser that looks at the template before then reports it as a syntax error. It has to
+# agree with mod_id in gradle.properties, which is what the value fields use.
+[[dependencies.backutils]] #optional
     # the modid of the dependency
     modId="neoforge" #mandatory
     # The type of the dependency. Can be one of "required", "optional", "incompatible" or "discouraged" (case insensitive).
@@ -78,7 +83,7 @@ config="${mod_id}.mixins.json"
     side="BOTH"
 
 # Here's another dependency
-[[dependencies.${mod_id}]]
+[[dependencies.backutils]]
     modId="minecraft"
     type="required"
     # This version range declares a minimum of the current minecraft version up to but not including the next major version
@@ -86,6 +91,12 @@ config="${mod_id}.mixins.json"
     ordering="NONE"
     side="BOTH"
 
+[[dependencies.backutils]]
+modId = "ldlib2"
+type = "required"
+versionRange = "[2.2.41,)"
+ordering = "AFTER"
+side = "BOTH"
 # Features are specific properties of the game environment, that you may want to declare you require. This example declares
 # that your mod requires GL version 3.2 or higher. Other features will be added. They are side aware so declaring this won't
 # stop your mod loading on the server for example.
