@@ -59,6 +59,8 @@ public final class ProfileNetwork {
                 ProfileNetwork::onFeedback);
     }
 
+    // The client's side
+
     /** Asks the server for this player's profiles rather than reusing the last fetch. */
     public static void requestList() {
         PacketDistributor.sendToServer(new ProfileListRequestPayload());
@@ -78,6 +80,8 @@ public final class ProfileNetwork {
         if (!(context.player() instanceof net.minecraft.client.player.LocalPlayer)) return;
         ProfileFeedbackCache.push(payload.ok(), payload.message());
     }
+
+    // The server's side
 
     private static void onListRequest(ProfileListRequestPayload payload, IPayloadContext context) {
         if (!(context.player() instanceof ServerPlayer player)) return;
@@ -234,11 +238,13 @@ public final class ProfileNetwork {
         sendList(player);
     }
 
+    // Helpers
+
     /**
      * {@return the format to store, checked}
      *
      * <p>Advanced mode sends the finished format, otherwise the server composes it from the
-     * controls. A player's goes through the allow-list, an operator's only its shape, per
+     * controls. A player's format goes through the allow-list, an operator's only its shape, per
      * {@link ProfileMarkup#validateStaff}.
      */
     private static ProfileMarkup.Result formatOf(ProfileEditPayload payload, boolean staff) {

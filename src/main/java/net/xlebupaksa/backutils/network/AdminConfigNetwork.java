@@ -51,9 +51,7 @@ public final class AdminConfigNetwork {
                 AdminConfigNetwork::onFeedback);
     }
 
-    // ------------------------------------------------------------------
     // The client's side
-    // ------------------------------------------------------------------
 
     public static void request() {
         PacketDistributor.sendToServer(new AdminConfigRequestPayload());
@@ -74,9 +72,7 @@ public final class AdminConfigNetwork {
         AdminConfigFeedbackCache.push(payload.ok(), payload.message());
     }
 
-    // ------------------------------------------------------------------
     // The server's side
-    // ------------------------------------------------------------------
 
     private static void onRequest(AdminConfigRequestPayload payload, IPayloadContext context) {
         if (!(context.player() instanceof ServerPlayer player)) return;

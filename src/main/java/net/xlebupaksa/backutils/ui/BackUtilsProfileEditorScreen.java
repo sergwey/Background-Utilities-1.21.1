@@ -103,7 +103,6 @@ public final class BackUtilsProfileEditorScreen extends Screen {
             "Ember markup. {m} is your message; your name is not part of a profile.",
             "Colours, gradients and animations only — no clicks, hovers or sounds.");
 
-    /** The same instructions for the background menu, where the players' allow-list does not apply. */
     private static final List<String> INSTRUCTIONS_ADMIN_CHAT = List.of(
             "Ember markup. {m} is the message; {player} is the account name.",
             "Anything well-formed goes — the players' tag list does not apply to staff.");
@@ -146,18 +145,12 @@ public final class BackUtilsProfileEditorScreen extends Screen {
 
     private final Built built;
 
-    /** True when somebody else's profile is being edited from the background menu. */
     private boolean adminMode;
-    /** True when a staff edit was opened from the background menu rather than the player's own. */
     private boolean returnToAdmin = true;
-    /** True when a displayed name is being written rather than a chat format. */
     private boolean nameMode;
-    /** The player whose profile this is, for the background menu; "" for the player's own. */
     private String target = "";
 
-    /** The profile being changed, or null when this is a new one. */
     private ProfileListPayload.Row editing;
-    /** The chosen colour as {@code #rrggbb}, or "" for none. */
     private String colour = "";
     private boolean bold;
     private boolean italic;
@@ -167,14 +160,12 @@ public final class BackUtilsProfileEditorScreen extends Screen {
     private String sound = "";
     /** The last feedback revision acted on, so each answer is handled once. */
     private int feedbackRevision = -1;
-    /** The palette revision the dropdown was last filled from. */
     private int paletteRevision = -1;
     /** The colour the picker was last seen holding, so a change can be noticed. */
     private int lastPickerColour;
     /** Set once the form has been sent, so a second click cannot send it twice. */
     private boolean sent;
 
-    /** The clickable link's rectangle, measured while rendering. */
     private int linkX;
     private int linkY;
     private int linkWidth;
@@ -185,7 +176,6 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         this.built = built;
     }
 
-    /** Opens the window on the player's own profile. */
     public static void open(ProfileListPayload.Row existing) {
         BackUtilsProfileEditorScreen screen = screen();
         screen.adminMode = false;
@@ -195,17 +185,10 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         Minecraft.getInstance().setScreen(screen);
     }
 
-    /** Opens the window on somebody else's profile, the way the background menu does. */
     public static void openFor(String player, boolean names, ProfileListPayload.Row existing) {
         openFor(player, names, existing, true);
     }
 
-    /**
-     * The same, for a player managing their own name profiles from their own menu.
-     *
-     * <p>{@code backToAdmin} decides where closing goes next: an operator editing their own name from
-     * the player menu is not dropped into the background menu.
-     */
     public static void openFor(String player, boolean names, ProfileListPayload.Row existing,
                                boolean backToAdmin) {
         BackUtilsProfileEditorScreen screen = screen();
@@ -217,7 +200,6 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         Minecraft.getInstance().setScreen(screen);
     }
 
-    /** {@return the one reused instance, building it on first use} */
     private static BackUtilsProfileEditorScreen screen() {
         if (instance == null) {
             Built built = new Built();
@@ -304,7 +286,6 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         built.soundSelector.layout(l -> l.flex(1).height(14));
         built.soundSelector.setOnValueChanged(value -> {
             if (instance == null) return;
-            // "none" is the dropdown's word for "no sound"; the profile stores an empty string.
             instance.sound = "none".equals(value) ? "" : value;
             instance.refreshStatus();
         });
@@ -419,8 +400,7 @@ public final class BackUtilsProfileEditorScreen extends Screen {
                 built.instructionsRow, built.advancedFieldRow, previewCaption, built.previewRow,
                 statusRow, buttons);
 
-        // The full-screen root centres the panel rather than positioning it by hand, so it stays
-        // centred when the window is resized.
+        // The full-screen root centres the panel and keeps it centred when the window is resized.
         built.root = new UIElement();
         built.root.layout(l -> l.flexDirection(FlexDirection.COLUMN)
                 .justifyContent(AlignContent.CENTER)
@@ -428,15 +408,11 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         built.root.addChild(built.panel);
     }
 
-    /** {@return the height of the instruction strip, which is the same in every mode} */
     private static int instructionHeight() {
         return INSTRUCTIONS_SELF.size() * LINE + LINE + 6;
     }
 
-    /**
-     * A labelled switch, with the toggle's own text cleared: it defaults to the word "Toggle", which
-     * draws across the label beside it.
-     */
+    /** A labelled switch, with the toggle's own text cleared: it draws across the label beside it. */
     private static Toggle styleToggle(java.util.function.Consumer<Boolean> apply) {
         Toggle toggle = new Toggle();
         toggle.setOn(false, false);
@@ -457,7 +433,6 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         return holder;
     }
 
-    /** Which of the four styles a toggle switches, so one callback can serve all of them. */
     private enum StylePart { BOLD, ITALIC, UNDERLINE, STRIKE }
 
     private static void setStyle(StylePart part, boolean value) {
@@ -558,10 +533,7 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         refreshStatus();
     }
 
-    /**
-     * Points the window at what it is editing: a name has no sound and gets the box its own text is
-     * written in, and the placeholder on the raw field follows the kind.
-     */
+    /** Points the window at what it is editing, and gives a name the box its own text is written in. */
     private void applyMode() {
         built.advancedField.textFieldStyle(s -> s.placeholder(Component.literal(nameMode
                 ? "<bold>{player}</bold>"
@@ -575,12 +547,9 @@ public final class BackUtilsProfileEditorScreen extends Screen {
     }
 
     /**
-     * Shows the one control the shared row carries, and hides the other.
-     *
-     * <p>The control is switched out of the layout with {@code display: none}; the row is only given
-     * no height. A collapsed row is still measured against the widget inside it, and a dropdown with
-     * a scrollable list cannot satisfy a box of no height, so it re-lays the whole tree out on every
-     * frame. An empty box has nothing in it to measure.
+     * Shows the one control the shared row carries, and hides the other by switching it out of the
+     * layout rather than collapsing the row: a dropdown with a scrollable list inside cannot satisfy a
+     * box of no height, so it re-lays the whole tree out on every frame.
      */
     private void applyExtraRow() {
         boolean sound = hasSound();
@@ -601,7 +570,6 @@ public final class BackUtilsProfileEditorScreen extends Screen {
                 .flexDirection(FlexDirection.ROW).alignItems(AlignItems.CENTER).gapAll(GAP));
     }
 
-    /** {@return true when this window offers a sound, which a name never does} */
     private boolean hasSound() {
         return !nameMode;
     }
@@ -609,15 +577,13 @@ public final class BackUtilsProfileEditorScreen extends Screen {
     /**
      * {@return true when the checks are the operators' permissive ones}
      *
-     * <p>Either an operator editing somebody else's profile, or one editing their own. It comes from
-     * the synced options the chat picker uses, {@code canManageNames}, which the server checks again
-     * on the way in; this copy answers while the value is typed.
+     * <p>An operator editing somebody else's profile or their own; the server checks again on the way
+     * in, and this copy answers while the value is typed.
      */
     private boolean unrestricted() {
         return adminMode || canManageNames();
     }
 
-    /** {@return true when the local player is allowed to manage name profiles} */
     private static boolean canManageNames() {
         net.minecraft.client.player.LocalPlayer player = Minecraft.getInstance().player;
         if (player == null) return false;
@@ -626,7 +592,6 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         return options != null && options.canManageNames();
     }
 
-    /** {@return the two lines above the raw field, for what this window is editing} */
     private static List<String> instructionLinesFor(boolean admin, boolean names) {
         if (!admin) return INSTRUCTIONS_SELF;
         return names ? INSTRUCTIONS_ADMIN_NAME : INSTRUCTIONS_ADMIN_CHAT;
@@ -657,7 +622,6 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         built.strikeToggle.setOn(strikethrough, false);
     }
 
-    /** Points the picker at the stored colour, or at white when there is none. */
     private void applyColour() {
         int argb = 0xFFFFFFFF;
         if (!colour.isBlank()) {
@@ -669,14 +633,12 @@ public final class BackUtilsProfileEditorScreen extends Screen {
             }
         }
         built.picker.setColor(argb, false);
-        // Recorded as well as set: the poll compares against this, and without it the first tick would
-        // take the picker's own value for a choice the player had just made.
+        // Recorded as well as set, or the first poll would take it for a choice just made.
         lastPickerColour = argb;
         updateColourLabel();
     }
 
     private void onColourPicked(int argb) {
-        // Opaque, always: see the note where the alpha slider is hidden.
         colour = String.format(Locale.ROOT, "#%06x", argb & 0xFFFFFF);
         updateColourLabel();
         refreshStatus();
@@ -694,11 +656,8 @@ public final class BackUtilsProfileEditorScreen extends Screen {
     }
 
     /**
-     * Fills the sound list from the palette the server sent. "None" is offered first and is a real
-     * choice: a profile without a sound still styles the text.
-     *
-     * <p>A staff edit takes the palette that came with the profile list it is editing, because an
-     * administrator working through somebody's profiles may never have opened their own Profiles tab.
+     * Fills the sound list from the palette the server sent, "none" first: a profile without a sound
+     * still styles the text. A staff edit takes the palette that came with the list it is editing.
      */
     private void applyPalette() {
         // A name has no sound, so its dropdown is left alone: filling a list nothing can open is work
@@ -726,7 +685,6 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         refreshStatus();
     }
 
-    /** {@return the controls composed into a format, checked for whoever is writing it} */
     private ProfileMarkup.Result compose() {
         if (unrestricted()) {
             return ProfileMarkup.composeStaff(colour, bold, italic, underline, strikethrough,
@@ -736,10 +694,7 @@ public final class BackUtilsProfileEditorScreen extends Screen {
                 currentInner());
     }
 
-    /**
-     * Shows one way of writing the format and hides the other. Advanced mode replaces the controls
-     * rather than sitting under them, and the window is resized to match.
-     */
+    /** Shows one way of writing the format and hides the other; advanced mode replaces the controls. */
     private void applyAdvancedVisibility() {
         // Hidden AND collapsed: the window is sized for the mode it is in, so a hidden row that kept
         // its height would push the buttons past the bottom edge. The shared row is the exception,
@@ -774,8 +729,8 @@ public final class BackUtilsProfileEditorScreen extends Screen {
     /**
      * {@return the text the formatting wraps}
      *
-     * <p>A chat format wraps the message, so the controls write {@code {m}}. A displayed name wraps
-     * text the administrator writes, so it comes from the box.
+     * <p>A chat format wraps the message, so the controls write {@code {m}}; a displayed name wraps
+     * text the administrator writes.
      */
     private String currentInner() {
         if (!nameMode) return ProfileMarkup.DEFAULT_INNER;
@@ -788,7 +743,6 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         return text == null ? "" : text.trim();
     }
 
-    /** {@return the format the form currently describes, checked for whoever is writing it} */
     private ProfileMarkup.Result currentFormat() {
         if (advanced) {
             return unrestricted()
@@ -800,8 +754,7 @@ public final class BackUtilsProfileEditorScreen extends Screen {
 
     /**
      * Substitutes stand-ins for the placeholders so the preview reads as what will be drawn. A name
-     * preview puts the account name in place of {@code {player}}, the only way to see the shape the
-     * rest of the server reads.
+     * preview puts the account name in place of {@code {player}}.
      */
     private String previewText() {
         ProfileMarkup.Result format = currentFormat();
@@ -826,12 +779,6 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         setStatus(rewritten == null ? "Looks good" : rewritten, GOOD);
     }
 
-    /**
-     * {@return what will be stored when it differs from what was typed, or null}
-     *
-     * <p>Only advanced mode can differ. The one rewrite that happens is a colour attribute spelled
-     * the way Ember parses but never draws — {@code value=} for {@code col=}.
-     */
     private String storedForm() {
         if (!advanced) return null;
         String typed = currentAdvanced();
@@ -840,7 +787,6 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         return "Stored as " + format.value();
     }
 
-    /** {@return the first thing wrong with the form, or null when nothing is} */
     private String localProblem() {
         ProfileMarkup.Result name = ProfileMarkup.validateName(currentNewName());
         if (!name.ok()) return name.error();
@@ -848,7 +794,6 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         ProfileMarkup.Result format = currentFormat();
         if (!format.ok()) return format.error();
 
-        // A name has no sound row, and the value it would carry is cleared rather than kept.
         if (!hasSound()) return null;
         return unrestricted()
                 ? ProfileSound.checkStaff(sound)
@@ -856,13 +801,11 @@ public final class BackUtilsProfileEditorScreen extends Screen {
     }
 
     private void setStatus(String message, int colour) {
-        // Cut to the panel: a label draws as wide as its text whatever its box says.
         built.status.setText(fit(message), false);
         built.status.textStyle(t -> t.fontSize(9f).textColor(colour).textShadow(false)
                 .textAlignVertical(Vertical.CENTER).adaptiveWidth(true));
     }
 
-    /** {@return the text, cut to the panel's inner width, with an ellipsis when it was too long} */
     private String fit(String text) {
         if (text == null || text.isEmpty()) return "";
         int available = Math.round(built.panel.getSizeWidth()) - PAD * 2;
@@ -926,9 +869,8 @@ public final class BackUtilsProfileEditorScreen extends Screen {
     }
 
     /**
-     * Watches for the server's answer. Read on the client tick rather than during rendering: a
-     * successful save closes this window by opening the menu, and switching screens mid-render leaves
-     * the frame half drawn.
+     * Reads the server's answer on the client tick: switching screens mid-render leaves the frame half
+     * drawn.
      */
     @Override
     public void tick() {
@@ -943,10 +885,7 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         checkFeedback();
     }
 
-    /**
-     * Picks up a palette that arrived after the window opened, because a dropdown offering nothing but
-     * "none" looks like a server with no sounds.
-     */
+    /** Picks up a palette that arrived after the window opened. */
     private void pollPalette() {
         if (!adminMode || !hasSound()) return;
         int revision = AdminProfileCache.profilesRevision();
@@ -957,8 +896,7 @@ public final class BackUtilsProfileEditorScreen extends Screen {
 
     /**
      * Picks up a colour chosen in the picker, read from the widget every tick rather than trusted to
-     * its change callback: a colour that fails to arrive there would never be recorded, and comparing
-     * one integer per tick cannot miss a change.
+     * its change callback: a colour that fails to arrive there would never be recorded.
      */
     private void pollColour() {
         if (built.picker == null) return;
@@ -969,9 +907,8 @@ public final class BackUtilsProfileEditorScreen extends Screen {
     }
 
     /**
-     * Reads the answer on the channel for the kind of edit this window was opened in: the player's own
-     * changes on the profile channel, a staff edit on the administrator's, so a background edit cannot
-     * close a window waiting for something else.
+     * Reads the answer on the channel for the kind of edit this window was opened in, so a background
+     * edit cannot close a window waiting for something else.
      */
     private void checkFeedback() {
         if (adminMode) {
@@ -996,9 +933,8 @@ public final class BackUtilsProfileEditorScreen extends Screen {
     }
 
     /**
-     * The same for a staff edit. The answer is only read when it is about <i>this</i> profile; the
-     * revision is left untouched otherwise, so an answer about somebody else's neither closes this
-     * window nor is lost.
+     * The same for a staff edit, read only when the answer is about <i>this</i> profile; the revision
+     * is left untouched otherwise, so an answer about somebody else's is not lost.
      */
     private void checkAdminFeedback() {
         if (AdminProfileFeedbackCache.revision() == feedbackRevision) return;
@@ -1039,16 +975,7 @@ public final class BackUtilsProfileEditorScreen extends Screen {
                 .flexDirection(FlexDirection.COLUMN).gapAll(GAP));
     }
 
-    /**
-     * {@return the window's height in a mode, as the sum of the rows it shows}
-     *
-     * <p>Summed rather than fixed, because the controls give way to the instructions and a name puts
-     * its own text row in place of the sound. A panel sized for the wrong mode pushes the buttons past
-     * the bottom edge.
-     *
-     * <p>The gaps are counted over every child, including the ones not showing: a row of no height
-     * still sits between two others.
-     */
+    /** {@return the window's height in a mode, as the sum of the rows it shows} */
     private static int panelHeightFor(boolean advanced, boolean sound, boolean text) {
         int rows = (LINE + 4)                                  // title
                 + ROW                                          // profile name
@@ -1096,9 +1023,8 @@ public final class BackUtilsProfileEditorScreen extends Screen {
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        // The widget tree — text fields included — is drawn with markup parsing off, so a format being
-        // typed is visible as the characters it is made of. Below it the preview and the link are
-        // markup on purpose.
+        // The widget tree is drawn with markup parsing off, so a format being typed is visible as the
+        // characters it is made of. Below it the preview and the link are markup on purpose.
         PatchouliBypass.enter();
         try {
             super.render(graphics, mouseX, mouseY, partialTick);

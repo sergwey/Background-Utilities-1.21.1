@@ -13,10 +13,9 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Sends roleplay log lines to the players allowed to see them.
- *
- * <p>Delivery is always derived from {@code access_list} rather than from a remembered guest list, so
- * an entry reaches everyone it should regardless of whether they were online at the time.
+ * Sends roleplay log lines to the players allowed to see them. Delivery is always derived from
+ * {@code access_list} rather than from a remembered guest list, so an entry reaches everyone it should
+ * regardless of whether they were online at the time.
  */
 public final class RoleplayLogBroadcaster {
 
@@ -24,8 +23,8 @@ public final class RoleplayLogBroadcaster {
 
     /**
      * Sends one specific entry to the given players, and to nobody else. It is re-read from storage, so
-     * the stored text stays the single source of truth; an id that cannot be found is skipped, since
-     * the next {@link #flushPending} pass would deliver it anyway.
+     * the stored text stays the single source of truth; an id that cannot be found is skipped, since the
+     * next {@link #flushPending} pass would deliver it anyway.
      */
     public static void deliver(MinecraftServer server, long logId, List<UUID> audience) {
         LogData log = log();
@@ -84,14 +83,13 @@ public final class RoleplayLogBroadcaster {
 
     /** The single place that renders, records and transmits one entry to one viewer. */
     private static void send(ServerPlayer viewer, ActionLogEntry entry) {
-        // Marked sent whether or not the client can display it, so a player without the channel is not
-        // re-scanned for the same entries on every sweep.
+        // Marked sent even when the client cannot display it, so the sweep does not re-scan for it.
         SentLogWatermark.markSent(viewer.getUUID(), entry.id());
         if (!RoleplayLogNetwork.canReceive(viewer)) return;
         PacketDistributor.sendToPlayer(viewer, new RoleplayLogPayload(
                 entry.id(),
-                // Rendered for this viewer, then wrapped so it types itself out. Only live lines do
-                // this; the menu's history is sent plain, so opening it does not retype the backlog.
+                // Rendered for this viewer, then wrapped so it types itself out; the menu's history is
+                // sent plain, so opening it does not retype the backlog.
                 RoleplayLog.present(entry.textFor(
                         viewer.getUUID(), ProfileLoader.logName(entry.actorName())))));
     }

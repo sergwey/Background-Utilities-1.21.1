@@ -13,9 +13,8 @@ import java.util.List;
  * One player's profiles, as the background menu shows them.
  *
  * <p>The rows are the ones the player's own Profiles tab uses, field for field, because the editor is
- * the same window; a name profile has no sound there, and the menu hides the control rather than
- * offering a choice a name cannot keep. The sound palette rides along with a chat list because the
- * editor's dropdown <b>is</b> the server's palette.
+ * the same window, and the sound palette rides along because the editor's dropdown is the server's
+ * palette. A name profile has no sound, so its menu control is hidden rather than left empty.
  *
  * @param player the player these belong to, resolved to the name the database uses
  * @param rows   the profiles, in the order the database lists them

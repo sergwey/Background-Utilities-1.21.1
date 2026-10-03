@@ -21,11 +21,8 @@ public record AdminActionPayload(Kind action, long id, String target) implements
         HIDE_FROM_PLAYER,
         UNHIDE_FROM_PLAYER,
         /**
-         * Withholds it from a set of players.
-         *
-         * <p>The target is either a Minecraft selector such as {@code @a[distance=..10]}, or a
-         * {@code ;}-separated list of names; a selector is resolved on the server, against the
-         * administrator as the source.
+         * Withholds it from a set of players. The target is a Minecraft selector such as
+         * {@code @a[distance=..10]} or a {@code ;}-separated list of names.
          */
         HIDE_FROM_MANY,
         /** Give it back to a set of players, in the same two forms. */

@@ -20,12 +20,7 @@ public record AdminConfigPayload(List<Row> settings) implements CustomPacketPayl
             new CustomPacketPayload.Type<>(
                     ResourceLocation.fromNamespaceAndPath(BackUtils.MOD_ID, "admin_config"));
 
-    /**
-     * One setting.
-     *
-     * @param kind    which control it needs
-     * @param comment the explanation from the config file
-     */
+    /** One setting. */
     public record Row(String key, String label, BackUtilsSettings.Group group,
                       BackUtilsSettings.Kind kind, String value, double min, double max,
                       List<String> comment) {

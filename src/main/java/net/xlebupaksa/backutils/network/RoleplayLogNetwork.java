@@ -22,8 +22,8 @@ import java.util.UUID;
  * Both ends of the roleplay log traffic.
  *
  * <p>The payloads are registered with {@code optional()}, so a client without them can still connect
- * and simply receives no log lines. The handlers live here, in common code, so that registering a
- * method reference never resolves a client-only class on a dedicated server.
+ * and simply receives no log lines. The handlers live here, in common code, so that a method reference
+ * never resolves a client-only class on a dedicated server.
  */
 @EventBusSubscriber(modid = BackUtils.MOD_ID)
 @SuppressWarnings("unused") // entry points: the game bus and the loader call these
@@ -63,9 +63,8 @@ public final class RoleplayLogNetwork {
     }
 
     /**
-     * Runs on the server, in answer to the menu being opened. The reply is built from
-     * {@code access_list} rather than from any remembered guest list, so it is exactly the history this
-     * player is entitled to see, including entries from before they logged in.
+     * Runs on the server, in answer to the menu being opened: exactly the history this player may see,
+     * including entries from before they logged in.
      */
     private static void onHistoryRequest(LogHistoryRequestPayload payload, IPayloadContext context) {
         if (!(context.player() instanceof ServerPlayer player)) return;
@@ -77,8 +76,7 @@ public final class RoleplayLogNetwork {
         UUID viewer = player.getUUID();
         List<ActionLogEntry> visible = data.logs().visibleTo(viewer, 0L);
 
-        // Resolved once per actor rather than once per entry: this walks the profile database, and a
-        // busy server's log can hold many lines from the same few people.
+        // Resolved once per actor, not per entry: a busy log holds many lines from the same few people.
         Map<String, String> names = new HashMap<>();
 
         List<LogHistoryPayload.Row> rows = new ArrayList<>(visible.size());

@@ -7,8 +7,8 @@ import net.minecraft.resources.ResourceLocation;
 import net.xlebupaksa.backutils.BackUtils;
 
 /**
- * Asks a client to open the administrator menu. Sent in answer to a command, so the permission check
- * happens where permissions live — on the server.
+ * Asks a client to open the administrator menu. Sent in answer to a command, so the permission
+ * check happens where permissions live — on the server.
  */
 public record AdminMenuOpenPayload() implements CustomPacketPayload {
 

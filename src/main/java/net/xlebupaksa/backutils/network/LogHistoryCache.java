@@ -3,10 +3,9 @@ package net.xlebupaksa.backutils.network;
 import java.util.List;
 
 /**
- * The log history most recently received from the server.
- *
- * <p>Client-side state with no Minecraft imports, so common code can reference it without dragging a
- * client-only class into a dedicated server's class loading.
+ * The log history most recently received from the server. Client-side state with no Minecraft imports, so
+ * common code can reference it without dragging a client-only class into a dedicated server's class
+ * loading.
  */
 public final class LogHistoryCache {
 

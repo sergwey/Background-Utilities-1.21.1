@@ -24,9 +24,7 @@ public record AdminPlayerListPayload(boolean names, List<Player> players)
             new CustomPacketPayload.Type<>(
                     ResourceLocation.fromNamespaceAndPath(BackUtils.MOD_ID, "admin_player_list"));
 
-    /**
-     * One player in the list, with the name spelled the way the database or the server spells it.
-     */
+    /** One player in the list, with the name as the database or the server spells it. */
     public record Player(String name, boolean online, int chatCount, int nameCount) {
 
         public static final StreamCodec<RegistryFriendlyByteBuf, Player> STREAM_CODEC =

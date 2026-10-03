@@ -17,10 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * The administrator menu's traffic: the gate is the server-side permission check on each request,
- * so a client that should not have the menu gains nothing by opening it.
- */
+/** The administrator menu's traffic; the gate is the server-side permission check. */
 @EventBusSubscriber(modid = BackUtils.MOD_ID)
 @SuppressWarnings("unused") // entry points: the game bus and the loader call these
 public final class AdminNetwork {
@@ -44,9 +41,7 @@ public final class AdminNetwork {
                 AdminNetwork::onAction);
     }
 
-    // ------------------------------------------------------------------
-    // Client side
-    // ------------------------------------------------------------------
+    // The client's side
 
     private static void onLog(AdminLogPayload payload, IPayloadContext context) {
         if (!(context.player() instanceof net.minecraft.client.player.LocalPlayer)) return;
@@ -63,9 +58,7 @@ public final class AdminNetwork {
         net.xlebupaksa.backutils.ui.BackUtilsAdminScreen.open();
     }
 
-    // ------------------------------------------------------------------
-    // Server side
-    // ------------------------------------------------------------------
+    // The server's side
 
     /** Sends the unfiltered log to a player allowed to see it. */
     private static void onLogRequest(AdminLogRequestPayload payload, IPayloadContext context) {
@@ -161,19 +154,17 @@ public final class AdminNetwork {
     }
 
     /**
-     * Reports something that went wrong, in chat.
-     *
-     * <p>Not routed through {@link #report}: a failure has to be seen, because nothing changed and
-     * the menu looks exactly as it did before.
+     * Reports something that went wrong, in chat. Not routed through {@link #report}: a failure has
+     * to be seen, because nothing changed and the menu looks exactly as it did before.
      */
     private static void reportFailure(ServerPlayer admin, String message) {
         admin.sendSystemMessage(Component.literal("§c" + message), false);
     }
 
     /**
-     * Applies a hide or unhide to several players. A selector means "whoever is near me right now"
-     * and is resolved here with the administrator as the source; a name list means exactly those
-     * people.
+     * Applies a hide or unhide to several players: a selector means "whoever is near me right now"
+     * and is resolved here with the administrator as the source, while a name list means exactly
+     * those people.
      */
     private static void setHiddenForMany(ServerPlayer admin,
                                          net.xlebupaksa.backutils.data.BackUtilsData data,
@@ -272,8 +263,8 @@ public final class AdminNetwork {
     /**
      * {@return the UUID behind a name, from the server's own name cache}
      *
-     * <p>Hiding from somebody offline still needs their id, and the cache is the only place one is
-     * kept for a player who has ever joined.
+     * <p>Hiding from somebody offline still needs their id, and the cache holds one for every
+     * player who has ever joined.
      */
     private static UUID offlineUuid(ServerPlayer admin, String name) {
         if (admin.getServer() == null) return null;

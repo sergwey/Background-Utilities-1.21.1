@@ -19,9 +19,7 @@ public record AdminConfigEditPayload(List<Change> changes) implements CustomPack
             new CustomPacketPayload.Type<>(
                     ResourceLocation.fromNamespaceAndPath(BackUtils.MOD_ID, "admin_config_edit"));
 
-    /**
-     * One setting's new value. The value is text; the server checks it before writing anything.
-     */
+    /** One setting's new value, as text; the server checks it before writing anything. */
     public record Change(String key, String value) {
 
         public static final StreamCodec<RegistryFriendlyByteBuf, Change> STREAM_CODEC =

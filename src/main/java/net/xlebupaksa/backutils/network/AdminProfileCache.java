@@ -3,12 +3,9 @@ package net.xlebupaksa.backutils.network;
 import java.util.List;
 
 /**
- * What the server last told an administrator about other players' profiles.
- *
- * <p>Client-side state with no Minecraft imports, so it can be referenced from common code without
- * dragging a client-only class into a dedicated server's class loading.
- *
- * <p>The player list and one player's profiles are held separately, each with its own revision.
+ * What the server last told an administrator about other players' profiles. Client-side state with no
+ * Minecraft imports, so it can be referenced from common code without dragging a client-only class into
+ * a dedicated server's class loading; the player list and one player's profiles are held separately.
  */
 public final class AdminProfileCache {
 

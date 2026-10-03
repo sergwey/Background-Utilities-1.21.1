@@ -29,10 +29,10 @@ import java.util.TreeSet;
  * The background menu's profile traffic: every player's profiles, seen from outside.
  *
  * <p>Unlike {@link ProfileNetwork}, this carries a target and is answered only for
- * {@link AdminNetwork#REQUIRED_LEVEL} or above; everything else, the profile name, format and sound
- * included, is checked on the server, and the target must resolve to a player the server knows. The
- * tag allow-list is deliberately not applied - see {@link ProfileMarkup#validateStaff(String,
- * boolean)} - though the shape of a staff-written format is still enforced.
+ * {@link AdminNetwork#REQUIRED_LEVEL} or above; everything else is checked on the server, and the target
+ * must resolve to a player the server knows. The tag allow-list is deliberately not applied - see
+ * {@link ProfileMarkup#validateStaff(String, boolean)} - though the shape of a staff-written format is
+ * still enforced.
  */
 @EventBusSubscriber(modid = BackUtils.MOD_ID)
 @SuppressWarnings("unused") // entry points: the game bus and the loader call these
@@ -268,7 +268,7 @@ public final class AdminProfileNetwork {
             }
             long id = profile.get().id();
             data.names().delete(name, target);
-            // By row id, so it is cleared by hand: a dangling id would return if the id were reused.
+            // By row id, so it is cleared by hand: a dangling id would come back if the id were reused.
             if (ProfileLoader.activeNameId(target) == id) {
                 data.active().clearActiveName(target);
             }

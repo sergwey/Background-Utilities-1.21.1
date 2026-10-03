@@ -11,11 +11,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The whole action log, for an administrator. It ignores {@code access_list}, so it is only sent to
- * somebody whose permission has been checked on the server; reusing the player payload would put
- * the visibility rule in two places.
- *
- * @param rows newest first
+ * The whole action log, for an administrator, newest first. It ignores {@code access_list}, so it
+ * is only sent to somebody whose permission has been checked on the server; reusing the player
+ * payload would put the visibility rule in two places.
  */
 public record AdminLogPayload(List<Row> rows) implements CustomPacketPayload {
 
@@ -35,8 +33,7 @@ public record AdminLogPayload(List<Row> rows) implements CustomPacketPayload {
 
         /**
          * Written by hand rather than with {@code StreamCodec.composite}, which stops at six fields
-         * and this row has nine. Both directions sit side by side, since a mismatch desynchronises
-         * the whole packet.
+         * and this row has nine.
          */
         public static final StreamCodec<RegistryFriendlyByteBuf, Row> STREAM_CODEC =
                 new StreamCodec<>() {
@@ -75,6 +72,7 @@ public record AdminLogPayload(List<Row> rows) implements CustomPacketPayload {
                     }
                 };
 
+        /** Count first, then the entries, so the two sides cannot disagree. */
         private static void writeStrings(RegistryFriendlyByteBuf buffer, List<String> values) {
             buffer.writeVarInt(values.size());
             for (String value : values) buffer.writeUtf(value);
