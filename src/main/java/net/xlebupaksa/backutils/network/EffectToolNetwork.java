@@ -4,7 +4,6 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
@@ -43,9 +42,8 @@ import java.util.function.Predicate;
 public final class EffectToolNetwork {
 
     /**
-     * The level an operator needs to configure a tool, matching the gate on
-     * {@code /backutils effecttool give}: a player who cannot be handed a tool is not one who may
-     * rewrite one either.
+     * The level an operator needs to configure a tool: a player who may not be handed one is not one
+     * who may rewrite one either.
      */
     public static final int REQUIRED_LEVEL = ProfileLoader.PROFILE_PERMISSION_LEVEL;
 

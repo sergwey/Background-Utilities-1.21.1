@@ -34,6 +34,7 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import net.xlebupaksa.backutils.BackUtils;
 import net.xlebupaksa.backutils.client.AdminAlerts;
 import net.xlebupaksa.backutils.client.BackUtilsClientConfig;
+import net.xlebupaksa.backutils.client.Operators;
 import net.xlebupaksa.backutils.client.ZoneMusicPlayer;
 import net.xlebupaksa.backutils.data.MarkupUtil;
 import net.xlebupaksa.backutils.data.MarkupWrap;
@@ -360,6 +361,21 @@ public final class BackUtilsMenuScreen extends Screen {
 
         // The operator alert is client-side: the sound is played here, and only ever by the player
         // who chose it, so none of this belongs in the server's config.
+        //
+        // Shown to an operator and to nobody else. An alert is sent to operators alone, so to
+        // anybody else every row below is a setting for something that cannot happen — and one that
+        // tells them such a thing exists to be configured, which is the operator's business and not
+        // theirs. The rows are built only when they are wanted, rather than hidden, since a row that
+        // is built and hidden is one edit away from being built and shown.
+        if (Operators.isOperator()) {
+            buildAlertControls(built);
+        }
+    }
+
+    /** Adds the rows that configure the operator alert, for an operator's own menu. */
+    private static void buildAlertControls(Built built) {
+        ScrollerView scroll = built.configScroll;
+
         scroll.addScrollViewChild(headingLabel(built, "backutils.menu.alerts.heading"));
         scroll.addScrollViewChild(toggleRow(built, "backutils.menu.alerts.sound",
                 BackUtilsClientConfig.isAdminAlertEnabled(),

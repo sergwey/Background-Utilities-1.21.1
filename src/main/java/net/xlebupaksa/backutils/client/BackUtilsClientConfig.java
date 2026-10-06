@@ -72,10 +72,6 @@ public final class BackUtilsClientConfig {
                     "(solid).")
             .defineInRange("menuBackgroundOpacity", 0.5D, 0.0D, 1.0D);
 
-    public static final ModConfigSpec.IntValue MENU_SCALE = BUILDER
-            .comment("Size of the menu's contents, in percent.")
-            .defineInRange("menuScalePercent", 100, 50, 200);
-
     // ------------------------------------------------------------------
     // Background administrator alerts (per player and client-side: nothing here affects what the
     // server records or who may read it)
@@ -220,14 +216,6 @@ public final class BackUtilsClientConfig {
             return MENU_BACKGROUND_OPACITY.get();
         } catch (Exception e) {
             return 0.5D;
-        }
-    }
-
-    public static int getMenuScalePercent() {
-        try {
-            return MENU_SCALE.get();
-        } catch (Exception e) {
-            return 100;
         }
     }
 

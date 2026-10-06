@@ -10,7 +10,6 @@ import net.minecraft.world.entity.EquipmentSlotGroup;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.tysontheember.emberstextapi.immersivemessages.api.MarkupParser;
 import net.tysontheember.emberstextapi.immersivemessages.api.TextSpan;
-import net.tysontheember.emberstextapi.immersivemessages.effects.Effect;
 import net.xlebupaksa.backutils.BackUtils;
 
 import java.util.ArrayList;

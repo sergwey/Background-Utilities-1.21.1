@@ -9,7 +9,6 @@ import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
-import net.xlebupaksa.backutils.item.EffectToolItem;
 import net.xlebupaksa.backutils.network.EffectToolConfigPayload.Where;
 
 /**
@@ -73,11 +72,6 @@ public final class EffectToolSlot {
             return ItemStack.EMPTY;
         }
         return menu.getSlot(address.slot()).getItem();
-    }
-
-    /** {@return true when an address names an effect tool on this client} */
-    public static boolean holdsTool(Player player, Address address) {
-        return stackAt(player, address).getItem() instanceof EffectToolItem;
     }
 
     /**

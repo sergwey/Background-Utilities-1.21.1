@@ -1126,6 +1126,10 @@ public final class ItemEditorScreen extends Screen {
      * bigger icon to ask for: an item is drawn in a slot sixteen pixels square, and the way to have it larger is
      * to draw the slot larger. Everything about the icon is scaled together that way — the model, whatever a
      * resource pack or another mod has done to it, and the light on it.
+     *
+     * <p>The depth is scaled with the rest, which a flat sprite would not have noticed: the tools are drawn from
+     * models with a third dimension, and a pose that left depth at one would stretch them along it, which is the
+     * axis their GUI turn points towards the viewer.
      */
     private void drawIcon(GuiGraphics graphics, ItemStack preview) {
         if (preview == null) return;
@@ -1134,7 +1138,7 @@ public final class ItemEditorScreen extends Screen {
         graphics.pose().pushPose();
         graphics.pose().translate(Math.round(namePreview.getPositionX()) + ICON_PAD,
                 Math.round(namePreview.getPositionY()) + ICON_PAD, 0);
-        graphics.pose().scale(scale, scale, 1f);
+        graphics.pose().scale(scale, scale, scale);
         graphics.renderItem(preview, 0, 0);
         graphics.pose().popPose();
     }

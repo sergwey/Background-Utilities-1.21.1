@@ -26,10 +26,6 @@ public record ActionLogEntry(
         String adminNote
 ) {
 
-    public boolean hasPosition() {
-        return dimension != null && !dimension.isBlank();
-    }
-
     /** {@return true when this player may be shown the entry: witnessing is not enough on its
      * own, since an entry can also be withheld from everyone, or from this witness. */
     public boolean visibleTo(UUID viewer) {

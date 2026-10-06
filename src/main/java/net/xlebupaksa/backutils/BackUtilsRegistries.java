@@ -13,6 +13,7 @@ import net.neoforged.neoforge.registries.RegisterEvent;
 import net.xlebupaksa.backutils.commands.arguments.TolerantDoubleArgument;
 import net.xlebupaksa.backutils.item.ModDataComponents;
 import net.xlebupaksa.backutils.item.ModItems;
+import net.xlebupaksa.backutils.sound.ModSounds;
 
 /**
  * The mod-bus part of the mod's setup, kept off {@link BackUtils} because {@link RegisterEvent} and
@@ -36,7 +37,14 @@ public final class BackUtilsRegistries {
             Registries.CREATIVE_MODE_TAB,
             ResourceLocation.fromNamespaceAndPath(BackUtils.MOD_ID, "tools"));
 
-    /** Gives the tolerant number argument the registry id that goes on the wire. */
+    /**
+     * Gives the tolerant number argument the registry id that goes on the wire.
+     *
+     * <p>And the ids of everything else the mod adds that the game looks up by name: the tab the two
+     * tools are found in, the tools themselves, the component the effect tool's settings live in, and
+     * the shot they fire — whose id is the key {@code sounds.json} is written under, so the two are
+     * spelled the same way in both files and the registration is what makes the pair work.
+     */
     public static void onRegister(RegisterEvent event) {
         event.register(Registries.COMMAND_ARGUMENT_TYPE,
                 ResourceLocation.fromNamespaceAndPath(BackUtils.MOD_ID, "tolerant_double"),
@@ -54,6 +62,7 @@ public final class BackUtilsRegistries {
         event.register(Registries.DATA_COMPONENT_TYPE,
                 ResourceLocation.fromNamespaceAndPath(BackUtils.MOD_ID, "effect_tool_config"),
                 () -> ModDataComponents.EFFECT_TOOL_CONFIG);
+        event.register(Registries.SOUND_EVENT, ModSounds.TOOL_SHOT.getLocation(), () -> ModSounds.TOOL_SHOT);
     }
 
     /**

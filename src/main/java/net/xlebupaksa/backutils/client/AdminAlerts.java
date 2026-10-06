@@ -24,8 +24,8 @@ public final class AdminAlerts {
 
     /** Client-side handler for {@link AdminAlertPayload}. */
     public static void receive(AdminAlertPayload payload) {
-        // Kept even when the marker is switched off: the id is what the menu needs to know there
-        // is something new.
+        // Kept even when the marker is switched off: switching the marker off is about drawing the
+        // icon, and the menu still has to be told that there is something new.
         pending = payload;
 
         if (BackUtilsClientConfig.isAdminAlertEnabled()) {
@@ -37,21 +37,12 @@ public final class AdminAlerts {
         return pending != null;
     }
 
-    /** {@return the actor from the newest unseen alert, or null} */
-    public static String pendingActor() {
-        return pending == null ? null : pending.actor();
-    }
-
     /**
      * Plays the configured sound once, so an operator can hear what they have chosen in the settings
      * tab. An arriving alert is the only other time this client makes the sound.
      */
     public static void preview() {
         playSound();
-    }
-
-    public static long pendingId() {
-        return pending == null ? 0L : pending.id();
     }
 
     /** Called when the menu opens: the alert has been delivered, so it stops asking. */

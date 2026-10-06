@@ -8,7 +8,7 @@ import net.neoforged.api.distmarker.OnlyIn;
 import net.xlebupaksa.backutils.BackUtils;
 import net.xlebupaksa.backutils.client.AdminAlerts;
 import net.xlebupaksa.backutils.client.BackUtilsClientConfig;
-import net.xlebupaksa.backutils.network.AdminNetwork;
+import net.xlebupaksa.backutils.client.Operators;
 
 /**
  * The bottom-right corner: the operator alert icon, and under it the button that opens the
@@ -69,7 +69,7 @@ public final class AdminCorner {
 
     /** Draws the administrator menu button; the chat screen is the only place it is offered. */
     public static void renderButton(GuiGraphics graphics, int mouseX, int mouseY) {
-        if (!isOperator()) return;
+        if (!Operators.isOperator()) return;
         int size = buttonSize();
         boolean hovered = contains(mouseX, mouseY, graphics.guiWidth(), graphics.guiHeight());
         graphics.blitSprite(hovered ? BUTTON_HOVERED : BUTTON,
@@ -78,7 +78,7 @@ public final class AdminCorner {
 
     /** {@return true when the press landed on the button, having opened the administrator menu} */
     public static boolean buttonClicked(double mouseX, double mouseY, int button) {
-        if (button != 0 || !isOperator()) return false;
+        if (button != 0 || !Operators.isOperator()) return false;
 
         Minecraft minecraft = Minecraft.getInstance();
         if (!contains(mouseX, mouseY, minecraft.getWindow().getGuiScaledWidth(),
@@ -93,14 +93,7 @@ public final class AdminCorner {
     public static boolean iconVisible() {
         if (!BackUtilsClientConfig.isAdminAlertMarkerEnabled()) return false;
         if (!AdminAlerts.hasPending()) return false;
-        return isOperator();
-    }
-
-    private static boolean isOperator() {
-        Minecraft minecraft = Minecraft.getInstance();
-        // The level the client was told it has, which is the same gate the server applies.
-        return minecraft.player != null
-                && minecraft.player.hasPermissions(AdminNetwork.REQUIRED_LEVEL);
+        return Operators.isOperator();
     }
 
     /** {@return true when the pointer is inside the button's square} */

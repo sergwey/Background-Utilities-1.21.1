@@ -33,7 +33,6 @@ import net.xlebupaksa.backutils.item.EffectToolPlacement.EntityBox;
 import net.xlebupaksa.backutils.item.EffectToolPlacement.Face;
 import net.xlebupaksa.backutils.item.EffectToolPlacement.Point;
 import net.xlebupaksa.backutils.item.EffectToolPlacement.Segment;
-import org.joml.Vector3f;
 
 import java.util.LinkedHashSet;
 import java.util.Set;

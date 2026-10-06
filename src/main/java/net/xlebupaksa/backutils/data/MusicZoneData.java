@@ -105,11 +105,6 @@ public class MusicZoneData extends DataManager {
         update("DELETE FROM music_zone WHERE zone_id = ?", zoneId);
     }
 
-    /** {@return how many zones were removed} */
-    public int deleteAll() {
-        return update("DELETE FROM music_zone");
-    }
-
     /** {@return the zones that have run out of time, which the caller should clean up} */
     public List<MusicZone> expired(long nowMillis) {
         List<MusicZone> result = new ArrayList<>();
@@ -117,18 +112,5 @@ public class MusicZoneData extends DataManager {
             if (zone.expired(nowMillis)) result.add(zone);
         }
         return result;
-    }
-
-    /** {@return true when the table can be read, used to report a broken database} */
-    public boolean isAvailable() {
-        // execute rather than executeQuery: what is being proved is that the statement runs against
-        // the table, and a ResultSet nobody reads would be a resource held open for nothing.
-        try (Connection connection = openConnection();
-             Statement stmt = connection.createStatement()) {
-            stmt.execute("SELECT 1 FROM music_zone LIMIT 1");
-            return true;
-        } catch (SQLException e) {
-            return false;
-        }
     }
 }

@@ -36,17 +36,17 @@ displayName="${mod_name}" #mandatory
 #displayURL="https://change.me.to.your.mods.homepage.example.invalid/" #optional
 
 # A file name (in the root of the mod JAR) containing a logo for display
-logoFile="src/donkey.png" #optional
+logoFile="logo.png" #optional
 
 # A text field displayed in the mod UI
 #credits="" #optional
 
 # The authors of the mod, displayed in the mod UI (optional)
-authors="xlebupaksa"
+authors="${mod_authors}"
 
 # The description text for the mod (multi line!) (#mandatory)
 description='''
-Mod adding multiple utilities for background administration on roleplay-based servers.
+${mod_description}
 '''
 
 # The [[mixins]] block allows you to declare your mixin config to FML so that it gets loaded.
@@ -95,6 +95,16 @@ Mod adding multiple utilities for background administration on roleplay-based se
 modId = "ldlib2"
 type = "required"
 versionRange = "[2.2.41,)"
+ordering = "AFTER"
+side = "BOTH"
+
+# Required and on both sides: the markup a name, a lore line and a chat profile are written in is
+# parsed by this library, and that happens on the server as well - the item editor writes what it
+# parsed, and the log and the chat read it back.
+[[dependencies.backutils]]
+modId = "emberstextapi"
+type = "required"
+versionRange = "[3.0.3,)"
 ordering = "AFTER"
 side = "BOTH"
 

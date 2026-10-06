@@ -11,10 +11,10 @@ import java.util.List;
 /**
  * The configurable effect tool.
  *
- * <p>An operator gives one out with {@code /backutils effecttool give}; it arrives blank and is
- * configured through its own screen, opened by holding W over it in any inventory. Everything it is
- * set to lives in one data component on the stack, so two tools can be set up differently and a
- * world only has to carry the item to carry the settings.
+ * <p>It arrives blank, from the mod's own creative tab, and is configured through its own screen,
+ * opened by holding W over it in any inventory. Everything it is set to lives in one data component
+ * on the stack, so two tools can be set up differently and a world only has to carry the item to
+ * carry the settings.
  *
  * <p>Holding W over it in an inventory opens the screen that edits it; the preview of where the
  * effect would land is drawn by {@code EffectToolPreviewRenderer}, and using the tool places it,

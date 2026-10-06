@@ -35,6 +35,11 @@ import java.util.List;
  * and only the press that began the hold asks for anything, while every repeat is still taken, so
  * that a held button cannot fall through to the block underneath.
  *
+ * <p>Every taken click fires the tool's shot, whether or not the crosshair named anything, for the
+ * reason the click itself is taken either way: the shot is the sound of the tool being used rather
+ * than a report of what was removed. It is heard by this player alone, and is the game's own choice
+ * between two recordings — see {@link ToolShot}.
+ *
  * <p>What a click names, in the order the two targets are asked about:
  *
  * <ul>
@@ -117,6 +122,10 @@ public final class DeleteToolClick {
         event.setCanceled(true);
         // A held button repeats the use, and the repeats are taken without deleting.
         if (useWasDown) return;
+
+        // Fired whatever the crosshair is on, which is what this tool does with a click: it takes
+        // one whether or not there is anything to remove, and the shot is the sound of that.
+        ToolShot.deleteTool();
 
         if (Screen.hasAltDown()) {
             // Both readings of "all effects from self" are answered here. What the player *placed* is

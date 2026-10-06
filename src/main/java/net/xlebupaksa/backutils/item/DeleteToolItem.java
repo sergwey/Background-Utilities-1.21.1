@@ -24,10 +24,9 @@ import java.util.List;
  * does is worked out where it is used — the pink boxes by the client drawing them, the deletion by
  * the server — and the item exists to be recognised by both.
  *
- * <p>Registered like the effect tool, and given out the same two ways: from the game's own Tools and
- * Utilities tab, and by {@code /backutils deletetool give [player]}. It has a branch of its own
- * rather than living under {@code effecttool}, because it is not a variety of that tool: a
- * sub-branch called {@code effecttool delete} would say the opposite of what it does.
+ * <p>Registered like the effect tool, and found the same way: in the mod's own creative tab. It has a
+ * class of its own rather than being a mode of the effect tool, because it is not a variety of that
+ * tool — it has nothing to configure and acts on what is already there.
  */
 public class DeleteToolItem extends Item {
 

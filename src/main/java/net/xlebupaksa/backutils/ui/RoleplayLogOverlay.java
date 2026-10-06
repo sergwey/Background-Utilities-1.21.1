@@ -197,11 +197,6 @@ public final class RoleplayLogOverlay {
         entries.clear();
     }
 
-    /** {@return true while at least one entry is on screen} */
-    public boolean hasVisibleEntries() {
-        return !entries.isEmpty();
-    }
-
     /** {@return true while any entry is still being typed out} */
     public boolean isTyping() {
         return typing(false);

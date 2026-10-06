@@ -34,6 +34,12 @@ import net.xlebupaksa.backutils.network.EffectToolNetwork;
  * press that began the hold places anything, while every repeat is still taken, so that a held
  * button cannot fall through to the block underneath.
  *
+ * <p>The press also fires the tool's shot, before what is aimed at has been worked out: it answers
+ * the trigger rather than the target, so the entity modes, which place nothing when the crosshair
+ * holds nothing, are a shot that missed rather than a click that said nothing had happened. The
+ * sound is heard by this player alone, and is the game's own choice between two recordings — see
+ * {@link ToolShot}.
+ *
  * <p>The main hand only, which is the hand the preview reads. A tool held in the other hand is
  * neither drawn nor placed, and the two agreeing matters more than either one being generous.
  *
@@ -85,6 +91,9 @@ public final class EffectToolClick {
         event.setCanceled(true);
         // A held button repeats the use, and the repeats are taken without placing.
         if (useWasDown) return;
+
+        // Fired here rather than inside send: the shot answers the press, not what the press found.
+        ToolShot.effectTool();
 
         send(minecraft, player, config);
     }

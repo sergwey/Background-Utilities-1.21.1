@@ -106,13 +106,6 @@ public final class ProfileLoader {
         return data.chats().findByPlayer(playerName);
     }
 
-    /** {@return this player's own name profiles, in the order the menu lists them} */
-    public static List<NameProfile> nameProfilesOf(String playerName) {
-        BackUtilsData data = BackUtils.data();
-        if (data == null) return List.of();
-        return data.names().findByPlayer(playerName);
-    }
-
     /** {@return the id of the player's active chat profile, or 0 when they have none} */
     public static long activeChatId(String playerName) {
         BackUtilsData data = BackUtils.data();
@@ -125,16 +118,5 @@ public final class ProfileLoader {
         BackUtilsData data = BackUtils.data();
         if (data == null) return 0L;
         return data.active().find(playerName).map(ActiveProfile::nameProfileId).orElse(0L);
-    }
-
-    /** {@return the format a player's messages are wrapped in, or "" for the plain default} — read from storage, because
-     *  this is asked on the server while the message is being sent. */
-    public static ChatProfile activeChat(String playerName) {
-        BackUtilsData data = BackUtils.data();
-        if (data == null) return null;
-
-        long id = activeChatId(playerName);
-        if (id <= 0L) return null;
-        return data.chats().findById(id).filter(c -> playerName.equals(c.player())).orElse(null);
     }
 }

@@ -95,9 +95,16 @@ neoForge {
             systemProperty 'neoforge.enabledGameTestNamespaces', modId
         }
 
+        // The dedicated server, in a game directory of its own. A server and a client cannot share
+        // one, and this run is only worth having beside a client: the point of it is to join it and
+        // watch what the server half of every feature does on its own, which is the half a single
+        // player never exercises. run-server/ holds that server's settings — its own port, offline
+        // mode, and an ops entry for the dev player — and is ignored by git, so the world, the logs
+        // and the databases it writes stay out of the repository.
         server {
             server()
             programArgument '--nogui'
+            gameDirectory = file('run-server')
             systemProperty 'neoforge.enabledGameTestNamespaces', modId
         }
 
