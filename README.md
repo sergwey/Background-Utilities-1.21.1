@@ -41,18 +41,11 @@ removing visual effects.
 
 ## How this mod was made
 
-**The code is AI-generated.** It was written with an AI coding agent, directed and reviewed by a
-human, and the whole of it is in this repository.
+**The code is AI-generated**: it was written with an AI coding agent, directed and reviewed by a
+human.
 
-**No image is AI-generated.** Every texture, sprite, icon, model and drawing in the mod is the
-author's own work — the earlier placeholders are gone and their own drawings are in their place.
-Nothing under `src/main/resources` came out of an image model.
-
-The two sound recordings the tools fire are not the author's own either: they are the airboat gun
-shots from *Half-Life 2*, which is Valve's audio. Everything else — code and assets alike — is
-either AI-written code or the author's own drawing.
-
-All rights reserved. The mod is published as a compiled download; the source is here to be read.
+**No image is AI-generated**: every texture, sprite, icon, model and drawing in the mod is the
+author's own work.
 
 ## Requirements
 

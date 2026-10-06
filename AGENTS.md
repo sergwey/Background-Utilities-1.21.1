@@ -23,11 +23,10 @@ server, including the address to connect to.
 
 - **`./gradlew build` passing is not the same as the mod loading, and neither is javac passing.** The
   metadata template, `src/main/templates/META-INF/neoforge.mods.toml`, is expanded by the
-  `generateModMetadata` task from the `replaceProperties` map in `build.gradle`. A `${...}` in that
-  template with no key in the map fails the whole build, and the only symptom in the game is a mod
-  that is not there. This has happened: `authors="${mod_authors}"` was added to the template without
-  a `mod_authors` key, and nothing could be built. If a placeholder is added, add its key in the same
-  change — or write the value into the template, which is what the author field does.
+  `generateModMetadata` task from the `replaceProperties` map in `build.gradle`. Every `${...}` used
+  in that template has to be a key in that map, or the build fails and the only symptom in the game is
+  a mod that is not there; write the value into the template when it is a fixed one, as the author
+  field does.
 - **The mod must load on a dedicated server, not only in a client.** Half of it is server-side — the
   databases, the log, what a tool does for somebody else — and a client-only class reached from
   common code fails on a dedicated server while being perfectly invisible in a client.
@@ -53,10 +52,7 @@ server, including the address to connect to.
 
 - **The code is AI-generated**, written with an AI coding agent under human direction and review.
 - **No image is AI-generated.** Every texture, sprite, icon, model and drawing is the author's own
-  work. Do not add AI-generated images to `src/main/resources`, and do not generate images as
-  placeholders.
-- The two tool-shot sound recordings are not the author's own; the README's provenance section says
-  where they come from.
+  work. Do not add AI-generated images to `src/main/resources`.
 - The statement above is kept in three places, and they must agree: the README's "How this mod was
   made" section, `.github/release-notes.md`, and the `credits` field of the metadata template (the
   one place it is visible inside the game).

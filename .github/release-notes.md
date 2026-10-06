@@ -22,8 +22,7 @@ Everything the mod adds is documented in the [README](https://github.com/sergwey
 **The code is AI-generated** — written with an AI coding agent, directed and reviewed by a human.
 
 **No image in this mod is AI-generated.** Every texture, sprite, icon, model and drawing is the
-author's own work. The README's provenance section has the rest, including which sound files are not
-the author's own.
+author's own work.
 
 ## Reporting a problem
 
