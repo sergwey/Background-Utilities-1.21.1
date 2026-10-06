@@ -39,6 +39,21 @@ removing visual effects.
 - **Menu music.** Opening the corner menu plays a track named in the server's config for the player
   who opened it, and fades it out when the menu closes. Set `menuMusic` empty for silence.
 
+## How this mod was made
+
+**The code is AI-generated.** It was written with an AI coding agent, directed and reviewed by a
+human, and the whole of it is in this repository.
+
+**No image is AI-generated.** Every texture, sprite, icon, model and drawing in the mod is the
+author's own work — the earlier placeholders are gone and their own drawings are in their place.
+Nothing under `src/main/resources` came out of an image model.
+
+The two sound recordings the tools fire are not the author's own either: they are the airboat gun
+shots from *Half-Life 2*, which is Valve's audio. Everything else — code and assets alike — is
+either AI-written code or the author's own drawing.
+
+All rights reserved. The mod is published as a compiled download; the source is here to be read.
+
 ## Requirements
 
 Minecraft 1.21.1, NeoForge 21.1.250, Java 21, and:
@@ -85,6 +100,22 @@ The two effect tools are not commands: they are in the mod's own creative tab.
 ```
 
 The workflow in `.github/workflows/build.yml` does the same.
+
+## Releases
+
+Built jars are attached to the releases on this repository's Releases page. A release is made by
+pushing a tag that matches `mod_version` in `gradle.properties`:
+
+```
+# set mod_version=0.2.0, commit, then:
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+`.github/workflows/release.yml` then builds the mod exactly as the development workflow does, and
+publishes a release with the jar attached, using the repository's own token: no third-party action is
+involved and no outside account becomes a contributor. What a release says comes from
+`.github/release-notes.md`, so it is reviewable here rather than typed into a form at release time.
 
 ## Testing on a dedicated server
 

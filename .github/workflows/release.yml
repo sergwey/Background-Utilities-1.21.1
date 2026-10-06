@@ -1,0 +1,76 @@
+# Builds the mod and publishes a GitHub release whenever a version tag is pushed.
+#
+# Nothing here is done by hand and nothing is done by an outside account: the release is created with
+# the repository's own token by `gh`, which every runner already has, so no third-party action
+# publishes anything and no contributor is added to the repository by publishing a release.
+#
+#     git tag v0.1.0
+#     git push origin v0.1.0
+#
+# The notes players read are .github/release-notes.md, edited in the repository rather than typed
+# into the release form, so what a release says is reviewable in a pull request.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Setup JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # The tag is the name players download by, and the jar's own name comes from gradle.properties.
+      # A tag that disagrees with the version inside would publish a file whose name contradicts the
+      # release it is attached to, so it stops here instead.
+      - name: Check the tag against the mod version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(grep -m1 '^mod_version=' gradle.properties | cut -d= -f2 | tr -d '\r')"
+          echo "tag: ${GITHUB_REF_NAME}, mod_version: ${version}"
+          if [ "${tag}" != "${version}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match mod_version ${version} in gradle.properties"
+            exit 1
+          fi
+
+      # The same build the development workflow runs.
+      - name: Build
+        run: ./gradlew build
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          title="Background Utilities ${tag}"
+
+          jars=$(ls build/libs/*.jar 2>/dev/null | wc -l)
+          if [ "${jars}" -eq 0 ]; then
+            echo "::error::the build produced no jar in build/libs"
+            exit 1
+          fi
+
+          # Re-running a tag's workflow updates that release rather than failing on it.
+          if gh release view "${tag}" >/dev/null 2>&1; then
+            gh release edit "${tag}" --title "${title}" --notes-file .github/release-notes.md
+            gh release upload "${tag}" build/libs/*.jar --clobber
+          else
+            gh release create "${tag}" --title "${title}" --notes-file .github/release-notes.md build/libs/*.jar
+          fi

@@ -38,15 +38,17 @@ displayName="${mod_name}" #mandatory
 # A file name (in the root of the mod JAR) containing a logo for display
 logoFile="logo.png" #optional
 
-# A text field displayed in the mod UI
-#credits="" #optional
+# A text field displayed in the mod UI. The one place inside the game where how this mod was made is
+# stated, so it is said plainly: the code is AI-generated under human direction, and no image in it
+# is. The README and every release note repeat it.
+credits="Code written with an AI coding agent, directed and reviewed by a human. All artwork is hand-drawn; no AI-generated images." #optional
 
 # The authors of the mod, displayed in the mod UI (optional)
-authors="${mod_authors}"
+authors="xlebupaksa"
 
 # The description text for the mod (multi line!) (#mandatory)
 description='''
-${mod_description}
+Mod adding multiple utilities for background administration on roleplay-based servers.
 '''
 
 # The [[mixins]] block allows you to declare your mixin config to FML so that it gets loaded.
