@@ -31,6 +31,10 @@ import net.xlebupaksa.backutils.network.ProfileListCache;
  * {@code ScreenEvent.Render.Post} while the chat screen is open, because HUD layers render
  * <i>behind</i> an open screen and chat is the one screen the log has to stay readable over.
  * Every other screen hides it.
+ *
+ * <p>The operator alert icon is no part of the log, but it follows the same rule: drawn in the
+ * world here, and over the chat screen by {@link AdminCornerHandler}, so an inventory or any other
+ * screen hides it along with everything else.
  */
 @OnlyIn(Dist.CLIENT)
 @EventBusSubscriber(modid = BackUtils.MOD_ID, value = Dist.CLIENT)
@@ -47,13 +51,15 @@ public final class RoleplayLogHudLayer {
     }
 
     private static void renderHud(GuiGraphics graphics, DeltaTracker deltaTracker) {
-        // Any open screen wins; the chat screen is drawn on top by the overlay handler.
-        if (Minecraft.getInstance().screen != null) return;
         if (Minecraft.getInstance().player == null) return;
         if (Minecraft.getInstance().level == null) return;
 
-        // No screen is open, so there is no cursor to hover with.
-        RoleplayLogOverlay.instance().render(graphics, 0, 0, false);
+        // Any open screen wins over the log, and the chat screen is served by the overlay handler.
+        if (Minecraft.getInstance().screen == null) {
+            // No screen is open, so there is no cursor to hover with.
+            RoleplayLogOverlay.instance().render(graphics, 0, 0, false);
+            AdminCorner.renderIcon(graphics);
+        }
     }
 
     /** Draws the log over an open chat screen, where a cursor exists and the button is hoverable. */

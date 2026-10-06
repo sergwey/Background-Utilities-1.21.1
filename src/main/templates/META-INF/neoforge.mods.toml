@@ -97,6 +97,17 @@ type = "required"
 versionRange = "[2.2.41,)"
 ordering = "AFTER"
 side = "BOTH"
+
+# Optional, and ordered AFTER when it is present: the effect tool's Photon-backed feature is
+# switched off without it, so the mod loads either way. PHOTON is a client-side rendering mod, so
+# the dependency is declared for the client rather than BOTH - a dedicated server neither needs it
+# nor should be told to expect it.
+[[dependencies.backutils]]
+modId = "photon"
+type = "optional"
+versionRange = "[2.2.7,)"
+ordering = "AFTER"
+side = "CLIENT"
 # Features are specific properties of the game environment, that you may want to declare you require. This example declares
 # that your mod requires GL version 3.2 or higher. Other features will be added. They are side aware so declaring this won't
 # stop your mod loading on the server for example.

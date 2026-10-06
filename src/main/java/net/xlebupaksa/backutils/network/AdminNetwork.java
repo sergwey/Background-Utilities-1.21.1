@@ -89,7 +89,9 @@ public final class AdminNetwork {
                     entry.visibleTo(player.getUUID()),
                     entry.hiddenAll(),
                     witnesses,
-                    hiddenFrom));
+                    hiddenFrom,
+                    // The one field a player is never sent: what the entry keeps from them.
+                    entry.adminNote()));
         }
         PacketDistributor.sendToPlayer(player, new AdminLogPayload(rows));
     }

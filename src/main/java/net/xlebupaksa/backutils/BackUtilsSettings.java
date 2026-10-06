@@ -44,6 +44,8 @@ public final class BackUtilsSettings {
         CHAT("Chat"),
         ACTIONS("Actions"),
         LOG("Log"),
+        MENU("Menu"),
+        ROLLS("Rolls"),
         PROFILES("Profiles");
 
         private final String display;
@@ -95,6 +97,9 @@ public final class BackUtilsSettings {
             yesNo("roleplayActionsEnabled", "Record actions", Group.ACTIONS,
                     BackUtilsConfig.LOG_ACTIONS_ENABLED, BackUtilsConfig::isActionLoggingEnabled,
                     BackUtilsConfig::setActionLoggingEnabled),
+            yesNo("alertSelfActions", "Alert on own actions", Group.ACTIONS,
+                    BackUtilsConfig.ALERT_SELF, BackUtilsConfig::isSelfAlertEnabled,
+                    BackUtilsConfig::setSelfAlertEnabled),
             number("logRadius", "Witness radius", Group.ACTIONS,
                     BackUtilsConfig.LOG_RADIUS, BackUtilsConfig::getLogRadius,
                     BackUtilsConfig::setLogRadius),
@@ -118,6 +123,60 @@ public final class BackUtilsSettings {
             number("typingSpeed", "Typing speed", Group.LOG,
                     BackUtilsConfig.TYPING_SPEED, BackUtilsConfig::getTypingSpeed,
                     BackUtilsConfig::setTypingSpeed),
+            text("messagesLanguage", "Messages language", Group.LOG,
+                    BackUtilsConfig.MESSAGES_LANGUAGE, BackUtilsConfig::getMessagesLanguage,
+                    BackUtilsConfig::setMessagesLanguage, BackUtilsSettings::checkLanguage),
+
+            text("menuMusic", "Menu music", Group.MENU,
+                    BackUtilsConfig.MENU_MUSIC, BackUtilsConfig::getMenuMusic,
+                    BackUtilsConfig::setMenuMusic, BackUtilsSettings::checkSoundId),
+            number("menuMusicVolume", "Menu music volume", Group.MENU,
+                    BackUtilsConfig.MENU_MUSIC_VOLUME, BackUtilsConfig::getMenuMusicVolume,
+                    BackUtilsConfig::setMenuMusicVolume),
+
+            number("rollMax", "Default maximum", Group.ROLLS,
+                    BackUtilsConfig.ROLL_MAX, () -> (double) BackUtilsConfig.getRollMax(),
+                    value -> BackUtilsConfig.setRollMax((int) Math.round(value))),
+            number("rollRadius", "Witness radius", Group.ROLLS,
+                    BackUtilsConfig.ROLL_RADIUS, BackUtilsConfig::getRollRadius,
+                    BackUtilsConfig::setRollRadius),
+            text("rollFormat", "Roll line", Group.ROLLS,
+                    BackUtilsConfig.ROLL_FORMAT, BackUtilsConfig::getRollFormat,
+                    BackUtilsConfig::setRollFormat, MarkupUtil::balance),
+            text("rollFormatNoReason", "Roll line, no reason", Group.ROLLS,
+                    BackUtilsConfig.ROLL_FORMAT_NO_REASON, BackUtilsConfig::getRollFormatNoReason,
+                    BackUtilsConfig::setRollFormatNoReason, MarkupUtil::balance),
+            text("rollFormatAnonymous", "Roll line, nobody named", Group.ROLLS,
+                    BackUtilsConfig.ROLL_FORMAT_ANONYMOUS, BackUtilsConfig::getRollFormatAnonymous,
+                    BackUtilsConfig::setRollFormatAnonymous, MarkupUtil::balance),
+            text("rollFormatAnonymousNoReason", "Roll line, nobody named, no reason", Group.ROLLS,
+                    BackUtilsConfig.ROLL_FORMAT_ANONYMOUS_NO_REASON,
+                    BackUtilsConfig::getRollFormatAnonymousNoReason,
+                    BackUtilsConfig::setRollFormatAnonymousNoReason, MarkupUtil::balance),
+            text("hiddenRollText", "Hidden roll result", Group.ROLLS,
+                    BackUtilsConfig.ROLL_HIDDEN_TEXT, BackUtilsConfig::getHiddenRollText,
+                    BackUtilsConfig::setHiddenRollText, MarkupUtil::balance),
+            text("rollMinFormat", "Lowest roll line", Group.ROLLS,
+                    BackUtilsConfig.ROLL_FORMAT_MIN, BackUtilsConfig::getRollMinFormat,
+                    BackUtilsConfig::setRollMinFormat, MarkupUtil::balance),
+            text("rollMaxFormat", "Highest roll line", Group.ROLLS,
+                    BackUtilsConfig.ROLL_FORMAT_MAX, BackUtilsConfig::getRollMaxFormat,
+                    BackUtilsConfig::setRollMaxFormat, MarkupUtil::balance),
+            text("rollSound", "Roll sound", Group.ROLLS,
+                    BackUtilsConfig.ROLL_SOUND, BackUtilsConfig::getRollSound,
+                    BackUtilsConfig::setRollSound, BackUtilsSettings::checkSoundId),
+            text("rollMinSound", "Lowest roll sound", Group.ROLLS,
+                    BackUtilsConfig.ROLL_MIN_SOUND, BackUtilsConfig::getRollMinSound,
+                    BackUtilsConfig::setRollMinSound, BackUtilsSettings::checkSoundId),
+            text("rollMaxSound", "Highest roll sound", Group.ROLLS,
+                    BackUtilsConfig.ROLL_MAX_SOUND, BackUtilsConfig::getRollMaxSound,
+                    BackUtilsConfig::setRollMaxSound, BackUtilsSettings::checkSoundId),
+            number("rollSoundVolume", "Roll sound volume", Group.ROLLS,
+                    BackUtilsConfig.ROLL_SOUND_VOLUME, BackUtilsConfig::getRollSoundVolume,
+                    BackUtilsConfig::setRollSoundVolume),
+            number("rollSoundPitch", "Roll sound pitch", Group.ROLLS,
+                    BackUtilsConfig.ROLL_SOUND_PITCH, BackUtilsConfig::getRollSoundPitch,
+                    BackUtilsConfig::setRollSoundPitch),
 
             list("profileSounds", "Profile sounds", Group.PROFILES,
                     BackUtilsConfig.PROFILE_SOUNDS,
@@ -273,6 +332,52 @@ public final class BackUtilsSettings {
         Entry entry = BY_KEY.get(key);
         if (entry == null) throw new IllegalArgumentException("Unknown setting '" + key + "'.");
         entry.write().accept(value);
+    }
+
+    /**
+     * {@return the language the mod's own lines are written in}
+     *
+     * <p>A choice rather than free text: anything else would be read as English by the two places
+     * that consult it, and would look like a setting that does nothing.
+     */
+    private static String checkLanguage(String text) {
+        String value = text == null ? "" : text.trim().toLowerCase(Locale.ROOT);
+        if (value.isEmpty()) return BackUtilsConfig.MESSAGES_LANGUAGES.getFirst();
+        if (!BackUtilsConfig.MESSAGES_LANGUAGES.contains(value)) {
+            throw new IllegalArgumentException("'" + value + "' is not a language this mod writes"
+                    + " in. One of " + String.join(", ", BackUtilsConfig.MESSAGES_LANGUAGES) + ".");
+        }
+        return value;
+    }
+
+    /**
+     * {@return the sound id to store for a setting this mod plays itself}
+     *
+     * <p>Stricter than the typing sound, which Ember itself resolves: a roll sound or a menu track is
+     * played by this mod, so a bare preset name would parse as an id in the default namespace and
+     * then quietly play nothing. Empty is always allowed, and means no sound. The registry is only
+     * consulted when it is up, since a headless test has no game.
+     */
+    private static String checkSoundId(String text) {
+        String value = text == null ? "" : text.trim();
+        if (value.isEmpty()) return "";
+        ResourceLocation id = ResourceLocation.tryParse(value);
+        if (id == null) {
+            throw new IllegalArgumentException("'" + value
+                    + "' is not a sound id. Give one such as minecraft:block.note_block.hat,"
+                    + " or leave it empty for silence.");
+        }
+        try {
+            if (!BuiltInRegistries.SOUND_EVENT.containsKey(id)) {
+                throw new IllegalArgumentException("No sound called '" + value
+                        + "'. Give a full sound id, or leave it empty for silence.");
+            }
+        } catch (IllegalArgumentException refused) {
+            throw refused;
+        } catch (Throwable registryUnavailable) {
+            // Nothing to check against; the id's shape was already checked above.
+        }
+        return value;
     }
 
     /** {@return the sound to store for the typing effect}; a namespaced id is checked against the

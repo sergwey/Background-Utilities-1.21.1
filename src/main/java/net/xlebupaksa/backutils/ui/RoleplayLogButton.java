@@ -11,21 +11,24 @@ import net.xlebupaksa.backutils.client.BackUtilsClientConfig;
 /**
  * The square menu button.
  *
- * <p>Three sprite states, drawn from the GUI sprite atlas: {@code backutils:hud/not_talking} when
- * idle, {@code backutils:hud/talking} while text is being typed out (an animated strip, so it
- * needs the {@code .mcmeta} beside it) and {@code backutils:hud/hovered} under the cursor.
+ * <p>Four sprite states, drawn from the GUI sprite atlas: {@code backutils:hud/not_talking} when
+ * idle, {@code backutils:hud/talking} while a line is being typed out, {@code backutils:hud/rolling}
+ * while a roll of the dice is, and {@code backutils:hud/hovered} under the cursor. The two typing
+ * states are animated strips, so each needs the {@code .mcmeta} beside it.
  *
  * <p>Drawn with {@link GuiGraphics#blitSprite}, which resolves through the atlas. A plain
  * {@code blit} on a texture path goes through {@code SimpleTexture}, which reads only blur/clamp
  * metadata, so it <b>cannot</b> animate; only atlas sprites honour {@code .mcmeta}. PNGs dropped
  * into {@code assets/backutils/textures/gui/sprites/} become atlas sprites on their own.
  *
- * <p>Positioned above the log text and centred on it, so it reads as belonging to the column.
+ * <p>Positioned above the log text and against the right edge of it, so it reads as belonging to the
+ * column and sits in the corner the text ends at.
  */
 @OnlyIn(Dist.CLIENT)
 public final class RoleplayLogButton {
 
     private static final ResourceLocation TALKING = sprite("hud/talking");
+    private static final ResourceLocation ROLLING = sprite("hud/rolling");
     private static final ResourceLocation NOT_TALKING = sprite("hud/not_talking");
     private static final ResourceLocation HOVERED = sprite("hud/hovered");
 
@@ -39,11 +42,16 @@ public final class RoleplayLogButton {
      * Draws the button.
      *
      * @param hoverable whether a cursor is available to hover with: false in the HUD
+     * @param rolling   whether a roll is being typed, which is drawn in preference to an ordinary
+     *                  line: a roll is the rarer thing to watch for
      */
     public static void render(GuiGraphics graphics, int mouseX, int mouseY,
-                              boolean hoverable, boolean talking) {
+                              boolean hoverable, boolean talking, boolean rolling) {
         boolean hovered = hoverable && contains(mouseX, mouseY);
-        ResourceLocation sprite = hovered ? HOVERED : (talking ? TALKING : NOT_TALKING);
+        ResourceLocation sprite = hovered ? HOVERED
+                : rolling ? ROLLING
+                : talking ? TALKING
+                : NOT_TALKING;
         graphics.blitSprite(sprite, left(graphics.guiWidth()), top(), size(), size());
     }
 
@@ -58,11 +66,13 @@ public final class RoleplayLogButton {
     // Geometry
     // ------------------------------------------------------------------
 
-    /** {@return the button's left edge, centred on the log's virtual column} */
+    /** {@return the button's left edge, against the right edge of the log's virtual column} */
     public static int left(int screenWidth) {
         int column = RoleplayLogOverlay.columnWidth();
         int columnLeft = RoleplayLogOverlay.columnLeft(screenWidth);
-        return columnLeft + (column - size()) / 2;
+        // Flush with the column's right edge rather than centred on it: the button belongs in the
+        // corner the text ends at, which is also the corner the eye is already in.
+        return Math.max(columnLeft, columnLeft + column - size());
     }
 
     /** {@return the button's top edge, above the text, so the two cannot overlap} */

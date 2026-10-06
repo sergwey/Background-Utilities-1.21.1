@@ -20,10 +20,14 @@ import net.xlebupaksa.backutils.commands.ChatCommands;
 import net.xlebupaksa.backutils.commands.MeCommand;
 import net.xlebupaksa.backutils.commands.MusicCommands;
 import net.xlebupaksa.backutils.commands.ProfileCommands;
+import net.xlebupaksa.backutils.commands.RollCommands;
 import net.xlebupaksa.backutils.data.BackUtilsData;
 import net.xlebupaksa.backutils.data.ModAttachments;
 import net.xlebupaksa.backutils.log.LogCommands;
 import net.xlebupaksa.backutils.log.RoleplayLogTicker;
+import net.xlebupaksa.backutils.effect.EffectReplay;
+import net.xlebupaksa.backutils.effect.EffectTicker;
+import net.xlebupaksa.backutils.freeze.FreezeState;
 import net.xlebupaksa.backutils.music.MusicZoneTicker;
 import net.xlebupaksa.backutils.profile.PlayerProfileEvents;
 import net.xlebupaksa.backutils.profile.TabListNameHandler;
@@ -51,6 +55,7 @@ public class BackUtils {
         // refuses to register on the game bus that takes `this` below.
         modEventBus.addListener(BackUtilsRegistries::onRegister);
         modEventBus.addListener(BackUtilsRegistries::onCommonSetup);
+        modEventBus.addListener(BackUtilsRegistries::onBuildTabContents);
 
         NeoForge.EVENT_BUS.register(this);
         NeoForge.EVENT_BUS.register(new ChatHandler());
@@ -59,11 +64,18 @@ public class BackUtils {
         NeoForge.EVENT_BUS.register(new ChatCommands());
         NeoForge.EVENT_BUS.register(new MusicCommands());
         NeoForge.EVENT_BUS.register(new ProfileCommands());
+        NeoForge.EVENT_BUS.register(new RollCommands());
         NeoForge.EVENT_BUS.register(new LogCommands());
         NeoForge.EVENT_BUS.register(new PlayerProfileEvents());
         NeoForge.EVENT_BUS.register(new TabListNameHandler());
         NeoForge.EVENT_BUS.register(new RoleplayLogTicker());
         NeoForge.EVENT_BUS.register(new MusicZoneTicker());
+        // The effects that have run out of the time their tool gave them.
+        NeoForge.EVENT_BUS.register(new EffectTicker());
+        // The effects a player was not there to be told about.
+        NeoForge.EVENT_BUS.register(new EffectReplay());
+        // Holding a player still, and refusing what they would otherwise do while held.
+        NeoForge.EVENT_BUS.register(new FreezeState());
 
         modContainer.registerConfig(ModConfig.Type.SERVER, BackUtilsConfig.SPEC);
 

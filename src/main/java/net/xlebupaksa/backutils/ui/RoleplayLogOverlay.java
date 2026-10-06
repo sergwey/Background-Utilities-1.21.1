@@ -3,11 +3,9 @@ package net.xlebupaksa.backutils.ui;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.network.chat.Component;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 import net.xlebupaksa.backutils.client.BackUtilsClientConfig;
-import net.xlebupaksa.backutils.client.AdminAlerts;
 import net.xlebupaksa.backutils.data.MarkupUtil;
 import net.xlebupaksa.backutils.data.MarkupWrap;
 
@@ -31,6 +29,11 @@ import java.util.regex.Pattern;
  * <p>Ember's typewriter has no start delay and every row of a wrapped message is a separate
  * literal, so rows are revealed one at a time: a row is drawn once the rows before it have
  * finished typing, which is when Ember first sees it and starts its animation.
+ *
+ * <p>Each row's component is built once and kept for the life of the entry, rather than rebuilt at
+ * every draw: Ember parses a literal's markup as that literal is drawn, and keys the state behind
+ * its effects on what the parse produced, so rebuilding would re-parse the same text every frame and
+ * move that state each time. See {@link DrawnRows}.
  */
 @OnlyIn(Dist.CLIENT)
 public final class RoleplayLogOverlay {
@@ -68,16 +71,20 @@ public final class RoleplayLogOverlay {
     /** One entry, wrapped into rows of markup text. */
     private static final class Entry {
         final long id;
-        final List<String> rows;
+        /** The rows, and the components they are drawn with; see {@link DrawnRows}. */
+        final DrawnRows drawn;
+        /** Whether this line is a roll of the dice, which the corner button draws differently. */
+        final boolean roll;
         /** When each row begins typing, in seconds from the entry's arrival. */
         final double[] rowStarts;
         final double typingSeconds;
         /** {@link System#nanoTime()} of the first frame it was drawn; -1 until then. */
         long arrivedAt = -1L;
 
-        Entry(long id, List<String> rows, double[] rowStarts, double typingSeconds) {
+        Entry(long id, DrawnRows drawn, boolean roll, double[] rowStarts, double typingSeconds) {
             this.id = id;
-            this.rows = rows;
+            this.drawn = drawn;
+            this.roll = roll;
             this.rowStarts = rowStarts;
             this.typingSeconds = typingSeconds;
         }
@@ -143,7 +150,7 @@ public final class RoleplayLogOverlay {
     // ------------------------------------------------------------------
 
     /** Adds an entry from the server, dropping the oldest beyond the configured limit. */
-    public void accept(long id, String text) {
+    public void accept(long id, String text, boolean roll) {
         if (!BackUtilsClientConfig.isLogEnabled()) return;
         if (text == null || text.isBlank()) return;
 
@@ -161,7 +168,7 @@ public final class RoleplayLogOverlay {
             elapsed += MarkupUtil.strip(rows.get(i)).length() / speed;
         }
 
-        entries.add(0, new Entry(id, rows, starts, elapsed));
+        entries.add(0, new Entry(id, new DrawnRows(rows), roll, starts, elapsed));
         trimToLimit();
     }
 
@@ -197,8 +204,23 @@ public final class RoleplayLogOverlay {
 
     /** {@return true while any entry is still being typed out} */
     public boolean isTyping() {
+        return typing(false);
+    }
+
+    /**
+     * {@return true while a roll of the dice is still being typed out}
+     *
+     * <p>Told apart from {@link #isTyping} because the corner button has an animation of its own for
+     * a roll, and a roll landing in a busy log should show that rather than the ordinary one.
+     */
+    public boolean isRolling() {
+        return typing(true);
+    }
+
+    private boolean typing(boolean rollsOnly) {
         long now = System.nanoTime();
         for (Entry entry : entries) {
+            if (rollsOnly && !entry.roll) continue;
             if (entry.arrivedAt < 0L) continue;
             if (age(entry, now) < entry.typingSeconds) return true;
         }
@@ -239,11 +261,11 @@ public final class RoleplayLogOverlay {
                 double age = age(entry, now);
                 int argb = whiteWithAlpha(opacity);
 
-                for (int i = 0; i < entry.rows.size(); i++) {
+                for (int i = 0; i < entry.drawn.size(); i++) {
                     // Rows are revealed one at a time; y advances regardless, so later rows do
                     // not jump as the typing progresses.
                     if (age >= entry.rowStarts[i]) {
-                        graphics.drawString(font, Component.literal(entry.rows.get(i)),
+                        graphics.drawString(font, entry.drawn.component(i),
                                 Math.round(x), Math.round(y), argb, true);
                     }
                     y += lineStep;
@@ -252,50 +274,7 @@ public final class RoleplayLogOverlay {
             pose.popPose();
         }
 
-        RoleplayLogButton.render(graphics, mouseX, mouseY, hoverable, isTyping());
-
-        drawAlertMarker(graphics);
-    }
-
-    /**
-     * Draws the blinking alert beside the log, for an operator who has not read it yet: to the left
-     * of the column so neither covers the other, never fading, and drawn as a disc rather than a
-     * texture so it needs no artwork.
-     */
-    private static void drawAlertMarker(GuiGraphics graphics) {
-        if (!BackUtilsClientConfig.isAdminAlertMarkerEnabled()) return;
-        if (!AdminAlerts.hasPending()) return;
-
-        Minecraft minecraft = Minecraft.getInstance();
-        // Only operators are ever sent an alert; the check keeps the marker off a client that has
-        // one pending without being allowed to act on it.
-        if (minecraft.player == null || !minecraft.player.hasPermissions(2)) return;
-
-        // Roughly a two-hertz blink: fast enough to catch the eye, slow enough not to strobe.
-        if ((System.nanoTime() / 250_000_000L) % 2L != 0L) return;
-
-        Font font = minecraft.font;
-        int diameter = 11;
-        int cx = columnLeft(graphics.guiWidth()) - diameter - 4;
-        int cy = textTop() + 4;
-
-        if (cx < 0) return;
-
-        int rim = 0xFF6E6E6E;
-        int fill = 0xFFE8C547;
-        int glyph = 0xFF201A00;
-
-        int radius = diameter / 2;
-        for (int dy = -radius; dy <= radius; dy++) {
-            int halfWidth = (int) Math.sqrt(radius * radius - dy * dy);
-            graphics.fill(cx - halfWidth, cy + dy, cx + halfWidth + 1, cy + dy + 1, rim);
-        }
-        for (int dy = -radius + 1; dy <= radius - 1; dy++) {
-            int halfWidth = (int) Math.sqrt((radius - 1) * (radius - 1) - dy * dy);
-            graphics.fill(cx - halfWidth, cy + dy, cx + halfWidth + 1, cy + dy + 1, fill);
-        }
-
-        graphics.drawString(font, "!", cx - font.width("!") / 2, cy - 4, glyph, false);
+        RoleplayLogButton.render(graphics, mouseX, mouseY, hoverable, isTyping(), isRolling());
     }
 
     private static double age(Entry entry, long now) {

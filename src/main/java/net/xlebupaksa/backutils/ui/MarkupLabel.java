@@ -5,6 +5,7 @@ import com.lowdragmc.lowdraglib2.gui.ui.rendering.GUIContext;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 
@@ -24,16 +25,22 @@ import java.util.List;
 @OnlyIn(Dist.CLIENT)
 public final class MarkupLabel extends UIElement {
 
-    private List<String> rows;
+    /**
+     * The rows, and the components they are drawn with: the same component is drawn on every frame,
+     * which is what lets the state behind an effect outlive one. See {@link DrawnRows}.
+     */
+    private DrawnRows drawn;
     private final int lineStep;
     private final int colour;
     private Component prefix;
     private int prefixColour;
+    private ResourceLocation prefixSprite;
+    private int prefixSpriteSize;
 
     public MarkupLabel(List<String> rows, int lineStep, int colour) {
-        this.rows = List.copyOf(rows);
         this.lineStep = lineStep;
         this.colour = colour;
+        setRows(rows);
     }
 
     /**
@@ -42,7 +49,7 @@ public final class MarkupLabel extends UIElement {
      * it holds the focus.
      */
     public MarkupLabel setRows(List<String> newRows) {
-        this.rows = List.copyOf(newRows);
+        this.drawn = new DrawnRows(newRows);
         return this;
     }
 
@@ -56,9 +63,19 @@ public final class MarkupLabel extends UIElement {
         return this;
     }
 
+    /**
+     * Draws a sprite after the text prefix, for a marker that has to be artwork: a marker drawn from
+     * a glyph only appears if the font carries that glyph, and Minecraft's own fonts carry no emoji.
+     */
+    public MarkupLabel withPrefixSprite(ResourceLocation sprite, int size) {
+        this.prefixSprite = sprite;
+        this.prefixSpriteSize = size;
+        return this;
+    }
+
     /** {@return the height needed to show every row} */
     public int contentHeight() {
-        return Math.max(lineStep, rows.size() * lineStep);
+        return Math.max(lineStep, drawn.size() * lineStep);
     }
 
     @Override
@@ -73,8 +90,16 @@ public final class MarkupLabel extends UIElement {
             x += font.width(prefix);
         }
 
-        for (String row : rows) {
-            guiContext.graphics.drawString(font, Component.literal(row),
+        if (prefixSprite != null) {
+            // Centred on the line of text rather than on the row step, so it sits with the words.
+            guiContext.graphics.blitSprite(prefixSprite, Math.round(x),
+                    Math.round(y) + (font.lineHeight - prefixSpriteSize) / 2,
+                    prefixSpriteSize, prefixSpriteSize);
+            x += prefixSpriteSize;
+        }
+
+        for (int i = 0; i < drawn.size(); i++) {
+            guiContext.graphics.drawString(font, drawn.component(i),
                     Math.round(x), Math.round(y), colour, true);
             y += lineStep;
         }

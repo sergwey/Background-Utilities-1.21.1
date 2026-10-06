@@ -31,6 +31,14 @@ repositories {
     maven { url 'https://maven.tysontheember.dev' }
     // ldlib2
     maven { url = "https://maven.firstdark.dev/snapshots" }
+    // Sinytra Connector, the Forgified Fabric API and Symbol Chat: the bridge that lets a Fabric mod
+    // load on NeoForge, and the two mods it is there for. Modrinth's maven serves the same files their
+    // download pages do, and this build has fetched all three from it. The group filter keeps this
+    // repository from being consulted for anything else.
+    maven {
+        url = 'https://api.modrinth.com/maven'
+        content { includeGroup 'maven.modrinth' }
+    }
 }
 
 base {
@@ -44,6 +52,27 @@ java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 // deprecates (the closures may be evaluated after the project is configured), and a local
 // captures the value while it is still configuration time.
 def modId = mod_id
+
+// Read once for the same reason: the Symbol Chat compatibility run gets a game directory of its own,
+// so that the mods Connector brings are never mixed into the ordinary run.
+def compatRunDir = file('run-symbolchat')
+
+// Connector will not start in a dev run until it is told where the *clean* Minecraft jar is. In
+// production it works that path out for itself, from the launcher's libraries; on a dev classpath
+// there is nothing for it to work out, and it gives up with "Could not determine clean minecraft
+// artifact path", which is exactly what the first attempt at this run did. NeoForm keeps the artifact
+// it wants — the game mapped, before NeoForge patched it — in its cache, so it is found here and
+// handed over through the property Connector reads.
+//
+// Overridable, because a Gradle cache belongs to Gradle and may be cleaned or moved:
+//     -PconnectorCleanJar=<path to a mapped, unpatched Minecraft jar>
+def connectorCleanJar = {
+    def overridden = findProperty('connectorCleanJar')
+    if (overridden != null) return file(overridden)
+    def cache = new File(gradle.gradleUserHomeDir, 'caches/neoformruntime/intermediate_results')
+    def found = cache.listFiles({ File f -> f.isFile() && f.name.startsWith('rename_') && f.name.endsWith('_output.jar') } as FileFilter)
+    return found == null || found.length == 0 ? null : found.sort { it.lastModified() }.last()
+}()
 
 neoForge {
     // Specify the version of NeoForge to use.
@@ -89,6 +118,20 @@ neoForge {
             programArguments.addAll '--mod', modId, '--all', '--output', file('src/generated/resources/').getAbsolutePath(), '--existing', file('src/main/resources/').getAbsolutePath()
         }
 
+        // Symbol Chat is a Fabric mod, so it can only be loaded here through Sinytra Connector and the
+        // Forgified Fabric API, which rewrite parts of the game as they load. Those three therefore go
+        // into a game directory of their own rather than into run/, so that the ordinary client keeps
+        // running without them; this run exists to exercise the item editor's symbol button. Its jars
+        // are put in place by installCompatMods, which this run depends on.
+        symbolChat {
+            client()
+            gameDirectory = compatRunDir
+            // See connectorCleanJar above: without this Connector aborts the whole load in a dev run.
+            if (connectorCleanJar != null) {
+                systemProperty 'connector.clean.path', connectorCleanJar.absolutePath
+            }
+        }
+
         // applies to all the run configs above
         configureEach {
             // Recommended logging data for a userdev environment
@@ -121,6 +164,16 @@ neoForge {
 // "optional", meaning it will not be pulled by dependents of this mod.
 configurations {
     runtimeClasspath.extendsFrom localRuntime
+
+    // The Symbol Chat compatibility stack: Connector and its Forgified Fabric API are what let Symbol
+    // Chat, a Fabric mod, load on a NeoForge client. It is a configuration of its own rather than a
+    // dependency of this mod, because none of the three is compiled against, bundled, or required —
+    // they are installed into one dedicated run, and the integration is reached reflectively whether
+    // they are installed or not.
+    compatMods {
+        canBeConsumed = false
+        canBeResolved = true
+    }
 }
 
 dependencies {
@@ -136,6 +189,36 @@ dependencies {
     }
 
     additionalRuntimeClasspath 'org.xerial:sqlite-jdbc:3.53.2.0'
+
+    // Photon is compiled against, never bundled, and optional at runtime: the effect tool's
+    // Photon-backed feature simply switches off when the mod is absent, so nothing here may be
+    // jarJar'd or declared implementation.
+    //
+    // Transitives off, deliberately. The POM pins ldlib2 2.2.40, and this build already runs
+    // 2.2.41 under implementation; letting Photon's transitive pull in would put two versions on
+    // the compile classpath and let javac pick a method from either. Photon also brings
+    // kilagraph, which is Photon's own runtime concern, not ours to compile against.
+    //
+    // Photon's own classes must only ever be reached from client code: see the client-only gate
+    // the effect tool's preview and placement already go through. A dedicated server never loads
+    // them.
+    compileOnly("com.lowdragmc.photon:photon-neoforge-${minecraft_version}:${photon_version}") {
+        transitive = false
+    }
+
+    // The dev runs need the mod itself, not just its classes: a compileOnly entry is on the
+    // compile classpath alone, so without this the feature would be untestably off in runClient.
+    // runtimeOnly rather than additionalRuntimeClasspath, which ModDevGradle reserves for libraries
+    // that declare no FMLModType and rejects game mods from.
+    runtimeOnly "com.lowdragmc.photon:photon-neoforge-${minecraft_version}:${photon_version}"
+
+    // The newest builds published for 1.21.1, each named in gradle.properties so a version that the
+    // symbolChat run rejects can be corrected without touching this file. Symbol Chat itself is pinned
+    // to the 1.21.1 build (1.2.8), which is the one whose panel this mod's integration was written
+    // against; Connector, at 2.0.0-beta.17, is the last Connector built for 1.21.1.
+    compatMods "maven.modrinth:connector:${connector_version}"
+    compatMods "maven.modrinth:forgified-fabric-api:${forgified_fabric_api_version}"
+    compatMods "maven.modrinth:symbol-chat:${symbolchat_version}"
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.
@@ -174,6 +257,29 @@ publishing {
             url "file://${project.projectDir}/repo"
         }
     }
+}
+
+// The Symbol Chat compatibility stack, installed where a Fabric mod can be loaded on NeoForge.
+//
+// Copy rather than Sync, deliberately: a jar dropped into that folder by hand must never be deleted by
+// a build, so emptying the folder is left to cleanCompatMods. The symbolChat run cannot see the jars
+// unless they are already on disk, which is why downloading them is part of that run.
+var installCompatMods = tasks.register('installCompatMods', Copy) {
+    group = 'backutils'
+    description = 'Downloads Sinytra Connector, the Forgified Fabric API and Symbol Chat into the symbolChat run.'
+    from configurations.compatMods
+    into new File(compatRunDir, 'mods')
+}
+
+tasks.register('cleanCompatMods', Delete) {
+    group = 'backutils'
+    description = 'Removes the downloaded Symbol Chat compatibility stack.'
+    delete new File(compatRunDir, 'mods')
+}
+
+// configureEach rather than named, so that nothing here depends on when the run's task is registered.
+tasks.configureEach {
+    if (name == 'runSymbolChat') dependsOn installCompatMods
 }
 
 tasks.withType(JavaCompile).configureEach {

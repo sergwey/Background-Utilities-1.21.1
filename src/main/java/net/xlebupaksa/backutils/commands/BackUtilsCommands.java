@@ -6,6 +6,7 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.context.CommandContext;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.commands.arguments.ResourceLocationArgument;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
@@ -14,6 +15,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.xlebupaksa.backutils.BackUtilsConfig;
+import net.xlebupaksa.backutils.freeze.FreezeState;
 import net.xlebupaksa.backutils.network.AdminAlerts;
 import net.xlebupaksa.backutils.network.AdminNetwork;
 import net.xlebupaksa.backutils.profile.ProfileLoader;
@@ -44,6 +46,18 @@ public class BackUtilsCommands {
 
                 // /backutils menu - opens the administrator menu on the sender's client.
                 .then(Commands.literal("menu").executes(this::openMenu))
+
+                // /backutils freeze [player] and /backutils unfreeze [player] - holding a player
+                // still, and letting them go. No player named is the sender, which is how an operator
+                // checks what being held is like before doing it to somebody else.
+                .then(Commands.literal("freeze")
+                        .executes(this::freezeSelf)
+                        .then(Commands.argument("player", EntityArgument.player())
+                                .executes(this::freezeTarget)))
+                .then(Commands.literal("unfreeze")
+                        .executes(this::unfreezeSelf)
+                        .then(Commands.argument("player", EntityArgument.player())
+                                .executes(this::unfreezeTarget)))
 
                 .then(Commands.literal("radius")
                         .executes(this::radiusGet)
@@ -93,8 +107,7 @@ public class BackUtilsCommands {
 
     /** Opens the administrator menu, checking permission again because the menu exposes the whole
      * action log; the tree itself is already gated at level 2. */
-    private int openMenu(CommandContext<CommandSourceStack> ctx) {
-        try {
+    private int openMenu(CommandContext<CommandSourceStack> ctx) {        try {
             ServerPlayer player = ctx.getSource().getPlayerOrException();
             if (!player.hasPermissions(AdminNetwork.REQUIRED_LEVEL)) {
                 ctx.getSource().sendFailure(Component.literal(
@@ -112,6 +125,71 @@ public class BackUtilsCommands {
             ctx.getSource().sendFailure(Component.literal("Error: " + e.getMessage()));
             return 0;
         }
+    }
+
+    /**
+     * Holds a player still, or lets them go.
+     *
+     * <p>One handler each rather than four: a command with nobody named is the sender, and the only
+     * difference between that and a named player is which player is looked up. What is said afterwards
+     * is said to the sender and names the player, because an operator holding somebody in a room where
+     * they are not standing needs to know which of two names took effect.
+     */
+    private int freezeSelf(CommandContext<CommandSourceStack> ctx) {
+        try {
+            return hold(ctx.getSource(), ctx.getSource().getPlayerOrException(), true);
+        } catch (Exception e) {
+            return failed(ctx, e);
+        }
+    }
+
+    private int freezeTarget(CommandContext<CommandSourceStack> ctx) {
+        try {
+            return hold(ctx.getSource(), EntityArgument.getPlayer(ctx, "player"), true);
+        } catch (Exception e) {
+            return failed(ctx, e);
+        }
+    }
+
+    private int unfreezeSelf(CommandContext<CommandSourceStack> ctx) {
+        try {
+            return hold(ctx.getSource(), ctx.getSource().getPlayerOrException(), false);
+        } catch (Exception e) {
+            return failed(ctx, e);
+        }
+    }
+
+    private int unfreezeTarget(CommandContext<CommandSourceStack> ctx) {
+        try {
+            return hold(ctx.getSource(), EntityArgument.getPlayer(ctx, "player"), false);
+        } catch (Exception e) {
+            return failed(ctx, e);
+        }
+    }
+
+    private static int hold(CommandSourceStack source, ServerPlayer player, boolean freeze) {
+        String name = player.getName().getString();
+        // Asked before the change, so the answer describes what happened rather than what was already
+        // true: holding somebody who is already held is not an event, and the operator is told so.
+        boolean was = FreezeState.frozen(player.getUUID());
+
+        if (freeze == was) {
+            source.sendSuccess(() -> Component.literal(name
+                    + (freeze ? " is already held." : " is not being held.")), true);
+            return 0;
+        }
+
+        if (freeze) FreezeState.freeze(player);
+        else FreezeState.unfreeze(player);
+
+        source.sendSuccess(() -> Component.literal(
+                (freeze ? "Held " : "Released ") + name + "."), true);
+        return 1;
+    }
+
+    private static int failed(CommandContext<CommandSourceStack> ctx, Exception e) {
+        ctx.getSource().sendFailure(Component.literal("Error: " + e.getMessage()));
+        return 0;
     }
 
     private int summary(CommandContext<CommandSourceStack> ctx) {

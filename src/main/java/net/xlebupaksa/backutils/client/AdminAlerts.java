@@ -1,11 +1,5 @@
 package net.xlebupaksa.backutils.client;
 
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.resources.sounds.SimpleSoundInstance;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.sounds.SoundEvent;
-import net.minecraft.sounds.SoundSource;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -48,6 +42,14 @@ public final class AdminAlerts {
         return pending == null ? null : pending.actor();
     }
 
+    /**
+     * Plays the configured sound once, so an operator can hear what they have chosen in the settings
+     * tab. An arriving alert is the only other time this client makes the sound.
+     */
+    public static void preview() {
+        playSound();
+    }
+
     public static long pendingId() {
         return pending == null ? 0L : pending.id();
     }
@@ -58,24 +60,9 @@ public final class AdminAlerts {
     }
 
     private static void playSound() {
-        Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.player == null || minecraft.level == null) return;
-
-        ResourceLocation location = ResourceLocation.tryParse(BackUtilsClientConfig.getAdminAlertSound());
-        if (location == null) return;
-
-        SoundEvent event = BuiltInRegistries.SOUND_EVENT.get(location);
-        if (event == null) {
-            // Warned rather than silent: an alert nobody hears is worse than no alert.
-            BackUtils.LOGGER.warn("Alert sound '{}' does not exist; no alert will be audible.",
-                    location);
-            return;
-        }
-
-        minecraft.getSoundManager().play(SimpleSoundInstance.forUI(
-                event,
-                (float) BackUtilsClientConfig.getAdminAlertPitch(),
-                (float) BackUtilsClientConfig.getAdminAlertVolume()));
+        ClientSounds.play(BackUtilsClientConfig.getAdminAlertSound(),
+                (float) BackUtilsClientConfig.getAdminAlertVolume(),
+                (float) BackUtilsClientConfig.getAdminAlertPitch());
     }
 
     @SubscribeEvent

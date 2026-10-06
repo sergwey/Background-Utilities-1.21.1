@@ -9,6 +9,7 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 import net.xlebupaksa.backutils.BackUtils;
 import net.xlebupaksa.backutils.data.ActionLogEntry;
+import net.xlebupaksa.backutils.data.MarkupUtil;
 import net.xlebupaksa.backutils.profile.ProfileLoader;
 import net.xlebupaksa.backutils.ui.RoleplayLogOverlay;
 
@@ -54,7 +55,13 @@ public final class RoleplayLogNetwork {
     /** Runs on the client only. The registrar already marshals this to the main thread. */
     private static void onLine(RoleplayLogPayload payload, IPayloadContext context) {
         if (!(context.player() instanceof net.minecraft.client.player.LocalPlayer)) return;
-        RoleplayLogOverlay.instance().accept(payload.id(), payload.text());
+        RoleplayLogOverlay.instance().accept(payload.id(), payload.text(), payload.roll());
+        // The sound belongs to the line rather than to the text, so opening the menu does not
+        // replay the rolls it holds.
+        if (payload.hasSound()) {
+            net.xlebupaksa.backutils.client.ClientSounds.play(
+                    payload.sound(), payload.volume(), payload.pitch());
+        }
     }
 
     private static void onHistory(LogHistoryPayload payload, IPayloadContext context) {
@@ -75,6 +82,9 @@ public final class RoleplayLogNetwork {
 
         UUID viewer = player.getUUID();
         List<ActionLogEntry> visible = data.logs().visibleTo(viewer, 0L);
+        // An operator's history reads like an operator's log: the line everyone saw, with the
+        // administrator's note beside it.
+        boolean notes = player.hasPermissions(AdminNetwork.REQUIRED_LEVEL);
 
         // Resolved once per actor, not per entry: a busy log holds many lines from the same few people.
         Map<String, String> names = new HashMap<>();
@@ -82,8 +92,9 @@ public final class RoleplayLogNetwork {
         List<LogHistoryPayload.Row> rows = new ArrayList<>(visible.size());
         for (ActionLogEntry entry : visible) {
             String name = names.computeIfAbsent(entry.actorName(), ProfileLoader::logName);
-            rows.add(new LogHistoryPayload.Row(
-                    entry.id(), entry.createdAt(), entry.textFor(viewer, name)));
+            String line = entry.textFor(viewer, name);
+            if (notes) line = MarkupUtil.withNote(line, entry.adminNote());
+            rows.add(new LogHistoryPayload.Row(entry.id(), entry.createdAt(), line));
         }
 
         PacketDistributor.sendToPlayer(player, new LogHistoryPayload(rows));

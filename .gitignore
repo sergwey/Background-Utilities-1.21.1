@@ -35,6 +35,9 @@ bin/
 ### Minecraft Modding ###
 run/
 !**/src/**/run/
+# The Symbol Chat compatibility run: a game directory of its own, so the mods Connector needs are
+# never mixed into the ordinary run.
+run-symbolchat/
 **/src/generated/**/.cache/
 repo/
 !**/src/**/repo/

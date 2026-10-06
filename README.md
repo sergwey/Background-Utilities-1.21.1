@@ -8,6 +8,14 @@ display-name profiles written in markup.
 - **Action log.** `/me` and `*asterisk*` lines — `^caret^` for silent ones — are recorded with every
   player who was within the witness radius, and shown to them in an on-screen log. Staff review,
   hide or delete entries from the administrator menu, and each action raises an alert for operators.
+- **Dice.** `/roll` and `/hroll` leave a line in the action log, and nothing in chat, for the players
+  around whoever is being rolled for: an optional selector, an optional maximum and a free-text
+  reason, all with configurable defaults. A roll that names nobody is worded as a line of its own,
+  so it never reads as a sentence about a player who is not there. The line types itself out with a
+  sound of its own, and the lowest and highest results get their own wording and their own sound. A
+  hidden roll shows everyone an obfuscated result and keeps the real one for operators, in their own
+  log and in the administrator menu; it is never dressed and never sounds an extreme, since either
+  would say which number came up.
 - **Chat channels.** A plain message goes to local chat, which reaches the players around you; a
   leading `!` sends it to global chat. Each channel has its own separator and can be open to
   everyone or restricted to staff, and a player can be silenced per channel or for actions.
@@ -17,6 +25,8 @@ display-name profiles written in markup.
   operator's is held to its shape only.
 - **Zone music.** `/playradius` and `/playbox` play a sound to the players inside a region, and
   `/stopzone` ends one.
+- **Menu music.** Opening the corner menu plays a track named in the server's config for the player
+  who opened it, and fades it out when the menu closes. Set `menuMusic` empty for silence.
 
 ## Requirements
 
@@ -41,6 +51,7 @@ Everything is permission level 2:
 - `/backutils menu`, `radius`, `actions`, `typing`, `profiles sound add|remove|list`
 - `/chat radius`, `global`, `local`, `separator local|global`, `silence`
 - `/profile chat|name create|edit|delete|use`, `reload`
+- `/roll`, `/hroll` — `[players] [maximum] [reason]`, each part optional; `/hroll` hides the result
 - `/playradius`, `/playbox`, `/stopzone`, `/log`
 
 ## Building

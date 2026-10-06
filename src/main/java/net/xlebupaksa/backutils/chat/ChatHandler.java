@@ -112,11 +112,12 @@ public class ChatHandler {
 
         SilenceState silence = silenceOf(actor);
         if (silence != null && silence.silenced(SilenceKind.ACTIONS)) {
-            actor.sendSystemMessage(notice("Your actions are silenced."), false);
+            actor.sendSystemMessage(notice(Component.translatable("backutils.chat.actions_silenced")), false);
             return;
         }
 
         RoleplayLog.recordAction(actor, ActionText.template(body), silent);
+        RoleplayLog.logAction(actor, body, silent);
     }
 
     // ------------------------------------------------------------------
@@ -129,12 +130,16 @@ public class ChatHandler {
 
         SilenceKind kind = global ? SilenceKind.GLOBAL_CHAT : SilenceKind.LOCAL_CHAT;
         String channel = global ? "global" : "local";
+        // The word for the channel is localised too, so a refusal reads in the player's own language
+        // rather than naming the channel in English inside a translated sentence.
+        Component channelName = Component.translatable(
+                global ? "backutils.channel.global" : "backutils.channel.local");
 
         String message = normalise(text);
         if (message.isEmpty()) {
             // The prefix was the whole message: there is nothing to send.
             event.setCanceled(true);
-            player.sendSystemMessage(notice("Nothing to say."), false);
+            player.sendSystemMessage(notice(Component.translatable("backutils.chat.nothing")), false);
             return;
         }
 
@@ -145,16 +150,16 @@ public class ChatHandler {
                 : BackUtilsConfig.isLocalChatStaffOnly();
         if (staffOnly && !player.hasPermissions(2)) {
             event.setCanceled(true);
-            player.sendSystemMessage(notice(
-                    "Only staff can use " + channel + " chat right now."), false);
+            player.sendSystemMessage(notice(Component.translatable("backutils.chat.staff_only",
+                    channelName)), false);
             return;
         }
 
         SilenceState silence = silenceOf(player);
         if (silence != null && silence.silenced(kind)) {
             event.setCanceled(true);
-            player.sendSystemMessage(notice(
-                    "You are silenced in " + channel + " chat."), false);
+            player.sendSystemMessage(notice(Component.translatable("backutils.chat.silenced",
+                    channelName)), false);
             return;
         }
 
@@ -223,8 +228,9 @@ public class ChatHandler {
         return BackUtils.data().silences().find(player.getName().getString());
     }
 
-    private static Component notice(String text) {
-        return Component.literal("§7[" + text + "]");
+    /** Wraps a notice in the grey brackets the mod's refusals are drawn in. */
+    private static Component notice(Component text) {
+        return Component.literal("§7[").append(text).append(Component.literal("]"));
     }
 
     /**

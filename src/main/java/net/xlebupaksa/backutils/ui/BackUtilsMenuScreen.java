@@ -16,6 +16,8 @@ import com.lowdragmc.lowdraglib2.gui.ui.elements.ScrollerView;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.Slider;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.Tab;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.TabView;
+import com.lowdragmc.lowdraglib2.gui.ui.elements.TextElement;
+import com.lowdragmc.lowdraglib2.gui.ui.elements.TextField;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.Toggle;
 import com.lowdragmc.lowdraglib2.gui.ui.event.UIEvents;
 import dev.vfyjxf.taffy.style.AlignItems;
@@ -28,13 +30,17 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
+import net.neoforged.neoforge.network.PacketDistributor;
 import net.xlebupaksa.backutils.BackUtils;
+import net.xlebupaksa.backutils.client.AdminAlerts;
 import net.xlebupaksa.backutils.client.BackUtilsClientConfig;
+import net.xlebupaksa.backutils.client.ZoneMusicPlayer;
 import net.xlebupaksa.backutils.data.MarkupUtil;
 import net.xlebupaksa.backutils.data.MarkupWrap;
 import net.xlebupaksa.backutils.data.ProfileOptions;
 import net.xlebupaksa.backutils.network.LogHistoryCache;
 import net.xlebupaksa.backutils.network.LogHistoryPayload;
+import net.xlebupaksa.backutils.network.MenuMusicRequestPayload;
 import net.xlebupaksa.backutils.network.ProfileEditPayload;
 import net.xlebupaksa.backutils.network.ProfileFeedbackCache;
 import net.xlebupaksa.backutils.network.ProfileListCache;
@@ -106,6 +112,10 @@ public final class BackUtilsMenuScreen extends Screen {
 
     /** Everything built once, kept so {@link #init} can resize it on each show. */
     private static final class Built {
+
+        /** One caption and the key behind it, so {@link #applyTexts} can write it out again. */
+        private record Caption(TextElement element, String key) {}
+
         ModularUI ui;
         UIElement root;
         UIElement portrait;
@@ -124,6 +134,12 @@ public final class BackUtilsMenuScreen extends Screen {
         ScrollerView profileList;
         Label profileStatus;
         AdminProfileTab nameTab;
+        /**
+         * Every caption in the tree with the key it came from. The tree outlives a language change
+         * while ldlib2 flattens a string into a literal as it is set, so the keys are kept to write
+         * the captions again on every open.
+         */
+        final List<Caption> captions = new ArrayList<>();
     }
 
     /** One drawn profile: what it says, and the button that removes it. */
@@ -176,7 +192,7 @@ public final class BackUtilsMenuScreen extends Screen {
     private long lastProfileClickAt;
 
     private BackUtilsMenuScreen(Built built) {
-        super(Component.literal("Background Utilities"));
+        super(Component.translatable("backutils.menu.title"));
         this.built = built;
     }
 
@@ -193,7 +209,21 @@ public final class BackUtilsMenuScreen extends Screen {
         RoleplayLogNetwork.requestHistory();
         // Asked for on every open: an operator can delete a profile from the console.
         ProfileNetwork.requestList();
+        // The menu's music is the server's setting, so it is asked for rather than assumed.
+        PacketDistributor.sendToServer(new MenuMusicRequestPayload());
         Minecraft.getInstance().setScreen(instance);
+    }
+
+    /**
+     * Fades the menu's music out with the menu.
+     *
+     * <p>{@code removed} rather than {@code onClose}: the menu is also left for the profile editor,
+     * which replaces the screen without closing it.
+     */
+    @Override
+    public void removed() {
+        ZoneMusicPlayer.stopMenu();
+        super.removed();
     }
 
     // ------------------------------------------------------------------
@@ -211,7 +241,7 @@ public final class BackUtilsMenuScreen extends Screen {
         built.tabColumn.layout(l -> l.flexDirection(FlexDirection.COLUMN).gapAll(INNER_GAP));
 
         Label title = new Label();
-        title.setText("Background Utilities", false);
+        translated(built, title, "backutils.menu.title");
         title.textStyle(t -> t.fontSize(12f).textColor(PLAIN).textShadow(false)
                 .textAlignHorizontal(Horizontal.LEFT).textAlignVertical(Vertical.CENTER)
                 .adaptiveWidth(true));
@@ -222,10 +252,11 @@ public final class BackUtilsMenuScreen extends Screen {
         buildProfilePanel(built);
 
         TabView tabView = new TabView();
-        tabView.addTab(new Tab().setText("Memory", false), wrap(built.memoryList));
-        tabView.addTab(new Tab().setText("Configuration", false), wrap(built.configScroll));
-        tabView.addTab(new Tab().setText("Profiles", false), built.profileTabs);
-        buildConfigControls(built.configScroll);
+        tabView.addTab(translatedTab(built, "backutils.menu.tab.memory"), wrap(built.memoryList));
+        tabView.addTab(translatedTab(built, "backutils.menu.tab.configuration"),
+                wrap(built.configScroll));
+        tabView.addTab(translatedTab(built, "backutils.menu.tab.profiles"), built.profileTabs);
+        buildConfigControls(built);
         built.tabView = tabView;
 
         built.tabColumn.addChildren(title, tabView);
@@ -237,6 +268,37 @@ public final class BackUtilsMenuScreen extends Screen {
                 .gapAll(GAP));
         built.root.addChildren(built.portrait, built.tabColumn);
         return built;
+    }
+
+    /**
+     * Sets a caption from a translation key and remembers the pair, so {@link #applyTexts} can put
+     * the text back: ldlib2 keeps whatever string it was given as a literal, and the tree here is
+     * built once and kept for the life of the client.
+     */
+    private static void translated(Built built, TextElement element, String key) {
+        element.setText(Text.of(key), false);
+        built.captions.add(new Built.Caption(element, key));
+    }
+
+    /** {@return a tab whose caption comes from a key}, written again like every other caption} */
+    private static Tab translatedTab(Built built, String key) {
+        Tab tab = new Tab();
+        // Tab.setText delegates to this label, and the label is what has to be written again.
+        translated(built, tab.text, key);
+        return tab;
+    }
+
+    /**
+     * Writes every remembered caption in the language the client is set to now. The language is
+     * chosen on another screen, which replaces this one, so doing it here reaches every change
+     * without a restart.
+     */
+    private static void applyTexts(Built built) {
+        for (Built.Caption caption : built.captions) {
+            caption.element().setText(Text.of(caption.key()), false);
+        }
+        // The name panel's own captions, its filter hint and its scope line are keys as well.
+        built.nameTab.relabel();
     }
 
     private static ScrollerView scrollingList() {
@@ -258,42 +320,88 @@ public final class BackUtilsMenuScreen extends Screen {
         return holder;
     }
 
-    private static void buildConfigControls(ScrollerView scroll) {
-        scroll.addScrollViewChild(toggleRow("Show roleplay log",
+    private static void buildConfigControls(Built built) {
+        ScrollerView scroll = built.configScroll;
+        scroll.addScrollViewChild(toggleRow(built, "backutils.menu.setting.log",
                 BackUtilsClientConfig.isLogEnabled(), BackUtilsClientConfig::setLogEnabled));
-        scroll.addScrollViewChild(sliderRow("Font size", 4f, 32f,
+        scroll.addScrollViewChild(sliderRow(built, "backutils.menu.setting.font_size", 4f, 32f,
                 (float) BackUtilsClientConfig.getFontSize(), " px", true,
                 BackUtilsClientConfig::setFontSize));
-        scroll.addScrollViewChild(sliderRow("Wrap width", 16f, 240f,
+        scroll.addScrollViewChild(sliderRow(built, "backutils.menu.setting.wrap_width", 16f, 240f,
                 BackUtilsClientConfig.getWrapCharacters(), " ch", true,
                 v -> BackUtilsClientConfig.setWrapCharacters(Math.round(v))));
-        scroll.addScrollViewChild(sliderRow("Lines kept", 1f, 32f,
+        scroll.addScrollViewChild(sliderRow(built, "backutils.menu.setting.lines_kept", 1f, 32f,
                 BackUtilsClientConfig.getMaxLines(), "", true,
                 v -> BackUtilsClientConfig.setMaxLines(Math.round(v))));
-        scroll.addScrollViewChild(sliderRow("Line lifetime", 3f, 300f,
+        scroll.addScrollViewChild(sliderRow(built, "backutils.menu.setting.line_lifetime", 3f, 300f,
                 BackUtilsClientConfig.getLineLifetimeSeconds(), " s", true,
                 v -> BackUtilsClientConfig.setLineLifetimeSeconds(Math.round(v))));
-        scroll.addScrollViewChild(sliderRow("Fade", 1f, 30f,
+        scroll.addScrollViewChild(sliderRow(built, "backutils.menu.setting.fade", 1f, 30f,
                 BackUtilsClientConfig.getFadeSeconds(), " s", true,
                 v -> BackUtilsClientConfig.setFadeSeconds(Math.round(v))));
-        scroll.addScrollViewChild(sliderRow("Right margin", 0f, 200f,
+        scroll.addScrollViewChild(sliderRow(built, "backutils.menu.setting.right_margin", 0f, 200f,
                 BackUtilsClientConfig.getRightMargin(), " px", true,
                 v -> BackUtilsClientConfig.setRightMargin(Math.round(v))));
-        scroll.addScrollViewChild(sliderRow("Top margin", 0f, 400f,
+        scroll.addScrollViewChild(sliderRow(built, "backutils.menu.setting.top_margin", 0f, 400f,
                 BackUtilsClientConfig.getTopMargin(), " px", true,
                 v -> BackUtilsClientConfig.setTopMargin(Math.round(v))));
-        scroll.addScrollViewChild(sliderRow("Button size", 8f, 64f,
+        scroll.addScrollViewChild(sliderRow(built, "backutils.menu.setting.log_button_size", 8f, 128f,
                 BackUtilsClientConfig.getButtonSize(), " px", true,
                 v -> BackUtilsClientConfig.setButtonSize(Math.round(v))));
-        scroll.addScrollViewChild(sliderRow("Button margin", 0f, 200f,
+        scroll.addScrollViewChild(sliderRow(built, "backutils.menu.setting.log_button_margin", 0f, 200f,
                 BackUtilsClientConfig.getButtonMargin(), " px", true,
                 v -> BackUtilsClientConfig.setButtonMargin(Math.round(v))));
-        scroll.addScrollViewChild(sliderRow("Backdrop opacity", 0f, 1f,
+        scroll.addScrollViewChild(sliderRow(built, "backutils.menu.setting.admin_button_size", 8f, 128f,
+                BackUtilsClientConfig.getAdminButtonSize(), " px", true,
+                v -> BackUtilsClientConfig.setAdminButtonSize(Math.round(v))));
+        scroll.addScrollViewChild(sliderRow(built, "backutils.menu.setting.backdrop_opacity", 0f, 1f,
                 (float) BackUtilsClientConfig.getMenuBackgroundOpacity(), "", false,
                 v -> BackUtilsClientConfig.setMenuBackgroundOpacity(v)));
+
+        // The operator alert is client-side: the sound is played here, and only ever by the player
+        // who chose it, so none of this belongs in the server's config.
+        scroll.addScrollViewChild(headingLabel(built, "backutils.menu.alerts.heading"));
+        scroll.addScrollViewChild(toggleRow(built, "backutils.menu.alerts.sound",
+                BackUtilsClientConfig.isAdminAlertEnabled(),
+                BackUtilsClientConfig::setAdminAlertEnabled));
+        scroll.addScrollViewChild(alertSoundRow(built));
+        scroll.addScrollViewChild(sliderRow(built, "backutils.menu.alerts.volume", 0f, 2f,
+                (float) BackUtilsClientConfig.getAdminAlertVolume(), "", false,
+                BackUtilsClientConfig::setAdminAlertVolume));
+        scroll.addScrollViewChild(sliderRow(built, "backutils.menu.alerts.pitch", 0.5f, 2f,
+                (float) BackUtilsClientConfig.getAdminAlertPitch(), "", false,
+                BackUtilsClientConfig::setAdminAlertPitch));
+        scroll.addScrollViewChild(toggleRow(built, "backutils.menu.alerts.icon",
+                BackUtilsClientConfig.isAdminAlertMarkerEnabled(),
+                BackUtilsClientConfig::setAdminAlertMarker));
+        scroll.addScrollViewChild(sliderRow(built, "backutils.menu.alerts.icon_size", 4f, 64f,
+                BackUtilsClientConfig.getAdminAlertIconSize(), " px", true,
+                v -> BackUtilsClientConfig.setAdminAlertIconSize(Math.round(v))));
+        scroll.addScrollViewChild(sliderRow(built, "backutils.menu.alerts.icon_fade", 0f, 10f,
+                (float) BackUtilsClientConfig.getAdminAlertPulseSeconds(), " s", false,
+                v -> BackUtilsClientConfig.setAdminAlertPulseSeconds(v)));
     }
 
-    private static UIElement sliderRow(String name, float min, float max, float initial,
+    /**
+     * {@return the row that names the alert sound}, with a button to play it: the sound is otherwise
+     * heard only when an alert actually arrives, which is no way to choose one.
+     */
+    private static UIElement alertSoundRow(Built built) {
+        TextField field = new TextField();
+        field.setText(BackUtilsClientConfig.getAdminAlertSound(), false);
+        field.layout(l -> l.flex(1).height(14));
+        field.setTextResponder(BackUtilsClientConfig::setAdminAlertSound);
+
+        Button play = new Button();
+        // Wider than the English needs: "Играть" is the shortest wording that still means play.
+        translated(built, play.text, "backutils.menu.alerts.play");
+        play.layout(l -> l.width(46).height(14));
+        play.setOnClick(e -> AdminAlerts.preview());
+
+        return controlRow(built, "backutils.menu.alerts.sound_id", field, play);
+    }
+
+    private static UIElement sliderRow(Built built, String key, float min, float max, float initial,
                                        String suffix, boolean whole, FloatConsumer apply) {
         Label value = new Label();
         value.setText(format(initial, whole) + suffix, false);
@@ -311,10 +419,11 @@ public final class BackUtilsMenuScreen extends Screen {
             apply.accept(v);
         });
 
-        return controlRow(name, slider, value);
+        return controlRow(built, key, slider, value);
     }
 
-    private static UIElement toggleRow(String name, boolean initial, Consumer<Boolean> apply) {
+    private static UIElement toggleRow(Built built, String key, boolean initial,
+                                       Consumer<Boolean> apply) {
         Toggle toggle = new Toggle();
         toggle.setOn(initial, false);
         toggle.layout(l -> l.width(24).height(12));
@@ -322,12 +431,13 @@ public final class BackUtilsMenuScreen extends Screen {
 
         UIElement spacer = new UIElement();
         spacer.layout(l -> l.flex(1));
-        return controlRow(name, toggle, spacer);
+        return controlRow(built, key, toggle, spacer);
     }
 
-    private static UIElement controlRow(String name, UIElement control, UIElement trailing) {
+    private static UIElement controlRow(Built built, String key, UIElement control,
+                                        UIElement trailing) {
         Label label = new Label();
-        label.setText(name, false);
+        translated(built, label, key);
         label.textStyle(t -> t.fontSize(9f).textColor(PLAIN).textShadow(false)
                 .textAlignVertical(Vertical.CENTER).adaptiveWidth(true));
         label.layout(l -> l.width(120));
@@ -355,8 +465,9 @@ public final class BackUtilsMenuScreen extends Screen {
      * sit on the rows, because a shared bar would need a selection to act on.
      */
     private static void buildProfilePanel(Built built) {
-        // One button for both kinds, relabelled by the tab strip.
-        built.newProfile = profileButton("New chat profile", 100,
+        // One button for both kinds, relabelled by the tab strip: wide enough that the Russian of
+        // either label sits inside it rather than running past its own edge.
+        built.newProfile = profileButton(Text.of("backutils.menu.profiles.new_chat"), 122,
                 () -> createProfile(built));
 
         built.profileStatus = new Label();
@@ -378,8 +489,8 @@ public final class BackUtilsMenuScreen extends Screen {
         // browsing removed, for an operator.
         built.nameTab = new AdminProfileTab(true);
 
-        built.chatTabHeader = new Tab().setText("Chat", false);
-        built.namesTabHeader = new Tab().setText("Names", false);
+        built.chatTabHeader = translatedTab(built, "backutils.menu.tab.chat");
+        built.namesTabHeader = translatedTab(built, "backutils.menu.tab.names");
         built.profileTabs = new TabView();
         // The strip stays and the panel border goes: this tab is already inside the menu's tab view.
         built.profileTabs.tabContentContainer(
@@ -422,7 +533,8 @@ public final class BackUtilsMenuScreen extends Screen {
 
     private void onProfileKindChanged(Tab tab) {
         boolean names = tab == built.namesTabHeader;
-        built.newProfile.setText(names ? "New name profile" : "New chat profile", false);
+        built.newProfile.setText(names ? Text.of("backutils.menu.profiles.new_name")
+                : Text.of("backutils.menu.profiles.new_chat"), false);
     }
 
     private static Button profileButton(String text, int width, Runnable action) {
@@ -433,7 +545,10 @@ public final class BackUtilsMenuScreen extends Screen {
         return button;
     }
 
-    /** A row's own button: small, because three of them sit beside every profile. */
+    /**
+     * A row's own button: small, because three of them sit beside every profile. The widths are
+     * sized for the Russian labels, which need a few pixels more than the English words do.
+     */
     private static Button rowButton(String text, int width, Runnable action) {
         Button button = new Button();
         button.setText(text, false);
@@ -467,11 +582,12 @@ public final class BackUtilsMenuScreen extends Screen {
         // The buttons come first, on the left of the row, so the list reads as a column of controls.
         UIElement buttons = new UIElement();
         buttons.layout(l -> l.height(LINE_STEP * 2 + 6)
-                .flexDirection(FlexDirection.ROW).alignItems(AlignItems.CENTER).gapAll(2));
+                .flexDirection(FlexDirection.ROW).alignItems(AlignItems.CENTER).gapAll(4));
 
-        Button use = rowButton("Use", 36, () -> useProfile(row));
-        Button edit = rowButton("Edit", 36, () -> editProfile(row));
-        Button delete = rowButton("Del", 30, () -> deleteProfile(row, isDefault));
+        Button use = rowButton(Text.of("backutils.menu.profiles.use"), 40, () -> useProfile(row));
+        Button edit = rowButton(Text.of("backutils.menu.profiles.edit"), 46, () -> editProfile(row));
+        Button delete = rowButton(Text.of("backutils.menu.profiles.delete"), 46,
+                () -> deleteProfile(row, isDefault));
 
         buttons.addChild(use);
         if (!isDefault) {
@@ -480,7 +596,7 @@ public final class BackUtilsMenuScreen extends Screen {
 
         Label name = new Label();
         name.setText(row.name()
-                + (row.active() ? "  (in use)" : "")
+                + (row.active() ? Text.of("backutils.menu.profiles.in_use") : "")
                 + (row.sound() == null || row.sound().isBlank() ? "" : "  -  " + row.sound()), false);
         name.textStyle(t -> t.fontSize(9f).textColor(row.active() ? PLAIN : MUTED)
                 .textShadow(false).adaptiveWidth(true));
@@ -545,7 +661,7 @@ public final class BackUtilsMenuScreen extends Screen {
 
     private void useProfile(ProfileListPayload.Row row) {
         if (row.active()) {
-            setProfileStatus("'" + row.name() + "' is already in use.", false);
+            setProfileStatus(Text.of("backutils.menu.profiles.already_in_use", row.name()), false);
             return;
         }
         ProfileNetwork.send(ProfileEditPayload.use(row.name()));
@@ -565,7 +681,7 @@ public final class BackUtilsMenuScreen extends Screen {
             disarmDelete();
             armedProfile = row.name();
             profileDeleteArmedAt = now;
-            buttonFor(row.name()).setText("Sure?", false);
+            buttonFor(row.name()).setText(Text.of("backutils.menu.profiles.confirm"), false);
             return;
         }
 
@@ -583,13 +699,14 @@ public final class BackUtilsMenuScreen extends Screen {
 
     private void disarmDelete() {
         if (armedProfile.isEmpty()) return;
-        buttonFor(armedProfile).setText("Del", false);
+        buttonFor(armedProfile).setText(Text.of("backutils.menu.profiles.delete"), false);
         armedProfile = "";
     }
 
     private void setProfileStatus(String text, boolean bad) {
-        // Truncated rather than left to run: a label is as wide as its text, so a refusal would spill.
-        built.profileStatus.setText(fit(text, Math.max(40, listWidth - 110)), false);
+        // Truncated rather than left to run: a label is as wide as its text, so a refusal would
+        // spill. The budget is what the New profile button and the row's gap leave of the width.
+        built.profileStatus.setText(fit(text, Math.max(40, listWidth - 132)), false);
         built.profileStatus.textStyle(t -> t.fontSize(9f)
                 .textColor(bad ? WARNING : MUTED).textShadow(false)
                 .textAlignVertical(Vertical.CENTER).adaptiveWidth(true));
@@ -634,7 +751,7 @@ public final class BackUtilsMenuScreen extends Screen {
 
         List<LogHistoryPayload.Row> history = LogHistoryCache.rows();
         if (history.isEmpty()) {
-            built.memoryList.addScrollViewChild(muted("Nothing remembered yet."));
+            built.memoryList.addScrollViewChild(muted(Text.of("backutils.menu.memory.empty")));
             return;
         }
         // Oldest first, straight from the payload, so the list reads in the order things happened.
@@ -684,9 +801,22 @@ public final class BackUtilsMenuScreen extends Screen {
     }
 
     private static Label muted(String text) {
-        Label label = new Label();
+        Label label = mutedLabel();
         label.setText(text, false);
+        return label;
+    }
+
+    /** {@return an empty muted label}, for a caller that writes the text itself */
+    private static Label mutedLabel() {
+        Label label = new Label();
         label.textStyle(t -> t.fontSize(9f).textColor(MUTED).textShadow(false).adaptiveWidth(true));
+        return label;
+    }
+
+    /** {@return a muted heading from a key}, written again on every open like the rows below it */
+    private static Label headingLabel(Built built, String key) {
+        Label label = mutedLabel();
+        translated(built, label, key);
         return label;
     }
 
@@ -696,6 +826,10 @@ public final class BackUtilsMenuScreen extends Screen {
 
     @Override
     public void init() {
+        // The tree is built once and kept, so the captions resolved as it was built are written
+        // again here: without that they would hold the language the menu was first opened in.
+        applyTexts(built);
+
         int contentWidth = Math.max(80, this.width - PAD * 2);
         int contentHeight = Math.max(60, this.height - PAD * 2);
         // A square portrait, never wider than a third of the window so the list keeps room.
@@ -736,7 +870,8 @@ public final class BackUtilsMenuScreen extends Screen {
         }
         built.newProfile.setText(
                 staff && built.profileTabs.getSelectedTab() == built.namesTabHeader
-                        ? "New name profile" : "New chat profile", false);
+                        ? Text.of("backutils.menu.profiles.new_name")
+                        : Text.of("backutils.menu.profiles.new_chat"), false);
 
         int profileBoxHeight = staff
                 ? Math.max(20, listHeight - TAB_STRIP_HEIGHT - TAB_CONTENT_PAD * 2)

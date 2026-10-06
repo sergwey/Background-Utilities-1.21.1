@@ -11,17 +11,15 @@ import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.xlebupaksa.backutils.BackUtils;
-import net.xlebupaksa.backutils.data.ModAttachments;
-import net.xlebupaksa.backutils.data.ProfileSnapshot;
 import net.xlebupaksa.backutils.data.SilenceKind;
 import net.xlebupaksa.backutils.data.SilenceState;
 import net.xlebupaksa.backutils.log.ActionText;
 import net.xlebupaksa.backutils.log.RoleplayLog;
-import net.xlebupaksa.backutils.profile.ProfileText;
 
 /**
- * {@code /me} and {@code /sme}, routed through this mod's own formatting: both obey the display name
- * and reach the roleplay log, and {@code /sme} is the silent twin.
+ * {@code /me} and {@code /sme}, routed through this mod's own formatting: both reach the roleplay
+ * log and the console record, and neither posts anything to chat. {@code /sme} is the silent twin:
+ * nobody but the actor is shown the entry, and the console record says so.
  */
 @SuppressWarnings("unused") // entry points: the game bus and the loader call these
 public class MeCommand {
@@ -64,39 +62,25 @@ public class MeCommand {
             String body = ActionText.stripLeadingAsterisks(
                     StringArgumentType.getString(ctx, "action"));
             if (body.isBlank()) {
-                ctx.getSource().sendFailure(Component.literal("Say what you are doing."));
+                ctx.getSource().sendFailure(Component.translatable("backutils.command.me.empty"));
                 return 0;
             }
 
             SilenceState silence = BackUtils.data() == null ? null
                     : BackUtils.data().silences().find(player.getName().getString());
             if (silence != null && silence.silenced(SilenceKind.ACTIONS)) {
-                ctx.getSource().sendFailure(Component.literal("Your actions are silenced."));
+                ctx.getSource().sendFailure(Component.translatable("backutils.command.me.silenced"));
                 return 0;
             }
 
-            ProfileSnapshot snapshot = player.getData(ModAttachments.PROFILE.get());
-            if (snapshot == null) snapshot = ProfileSnapshot.DEFAULT;
-            String displayed = ProfileText.resolve(
-                    snapshot.displayedName(), player.getName().getString());
-
             RoleplayLog.recordAction(player, ActionText.template(body), silent);
-
-            if (silent) {
-                // Silent means silent: the server log keeps a record for administration, but no
-                // player is told anything, including the actor.
-                BackUtils.LOGGER.info("[silent] * {} {}", player.getName().getString(), body);
-                return 1;
-            }
-
-            // The server log keeps the vanilla-shaped record; players get the display name.
-            player.getServer().getPlayerList().broadcastSystemMessage(
-                    Component.literal("* " + player.getName().getString() + " " + body),
-                    recipient -> Component.literal(ActionText.emoteLine(displayed, body)),
-                    false);
+            // Nothing is posted to chat: an action is read in the log, and repeating it in chat
+            // would say it twice.
+            RoleplayLog.logAction(player, body, silent);
             return 1;
         } catch (Exception e) {
-            ctx.getSource().sendFailure(Component.literal("Error: " + e.getMessage()));
+            ctx.getSource().sendFailure(Component.translatable("backutils.command.error",
+                    String.valueOf(e.getMessage())));
             return 0;
         }
     }

@@ -5,7 +5,6 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.xlebupaksa.backutils.BackUtils;
 import net.xlebupaksa.backutils.BackUtilsConfig;
-import net.xlebupaksa.backutils.data.ActionLogEntry;
 import net.xlebupaksa.backutils.data.LogData;
 import net.xlebupaksa.backutils.data.ProfileText;
 import net.xlebupaksa.backutils.network.AdminAlerts;
@@ -61,7 +60,20 @@ public final class RoleplayLog {
 
         // Operators hear about every action, including ones they were nowhere near, but as a nudge rather than the line
         // itself: otherwise every action in the world would be typed across their screen.
-        AdminAlerts.notifyOperators(server, id, actor.getName().getString());
+        AdminAlerts.notifyOperators(server, id, actor);
+    }
+
+    /**
+     * Writes the console record for an action, whatever form it was given in.
+     *
+     * <p>The account name and not the display name: the console is the record administration reads,
+     * and a display name is the player's own to change.
+     *
+     * @param silent marks the record as one no player was shown
+     */
+    public static void logAction(ServerPlayer actor, String body, boolean silent) {
+        BackUtils.LOGGER.info("[{}] * {} {}", silent ? "silent" : "action",
+                actor.getName().getString(), body);
     }
 
     /**
@@ -88,18 +100,27 @@ public final class RoleplayLog {
 
     /** {@return the acting player plus everyone within the configured radius} */
     private static List<UUID> nearbyAndSelf(MinecraftServer server, ServerPlayer actor) {
-        double radius = BackUtilsConfig.getLogRadius();
-        double radiusSquared = radius * radius;
+        return witnesses(actor, BackUtilsConfig.getLogRadius());
+    }
 
+    /**
+     * {@return the anchor plus every player within {@code radius} of them}
+     *
+     * <p>Same dimension only: coordinates are comparable, proximity is not.
+     */
+    public static List<UUID> witnesses(ServerPlayer anchor, double radius) {
         List<UUID> audience = new ArrayList<>();
-        audience.add(actor.getUUID());
+        audience.add(anchor.getUUID());
 
+        MinecraftServer server = anchor.getServer();
+        if (server == null) return audience;
+
+        double radiusSquared = radius * radius;
         for (ServerLevel level : server.getAllLevels()) {
             for (ServerPlayer other : level.players()) {
-                if (other == actor) continue;
-                // Same dimension only: coordinates are comparable, proximity is not.
-                if (other.level() != actor.level()) continue;
-                if (other.distanceToSqr(actor) <= radiusSquared) audience.add(other.getUUID());
+                if (other == anchor) continue;
+                if (other.level() != anchor.level()) continue;
+                if (other.distanceToSqr(anchor) <= radiusSquared) audience.add(other.getUUID());
             }
         }
         return audience;

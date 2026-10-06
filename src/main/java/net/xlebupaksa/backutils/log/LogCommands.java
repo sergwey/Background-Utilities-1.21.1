@@ -42,13 +42,13 @@ public class LogCommands {
             // getOptionalPlayers rather than getPlayers: an empty match is a no-op for an announcement, not a command error.
             Collection<ServerPlayer> targets = EntityArgument.getOptionalPlayers(ctx, "targets");
             if (targets.isEmpty()) {
-                ctx.getSource().sendFailure(Component.literal("No players matched that selector."));
+                ctx.getSource().sendFailure(Component.translatable("backutils.command.no_players"));
                 return 0;
             }
 
             String message = unquote(StringArgumentType.getString(ctx, "message"));
             if (message.isBlank()) {
-                ctx.getSource().sendFailure(Component.literal("Nothing to announce."));
+                ctx.getSource().sendFailure(Component.translatable("backutils.log.nothing"));
                 return 0;
             }
 
@@ -56,11 +56,12 @@ public class LogCommands {
             RoleplayLog.recordAnnouncement(source, message, List.copyOf(targets));
 
             int count = targets.size();
-            ctx.getSource().sendSuccess(() -> Component.literal(
-                    "Announced to " + count + " player(s)."), false);
+            ctx.getSource().sendSuccess(() -> Component.translatable(
+                    "backutils.log.announced", count), false);
             return count;
         } catch (Exception e) {
-            ctx.getSource().sendFailure(Component.literal("Error: " + e.getMessage()));
+            ctx.getSource().sendFailure(Component.translatable("backutils.command.error",
+                    String.valueOf(e.getMessage())));
             return 0;
         }
     }

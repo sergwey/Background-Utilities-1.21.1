@@ -2,7 +2,6 @@ package net.xlebupaksa.backutils.data;
 
 import java.nio.file.Path;
 import java.sql.Connection;
-import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
@@ -122,9 +121,11 @@ public class MusicZoneData extends DataManager {
 
     /** {@return true when the table can be read, used to report a broken database} */
     public boolean isAvailable() {
+        // execute rather than executeQuery: what is being proved is that the statement runs against
+        // the table, and a ResultSet nobody reads would be a resource held open for nothing.
         try (Connection connection = openConnection();
-             Statement stmt = connection.createStatement();
-             ResultSet rs = stmt.executeQuery("SELECT 1 FROM music_zone LIMIT 1")) {
+             Statement stmt = connection.createStatement()) {
+            stmt.execute("SELECT 1 FROM music_zone LIMIT 1");
             return true;
         } catch (SQLException e) {
             return false;

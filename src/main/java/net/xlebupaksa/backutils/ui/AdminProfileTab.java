@@ -46,6 +46,12 @@ public final class AdminProfileTab {
     private static final int LINE_STEP = 10;
     /** The height of the strip with Back, the scope and New profile on it. */
     private static final int BAR_HEIGHT = 16;
+    /**
+     * Widths that hold the Russian captions: {@code "< Назад"} and {@code "Новый профиль"} are
+     * wider than {@code "< Back"} and {@code "New profile"} at the same font size.
+     */
+    private static final int BACK_WIDTH = 50;
+    private static final int CREATE_WIDTH = 88;
     /** One player's line, inside its own padded row. */
     private static final int PLAYER_ROW_HEIGHT = 14;
     private static final int FILTER_HEIGHT = 14;
@@ -56,7 +62,9 @@ public final class AdminProfileTab {
     private static final long DELETE_CONFIRM_NANOS = 5_000_000_000L;
 
     /** What {@code {m}} and {@code {player}} are replaced with in a preview line. */
-    private static final String MESSAGE_SAMPLE = "Hello there";
+    private static String messageSample() {
+        return Text.of("backutils.profiles.message.sample");
+    }
 
     /** A profile row: what it says, its Delete button, and whether it is the one in use. */
     private static final class ProfileRow {
@@ -143,13 +151,25 @@ public final class AdminProfileTab {
         if (player.isEmpty()) rebuildPlayers(); else rebuildCurrent();
     }
 
+    /**
+     * Writes this panel's own captions again in the language the client is set to now. The menu
+     * that holds one is built once and kept, so a caption flattened as it was built would hold
+     * whichever language was in force then for the rest of the session.
+     */
+    public void relabel() {
+        back.setText(Text.of("backutils.profiles.back"), false);
+        create.setText(Text.of("backutils.profiles.new.profile"), false);
+        // The filter's hint and the scope line are keys as well, and both are written there.
+        applyScope();
+    }
+
     // ------------------------------------------------------------------
     // Building
     // ------------------------------------------------------------------
 
     private void build() {
-        back.setText("< Back", false);
-        back.layout(l -> l.width(46).height(14));
+        back.setText(Text.of("backutils.profiles.back"), false);
+        back.layout(l -> l.width(BACK_WIDTH).height(14));
         back.setOnClick(e -> showPlayers());
 
         scope.setText("", false);
@@ -157,8 +177,8 @@ public final class AdminProfileTab {
                 .textAlignVertical(Vertical.CENTER).adaptiveWidth(true));
         scope.layout(l -> l.flex(1).height(BAR_HEIGHT));
 
-        create.setText("New profile", false);
-        create.layout(l -> l.width(78).height(14));
+        create.setText(Text.of("backutils.profiles.new.profile"), false);
+        create.layout(l -> l.width(CREATE_WIDTH).height(14));
         create.setOnClick(e -> create());
 
         bar.layout(l -> l.flexDirection(FlexDirection.ROW).alignItems(AlignItems.CENTER)
@@ -272,18 +292,20 @@ public final class AdminProfileTab {
         boolean showCreate = inside && browsing;
 
         back.setVisible(showBack);
-        back.layout(l -> l.width(showBack ? 46 : 0).height(14));
+        back.layout(l -> l.width(showBack ? BACK_WIDTH : 0).height(14));
         create.setVisible(showCreate);
-        create.layout(l -> l.width(showCreate ? 78 : 0).height(14));
-        filter.textFieldStyle(s -> s.placeholder(Component.literal(
-                inside ? "Search profiles" : "Search players")));
+        create.layout(l -> l.width(showCreate ? CREATE_WIDTH : 0).height(14));
+        filter.textFieldStyle(s -> s.placeholder(Component.translatable(
+                inside ? "backutils.profiles.search.profiles"
+                        : "backutils.profiles.search.players")));
         setScopeText();
     }
 
     private void setScopeText() {
         if (player.isEmpty()) {
             int count = AdminProfileCache.players(names).size();
-            scope.setText(count + (count == 1 ? " player" : " players"), false);
+            scope.setText(Text.of(count == 1 ? "backutils.profiles.player.count"
+                    : "backutils.profiles.player.count.plural", count), false);
             return;
         }
         if (!AdminProfileCache.holds(names, player)) {
@@ -293,8 +315,9 @@ public final class AdminProfileTab {
         }
         int count = AdminProfileCache.profiles().size();
         scope.setText(player + "  -  " + (count == 0
-                ? "no profiles"
-                : count + (count == 1 ? " profile" : " profiles")), false);
+                ? Text.of("backutils.profiles.no.profiles")
+                : Text.of(count == 1 ? "backutils.profiles.profile.count"
+                        : "backutils.profiles.profile.count.plural", count)), false);
     }
 
     // ------------------------------------------------------------------
@@ -313,7 +336,7 @@ public final class AdminProfileTab {
         String needle = filterText();
         List<AdminPlayerListPayload.Player> all = AdminProfileCache.players(names);
         if (all.isEmpty()) {
-            list.addScrollViewChild(muted("No players yet."));
+            list.addScrollViewChild(muted(Text.of("backutils.profiles.no.players.yet")));
             return;
         }
 
@@ -324,7 +347,9 @@ public final class AdminProfileTab {
             list.addScrollViewChild(buildPlayerRow(entry));
             shown++;
         }
-        if (shown == 0) list.addScrollViewChild(muted("No player matches that filter."));
+        if (shown == 0) {
+            list.addScrollViewChild(muted(Text.of("backutils.profiles.no.player.match")));
+        }
         setScopeText();
     }
 
@@ -332,7 +357,7 @@ public final class AdminProfileTab {
         clearRows();
         if (!AdminProfileCache.holds(names, player)) {
             // Either the request is out or it was refused: better to say so than to show stale data.
-            list.addScrollViewChild(muted("Loading profiles..."));
+            list.addScrollViewChild(muted(Text.of("backutils.profiles.loading")));
             setScopeText();
             return;
         }
@@ -352,7 +377,9 @@ public final class AdminProfileTab {
             list.addScrollViewChild(buildProfileRow(row));
             shown++;
         }
-        if (shown == 0) list.addScrollViewChild(muted("No profile matches that filter."));
+        if (shown == 0) {
+            list.addScrollViewChild(muted(Text.of("backutils.profiles.no.profile.match")));
+        }
         setScopeText();
     }
 
@@ -378,9 +405,10 @@ public final class AdminProfileTab {
 
     /** {@return the profile's text with the placeholders filled in, as the preview shows it} */
     private String previewOf(ProfileListPayload.Row row) {
-        String sample = names && !player.isEmpty() ? player : MESSAGE_SAMPLE;
+        String sample = names && !player.isEmpty() ? player : messageSample();
         return row.format()
-                .replace(ProfileMarkup.PLAYER, player.isEmpty() ? "Player" : player)
+                .replace(ProfileMarkup.PLAYER, player.isEmpty()
+                        ? Text.of("backutils.profiles.player.placeholder") : player)
                 .replace(ProfileMarkup.MESSAGE, sample);
     }
 
@@ -397,8 +425,10 @@ public final class AdminProfileTab {
         name.layout(l -> l.height(PLAYER_ROW_HEIGHT));
 
         Label detail = new Label();
-        detail.setText("  " + (entry.online() ? "online" : "offline")
-                + "  -  " + entry.chatCount() + " chat, " + entry.nameCount() + " name", false);
+        detail.setText(Text.of("backutils.profiles.player.detail",
+                Text.of(entry.online()
+                        ? "backutils.profiles.online" : "backutils.profiles.offline"),
+                entry.chatCount(), entry.nameCount()), false);
         detail.textStyle(t -> t.fontSize(9f).textColor(MUTED).textShadow(false)
                 .textAlignVertical(Vertical.CENTER).adaptiveWidth(true));
         detail.layout(l -> l.height(PLAYER_ROW_HEIGHT));
@@ -424,20 +454,22 @@ public final class AdminProfileTab {
     private UIElement buildProfileRow(ProfileListPayload.Row row) {
         boolean isDefault = ProfileOptions.DEFAULT_PROFILE.equals(row.name());
 
+        // The widths hold the Russian labels, which are wider than the English ones at this size.
         UIElement buttons = new UIElement();
         buttons.layout(l -> l.height(LINE_STEP * 2 + 6)
-                .flexDirection(FlexDirection.ROW).alignItems(AlignItems.CENTER).gapAll(2));
+                .flexDirection(FlexDirection.ROW).alignItems(AlignItems.CENTER).gapAll(4));
 
-        Button use = rowButton("Use", 36, () -> use(row));
-        Button edit = rowButton("Edit", 36, () -> edit(row));
-        Button delete = rowButton("Del", 30, () -> delete(row, isDefault));
+        Button use = rowButton(Text.of("backutils.profiles.use"), 40, () -> use(row));
+        Button edit = rowButton(Text.of("backutils.profiles.edit"), 46, () -> edit(row));
+        Button delete = rowButton(Text.of("backutils.profiles.del"), 46,
+                () -> delete(row, isDefault));
 
         buttons.addChild(use);
         if (!isDefault) buttons.addChildren(edit, delete);
 
         Label name = new Label();
         name.setText(row.name()
-                + (row.active() ? "  (in use)" : "")
+                + (row.active() ? Text.of("backutils.profiles.in.use") : "")
                 + (row.sound() == null || row.sound().isBlank() ? "" : "  -  " + row.sound()), false);
         name.textStyle(t -> t.fontSize(9f).textColor(row.active() ? PLAIN : MUTED)
                 .textShadow(false).adaptiveWidth(true));
@@ -522,7 +554,7 @@ public final class AdminProfileTab {
 
     private void use(ProfileListPayload.Row row) {
         if (row.active()) {
-            setStatus("'" + row.name() + "' is already in use.", false, false);
+            setStatus(Text.of("backutils.profiles.already.in.use", row.name()), false, false);
             return;
         }
         AdminProfileNetwork.send(AdminProfileEditPayload.use(names, player, row.name()));
@@ -551,7 +583,7 @@ public final class AdminProfileTab {
             disarm();
             armed = row.name();
             armedAt = now;
-            buttonFor(row.name()).setText("Sure?", false);
+            buttonFor(row.name()).setText(Text.of("backutils.profiles.confirm.delete"), false);
             return;
         }
 
@@ -569,7 +601,7 @@ public final class AdminProfileTab {
 
     private void disarm() {
         if (armed.isEmpty()) return;
-        buttonFor(armed).setText("Del", false);
+        buttonFor(armed).setText(Text.of("backutils.profiles.del"), false);
         armed = "";
     }
 

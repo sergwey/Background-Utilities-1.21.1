@@ -26,14 +26,17 @@ public record AdminLogPayload(List<Row> rows) implements CustomPacketPayload {
      * @param visible    whether this viewer would normally be allowed to see it, which the marker
      *                   in front of hidden entries reports
      * @param hiddenFrom witness names this entry is currently withheld from
+     * @param note       what the entry keeps from players, such as the number behind a hidden roll,
+     *                   or empty; this payload is the only place it is ever sent
      */
     public record Row(long id, String createdAt, String text, String actor,
                       String dimension, double x, double y, double z, boolean visible,
-                      boolean hiddenAll, List<String> witnesses, List<String> hiddenFrom) {
+                      boolean hiddenAll, List<String> witnesses, List<String> hiddenFrom,
+                      String note) {
 
         /**
          * Written by hand rather than with {@code StreamCodec.composite}, which stops at six fields
-         * and this row has nine.
+         * and this row has ten.
          */
         public static final StreamCodec<RegistryFriendlyByteBuf, Row> STREAM_CODEC =
                 new StreamCodec<>() {
@@ -51,8 +54,9 @@ public record AdminLogPayload(List<Row> rows) implements CustomPacketPayload {
                         boolean hiddenAll = buffer.readBoolean();
                         List<String> witnesses = readStrings(buffer);
                         List<String> hiddenFrom = readStrings(buffer);
+                        String note = buffer.readUtf();
                         return new Row(id, createdAt, text, actor, dimension, x, y, z,
-                                visible, hiddenAll, witnesses, hiddenFrom);
+                                visible, hiddenAll, witnesses, hiddenFrom, note);
                     }
 
                     @Override
@@ -69,6 +73,7 @@ public record AdminLogPayload(List<Row> rows) implements CustomPacketPayload {
                         buffer.writeBoolean(row.hiddenAll());
                         writeStrings(buffer, row.witnesses());
                         writeStrings(buffer, row.hiddenFrom());
+                        buffer.writeUtf(row.note());
                     }
                 };
 

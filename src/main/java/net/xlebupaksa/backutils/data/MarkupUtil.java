@@ -1,5 +1,8 @@
 package net.xlebupaksa.backutils.data;
 
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
+
 import java.util.regex.Pattern;
 
 public final class MarkupUtil {
@@ -17,6 +20,36 @@ public final class MarkupUtil {
 
     public static String strip(String input) {
         return TAG.matcher(input).replaceAll("");
+    }
+
+    /**
+     * {@return the text as a component that is drawn exactly as it is written}
+     *
+     * <p>Ember parses the markup inside a literal as that literal is drawn, so text handed to
+     * {@code Component.literal} loses its tags and takes on what they do: a format typed into a text
+     * field is drawn red rather than showing the {@code <color>} that made it red, which leaves the
+     * tags impossible to read or edit. Ember parses each literal separately and only when that one
+     * holds both a {@code <} and a {@code >}, so splitting the text until no piece holds both makes
+     * the parser find nothing and the tags stay as they were typed.
+     *
+     * <p>The pieces are siblings of one component, so the drawn text is the text given: nothing is
+     * added, moved or marked, which matters because the field's cursor and selection are counted
+     * over the value itself.
+     */
+    public static Component asLiteral(String text) {
+        MutableComponent drawn = Component.empty();
+        if (text == null || text.isEmpty()) return drawn;
+
+        int start = 0;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c != '<' && c != '>') continue;
+            if (i > start) drawn.append(Component.literal(text.substring(start, i)));
+            drawn.append(Component.literal(String.valueOf(c)));
+            start = i + 1;
+        }
+        if (start < text.length()) drawn.append(Component.literal(text.substring(start)));
+        return drawn;
     }
 
     /**
@@ -38,6 +71,19 @@ public final class MarkupUtil {
      */
     public static String stripColour(String input) {
         return input == null ? null : COLOUR_TAG.matcher(input).replaceAll("");
+    }
+
+    /**
+     * {@return the text with an administrator's note after it, or the text unchanged}
+     *
+     * <p>Grey, and grey the same way wherever it is drawn: the note is what an entry keeps from
+     * players, so this is only ever called for a viewer whose permission has been checked, and the
+     * line it is appended to is left intact — an operator reads exactly what the players read, with
+     * the truth beside it.
+     */
+    public static String withNote(String text, String note) {
+        return note == null || note.isBlank() ? text
+                : text + "  <color col=#8a8a8a>" + note + "</color>";
     }
 
     public static String balance(String input) {

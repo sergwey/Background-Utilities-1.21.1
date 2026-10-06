@@ -6,7 +6,6 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -19,7 +18,7 @@ public class LogData extends DataManager {
 
     /** One list of columns, so every query stays in step with the mapper. */
     private static final String COLUMNS = "log_id, access_list, contents, actor_id, actor_name, "
-            + "created_at, dimension, x, y, z, hidden_all, hidden_from";
+            + "created_at, dimension, x, y, z, hidden_all, hidden_from, admin_note";
 
     private static final RowMapper<ActionLogEntry> MAPPER = rs -> new ActionLogEntry(
             rs.getLong("log_id"),
@@ -33,7 +32,8 @@ public class LogData extends DataManager {
             rs.getDouble("y"),
             rs.getDouble("z"),
             rs.getInt("hidden_all") != 0,
-            AccessList.decode(rs.getString("hidden_from")));
+            AccessList.decode(rs.getString("hidden_from")),
+            rs.getString("admin_note") == null ? "" : rs.getString("admin_note"));
 
     public LogData(Path worldPath) {
         super(worldPath, "action_log.db");
@@ -57,7 +57,25 @@ public class LogData extends DataManager {
         addActorColumns();
         addPositionColumns();
         addHidingColumns();
+        addAdminNoteColumn();
         createIndexes();
+    }
+
+    /**
+     * Adds the administrator's note: what an entry says to an administrator and not to a player,
+     * such as the number behind a hidden roll. It lives with the row rather than in the contents,
+     * because the contents are what every witness is sent.
+     */
+    private void addAdminNoteColumn() {
+        try (
+                Connection connection = openConnection();
+                Statement stmt = connection.createStatement()
+        ) {
+            stmt.execute("ALTER TABLE action_log ADD COLUMN admin_note TEXT NOT NULL DEFAULT ''");
+            BackUtils.LOGGER.info("Added action_log.admin_note");
+        } catch (SQLException e) {
+            // Already there, which is the normal case after the first start.
+        }
     }
 
     /**
@@ -143,11 +161,23 @@ public class LogData extends DataManager {
      */
     public long record(UUID actorId, String actorName, String template, List<UUID> accessList,
                        String dimension, double x, double y, double z) {
+        return record(actorId, actorName, template, accessList, dimension, x, y, z, "");
+    }
+
+    /**
+     * {@return the id of a new entry, with a note only an administrator will be shown}
+     *
+     * @param actorId   null for a line that names nobody, which is stored as an empty id
+     * @param adminNote what to keep from the players, or empty
+     */
+    public long record(UUID actorId, String actorName, String template, List<UUID> accessList,
+                       String dimension, double x, double y, double z, String adminNote) {
         return insertAndGetId(
                 "INSERT INTO action_log (access_list, contents, actor_id, actor_name, " +
-                        "dimension, x, y, z) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                AccessList.encode(accessList), template, actorId.toString(), actorName,
-                dimension, x, y, z);
+                        "dimension, x, y, z, admin_note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                AccessList.encode(accessList), template, actorId == null ? "" : actorId.toString(),
+                actorName == null ? "" : actorName, dimension, x, y, z,
+                adminNote == null ? "" : adminNote);
     }
 
     /**

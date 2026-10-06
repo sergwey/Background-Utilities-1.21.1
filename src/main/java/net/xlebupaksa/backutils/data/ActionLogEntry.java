@@ -7,6 +7,8 @@ import java.util.UUID;
  * One roleplay action, as stored in the action log.
  *
  * @param dimension where it happened, or null for rows written before positions were stored
+ * @param adminNote something only an administrator may read, such as the result behind a hidden
+ *                  roll, or empty
  */
 public record ActionLogEntry(
         long id,
@@ -20,7 +22,8 @@ public record ActionLogEntry(
         double y,
         double z,
         boolean hiddenAll,
-        List<UUID> hiddenFrom
+        List<UUID> hiddenFrom,
+        String adminNote
 ) {
 
     public boolean hasPosition() {
@@ -45,7 +48,17 @@ public record ActionLogEntry(
 
     /** {@return the text with the actor's name substituted and nothing highlighted} */
     public String text() {
-        return template.replace(ProfileText.PLAYER_PLACEHOLDER, actorName);
+        return resolve(template, actorName);
+    }
+
+    /**
+     * {@return the template with both name placeholders filled in under this name}
+     *
+     * <p>Public because the settings tab previews a format through the same substitution the log
+     * renders it with, so the preview cannot show something the log will not.
+     */
+    public static String resolve(String template, String name) {
+        return fill(template, name, false);
     }
 
     /**
@@ -67,7 +80,18 @@ public record ActionLogEntry(
         String shown = name == null || name.isBlank() ? actorName : name;
         boolean viewerIsActor = viewerId != null && actorId != null
                 && actorId.equals(viewerId.toString());
-        return template.replace(ProfileText.PLAYER_PLACEHOLDER,
-                ProfileText.underlined(shown, viewerIsActor));
+        return fill(template, shown, viewerIsActor);
+    }
+
+    /** Fills both name placeholders, which always resolve to the same player. */
+    private static String fill(String template, String name, boolean underlined) {
+        String shown = ProfileText.underlined(name == null ? "" : name, underlined);
+        String possessive = ProfileText.underlined(ProfileText.possessive(name), underlined);
+        String text = template
+                .replace(ProfileText.POSSESSIVE_PLACEHOLDER, possessive)
+                .replace(ProfileText.PLAYER_PLACEHOLDER, shown);
+        // A placeholder that resolved to nothing must not leave a gap behind it: one roll format
+        // has to read both "Dev's dice rolled 42/100!" and "dice rolled 42/100!".
+        return text.replaceAll("[ \\t]{2,}", " ").trim();
     }
 }

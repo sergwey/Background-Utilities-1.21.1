@@ -9,6 +9,42 @@ import java.util.List;
 
 public final class BackUtilsConfig {
 
+    /**
+     * The defaults of the settings whose value is a line of markup or a sound id, named so the
+     * getters below cannot drift from the {@code define} calls they mirror. A config that has not
+     * loaded yet reads as its default, and a roll dressed in nothing at all would be worse than one
+     * dressed wrongly.
+     */
+    private static final String ROLL_FORMAT_DEFAULT =
+            "{player_possessive} dice rolled {result}/{max_roll} for {reason}!";
+    private static final String ROLL_FORMAT_NO_REASON_DEFAULT =
+            "{player_possessive} dice rolled {result}/{max_roll}!";
+    /** The same two lines in Russian, for a server whose own lines are written in it. */
+    private static final String ROLL_FORMAT_RU =
+            "{player} бросает кубик: {result}/{max_roll} — {reason}!";
+    private static final String ROLL_FORMAT_NO_REASON_RU =
+            "{player} бросает кубик: {result}/{max_roll}!";
+    /**
+     * The same pair again for a roll that names nobody: there is no player such a line could belong
+     * to, so it is worded on its own rather than as the named line with its name left out.
+     */
+    private static final String ROLL_FORMAT_ANONYMOUS_DEFAULT =
+            "Dice rolled {result}/{max_roll} for {reason}!";
+    private static final String ROLL_FORMAT_ANONYMOUS_NO_REASON_DEFAULT =
+            "Dice rolled {result}/{max_roll}!";
+    private static final String ROLL_FORMAT_ANONYMOUS_RU =
+            "На кубике выпало: {result}/{max_roll} — {reason}!";
+    private static final String ROLL_FORMAT_ANONYMOUS_NO_REASON_RU =
+            "На кубике выпало: {result}/{max_roll}!";
+    private static final String HIDDEN_ROLL_TEXT_DEFAULT = "<obfuscate>???</obfuscate>";
+    private static final String MIN_ROLL_FORMAT =
+            "<color col=#ff0000><shake><glitch>{line}</glitch></shake></color>";
+    private static final String MAX_ROLL_FORMAT = "<neon><rainbow>{line}</rainbow></neon>";
+    private static final String ROLL_SOUND_DEFAULT = "minecraft:block.note_block.hat";
+    private static final String MIN_ROLL_SOUND_DEFAULT = "minecraft:block.anvil.land";
+    private static final String MAX_ROLL_SOUND_DEFAULT = "minecraft:entity.player.levelup";
+    private static final String MENU_MUSIC_DEFAULT = "minecraft:music.menu";
+
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
     public static final ModConfigSpec.ConfigValue<String> CHAT_SEPARATOR = BUILDER
@@ -34,6 +70,145 @@ public final class BackUtilsConfig {
             .comment("Whether *asterisk* messages and /me are recorded in the roleplay log.",
                     "0 = off, 1 = on.")
             .defineInRange("roleplayActionsEnabled", 1, 0, 1);
+
+    public static final ModConfigSpec.IntValue ALERT_SELF = BUILDER
+            .comment("Whether an operator is alerted about their own actions as well as",
+                    "everyone else's. 0 = other operators only, 1 = the actor too.")
+            .defineInRange("alertSelfActions", 1, 0, 1);
+
+    // ------------------------------------------------------------------
+    // Dice rolls
+    // ------------------------------------------------------------------
+
+    public static final ModConfigSpec.IntValue ROLL_MAX = BUILDER
+            .comment("The maximum a roll may come up, used whenever the command does not give",
+                    "one of its own.")
+            .defineInRange("rollMax", 100, 1, 1000000);
+
+    public static final ModConfigSpec.DoubleValue ROLL_RADIUS = BUILDER
+            .comment("How far away a player may be and still witness a roll. Everyone within",
+                    "this distance of the player being rolled for is added to the entry's",
+                    "access list.")
+            .defineInRange("rollRadius", 24.0D, 0.0D, 512.0D);
+
+    /**
+     * The line a roll leaves in the log, for a roll that names somebody. Written with placeholders
+     * rather than composed in code, so an operator can reword it without a new build:
+     * {@code {player}} is the player being rolled for, {@code {player_possessive}} the same with an
+     * {@code 's} after it, {@code {result}} the number rolled, {@code {max_roll}} the maximum, and
+     * {@code {reason}} whatever the command was given.
+     *
+     * <p>A roll that names nobody is worded by {@link #ROLL_FORMAT_ANONYMOUS}, so the player
+     * placeholders come out empty only in a hand-written line that puts them in one.
+     */
+    public static final ModConfigSpec.ConfigValue<String> ROLL_FORMAT = BUILDER
+            .comment("The log line for a roll that has a reason. Placeholders: {player},",
+                    "{player_possessive}, {result}, {max_roll}, {reason}.",
+                    "Ember's markup tags work here, so the line can be coloured or styled.")
+            .define("rollFormat", ROLL_FORMAT_DEFAULT);
+
+    public static final ModConfigSpec.ConfigValue<String> ROLL_FORMAT_NO_REASON = BUILDER
+            .comment("The same, for a roll given no reason. A separate line rather than an",
+                    "empty {reason}, which would leave 'for !' behind.")
+            .define("rollFormatNoReason", ROLL_FORMAT_NO_REASON_DEFAULT);
+
+    /**
+     * The line for a roll that names nobody. The player placeholders resolve to nothing here, and
+     * borrowing the named line would leave it reading as a sentence with its subject cut off, so
+     * this is a wording of its own.
+     */
+    public static final ModConfigSpec.ConfigValue<String> ROLL_FORMAT_ANONYMOUS = BUILDER
+            .comment("The log line for a roll that names nobody. Placeholders: {result},",
+                    "{max_roll}, {reason}; the player placeholders are empty in this line.",
+                    "Ember's markup tags work here, so the line can be coloured or styled.")
+            .define("rollFormatAnonymous", ROLL_FORMAT_ANONYMOUS_DEFAULT);
+
+    public static final ModConfigSpec.ConfigValue<String> ROLL_FORMAT_ANONYMOUS_NO_REASON = BUILDER
+            .comment("The same, for such a roll given no reason. A separate line rather than an",
+                    "empty {reason}, which would leave 'for !' behind.")
+            .define("rollFormatAnonymousNoReason", ROLL_FORMAT_ANONYMOUS_NO_REASON_DEFAULT);
+
+    /**
+     * What stands in for the result on a hidden roll. The default is Ember's own obfuscate tag, so
+     * the number is not merely unreadable but scrambled as it is drawn; the text inside it is what
+     * shows if the effect is ever unavailable. The long spelling is the one that carries the
+     * effect: {@code <obf>} is parsed and then does nothing.
+     */
+    public static final ModConfigSpec.ConfigValue<String> ROLL_HIDDEN_TEXT = BUILDER
+            .comment("Shown instead of {result} on a hidden roll. The default scrambles it with",
+                    "Ember's <obfuscate> tag; the short <obf> spelling carries no effect, and",
+                    "plain text such as ??? works too.")
+            .define("hiddenRollText", HIDDEN_ROLL_TEXT_DEFAULT);
+
+    /**
+     * The line as it reads on the lowest and the highest roll, wrapped around the ordinary line so
+     * that the reason is worded in one place: {@code {line}} is what {@code rollFormat} produced.
+     */
+    public static final ModConfigSpec.ConfigValue<String> ROLL_FORMAT_MIN = BUILDER
+            .comment("Wraps the roll line when the lowest number comes up. {line} is that line.",
+                    "The default is red, shaking and glitching. Leave it empty for no treatment.")
+            .define("rollMinFormat", MIN_ROLL_FORMAT);
+
+    public static final ModConfigSpec.ConfigValue<String> ROLL_FORMAT_MAX = BUILDER
+            .comment("The same for the highest number. The default is neon rainbow.")
+            .define("rollMaxFormat", MAX_ROLL_FORMAT);
+
+    public static final ModConfigSpec.ConfigValue<String> ROLL_SOUND = BUILDER
+            .comment("Played to everyone who witnesses the roll. A full sound id, such as",
+                    "minecraft:block.note_block.hat; leave it empty for silence.")
+            .define("rollSound", ROLL_SOUND_DEFAULT);
+
+    public static final ModConfigSpec.DoubleValue ROLL_SOUND_VOLUME = BUILDER
+            .comment("Volume of the roll sounds, 0 to 2.")
+            .defineInRange("rollSoundVolume", 0.5D, 0.0D, 2.0D);
+
+    public static final ModConfigSpec.DoubleValue ROLL_SOUND_PITCH = BUILDER
+            .comment("Pitch of the roll sounds, 0.5 to 2.")
+            .defineInRange("rollSoundPitch", 1.0D, 0.5D, 2.0D);
+
+    public static final ModConfigSpec.ConfigValue<String> ROLL_MIN_SOUND = BUILDER
+            .comment("Played instead, when the lowest number comes up.")
+            .define("rollMinSound", MIN_ROLL_SOUND_DEFAULT);
+
+    public static final ModConfigSpec.ConfigValue<String> ROLL_MAX_SOUND = BUILDER
+            .comment("Played instead, when the highest number comes up.")
+            .define("rollMaxSound", MAX_ROLL_SOUND_DEFAULT);
+
+    // ------------------------------------------------------------------
+    // The client menus
+    // ------------------------------------------------------------------
+
+    /** The languages the mod's own lines can be written in. */
+    public static final List<String> MESSAGES_LANGUAGES = List.of("en_us", "ru_ru");
+
+    /**
+     * Which language the lines this mod writes into the log are worded in.
+     *
+     * <p>Only the mod's own wording: a format that has been edited by hand is used exactly as it was
+     * written whatever this says, and the notices a player is sent are translated by that player's
+     * own client, which needs no setting at all.
+     */
+    public static final ModConfigSpec.ConfigValue<String> MESSAGES_LANGUAGE = BUILDER
+            .comment("The language of the lines this mod words itself: the four roll",
+                    "formats below, named or actorless, each with and without a reason,",
+                    "while they are still as they shipped. One of en_us, ru_ru. A format",
+                    "edited by hand is used as written whichever this is.")
+            .define("messagesLanguage", "en_us");
+
+    /**
+     * The music the corner menu plays for whoever opens it. A full sound id, or empty for silence:
+     * the client resolves it, so a track from a resourcepack works as well as a vanilla one.
+     */
+    public static final ModConfigSpec.ConfigValue<String> MENU_MUSIC = BUILDER
+            .comment("Played on a loop for the player who opens the corner menu, and faded out",
+                    "when they close it. A full sound id, such as minecraft:music.menu;",
+                    "leave it empty to play nothing.")
+            .define("menuMusic", MENU_MUSIC_DEFAULT);
+
+    public static final ModConfigSpec.DoubleValue MENU_MUSIC_VOLUME = BUILDER
+            .comment("Volume of that music, 0 to 2. It plays on the music channel, so the",
+                    "player's own music slider still applies.")
+            .defineInRange("menuMusicVolume", 1.0D, 0.0D, 2.0D);
 
     // ------------------------------------------------------------------
     // Typewriter effect for log entries
@@ -159,6 +334,264 @@ public final class BackUtilsConfig {
     public static void setActionLoggingEnabled(boolean enabled) {
         LOG_ACTIONS_ENABLED.set(enabled ? 1 : 0);
         LOG_ACTIONS_ENABLED.save();
+    }
+
+    public static boolean isSelfAlertEnabled() {
+        try {
+            return ALERT_SELF.get() != 0;
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
+    public static void setSelfAlertEnabled(boolean enabled) {
+        ALERT_SELF.set(enabled ? 1 : 0);
+        ALERT_SELF.save();
+    }
+
+    // ------------------------------------------------------------------
+    // Dice rolls
+    // ------------------------------------------------------------------
+
+    public static int getRollMax() {
+        try {
+            return ROLL_MAX.get();
+        } catch (Exception e) {
+            return 100;
+        }
+    }
+
+    public static void setRollMax(int value) {
+        ROLL_MAX.set(value);
+        ROLL_MAX.save();
+    }
+
+    public static double getRollRadius() {
+        try {
+            return ROLL_RADIUS.get();
+        } catch (Exception e) {
+            return 24.0D;
+        }
+    }
+
+    public static void setRollRadius(double value) {
+        ROLL_RADIUS.set(value);
+        ROLL_RADIUS.save();
+    }
+
+    public static String getRollFormat() {
+        String stored = stored(ROLL_FORMAT);
+        if (stored != null && !stored.equals(ROLL_FORMAT_DEFAULT)) return stored;
+        // Left as it shipped, so it follows the language the server writes its lines in.
+        return russian() ? ROLL_FORMAT_RU : ROLL_FORMAT_DEFAULT;
+    }
+
+    public static void setRollFormat(String value) {
+        ROLL_FORMAT.set(value);
+        ROLL_FORMAT.save();
+    }
+
+    public static String getRollFormatNoReason() {
+        String stored = stored(ROLL_FORMAT_NO_REASON);
+        if (stored != null && !stored.equals(ROLL_FORMAT_NO_REASON_DEFAULT)) return stored;
+        return russian() ? ROLL_FORMAT_NO_REASON_RU : ROLL_FORMAT_NO_REASON_DEFAULT;
+    }
+
+    public static void setRollFormatNoReason(String value) {
+        ROLL_FORMAT_NO_REASON.set(value);
+        ROLL_FORMAT_NO_REASON.save();
+    }
+
+    public static String getRollFormatAnonymous() {
+        String stored = stored(ROLL_FORMAT_ANONYMOUS);
+        if (stored != null && !stored.equals(ROLL_FORMAT_ANONYMOUS_DEFAULT)) return stored;
+        return russian() ? ROLL_FORMAT_ANONYMOUS_RU : ROLL_FORMAT_ANONYMOUS_DEFAULT;
+    }
+
+    public static void setRollFormatAnonymous(String value) {
+        ROLL_FORMAT_ANONYMOUS.set(value);
+        ROLL_FORMAT_ANONYMOUS.save();
+    }
+
+    public static String getRollFormatAnonymousNoReason() {
+        String stored = stored(ROLL_FORMAT_ANONYMOUS_NO_REASON);
+        if (stored != null && !stored.equals(ROLL_FORMAT_ANONYMOUS_NO_REASON_DEFAULT)) {
+            return stored;
+        }
+        return russian() ? ROLL_FORMAT_ANONYMOUS_NO_REASON_RU
+                : ROLL_FORMAT_ANONYMOUS_NO_REASON_DEFAULT;
+    }
+
+    public static void setRollFormatAnonymousNoReason(String value) {
+        ROLL_FORMAT_ANONYMOUS_NO_REASON.set(value);
+        ROLL_FORMAT_ANONYMOUS_NO_REASON.save();
+    }
+
+    public static String getHiddenRollText() {
+        try {
+            return text(ROLL_HIDDEN_TEXT, HIDDEN_ROLL_TEXT_DEFAULT);
+        } catch (Exception e) {
+            return HIDDEN_ROLL_TEXT_DEFAULT;
+        }
+    }
+
+    public static void setHiddenRollText(String value) {
+        ROLL_HIDDEN_TEXT.set(value);
+        ROLL_HIDDEN_TEXT.save();
+    }
+
+    public static String getRollMinFormat() {
+        try {
+            return text(ROLL_FORMAT_MIN, MIN_ROLL_FORMAT);
+        } catch (Exception e) {
+            return MIN_ROLL_FORMAT;
+        }
+    }
+
+    public static void setRollMinFormat(String value) {
+        ROLL_FORMAT_MIN.set(value);
+        ROLL_FORMAT_MIN.save();
+    }
+
+    public static String getRollMaxFormat() {
+        try {
+            return text(ROLL_FORMAT_MAX, MAX_ROLL_FORMAT);
+        } catch (Exception e) {
+            return MAX_ROLL_FORMAT;
+        }
+    }
+
+    public static void setRollMaxFormat(String value) {
+        ROLL_FORMAT_MAX.set(value);
+        ROLL_FORMAT_MAX.save();
+    }
+
+    public static String getRollSound() {
+        try {
+            return text(ROLL_SOUND, ROLL_SOUND_DEFAULT);
+        } catch (Exception e) {
+            return ROLL_SOUND_DEFAULT;
+        }
+    }
+
+    public static void setRollSound(String value) {
+        ROLL_SOUND.set(value);
+        ROLL_SOUND.save();
+    }
+
+    public static String getRollMinSound() {
+        try {
+            return text(ROLL_MIN_SOUND, MIN_ROLL_SOUND_DEFAULT);
+        } catch (Exception e) {
+            return MIN_ROLL_SOUND_DEFAULT;
+        }
+    }
+
+    public static void setRollMinSound(String value) {
+        ROLL_MIN_SOUND.set(value);
+        ROLL_MIN_SOUND.save();
+    }
+
+    public static String getRollMaxSound() {
+        try {
+            return text(ROLL_MAX_SOUND, MAX_ROLL_SOUND_DEFAULT);
+        } catch (Exception e) {
+            return MAX_ROLL_SOUND_DEFAULT;
+        }
+    }
+
+    public static void setRollMaxSound(String value) {
+        ROLL_MAX_SOUND.set(value);
+        ROLL_MAX_SOUND.save();
+    }
+
+    public static double getRollSoundVolume() {
+        try {
+            return ROLL_SOUND_VOLUME.get();
+        } catch (Exception e) {
+            return 0.5D;
+        }
+    }
+
+    public static void setRollSoundVolume(double value) {
+        ROLL_SOUND_VOLUME.set(value);
+        ROLL_SOUND_VOLUME.save();
+    }
+
+    public static double getRollSoundPitch() {
+        try {
+            return ROLL_SOUND_PITCH.get();
+        } catch (Exception e) {
+            return 1.0D;
+        }
+    }
+
+    public static void setRollSoundPitch(double value) {
+        ROLL_SOUND_PITCH.set(value);
+        ROLL_SOUND_PITCH.save();
+    }
+
+    /** {@return the stored text, or the default when the file holds nothing} */
+    private static String text(ModConfigSpec.ConfigValue<String> spec, String fallback) {
+        String value = spec.get();
+        return value == null || value.isEmpty() ? fallback : value;
+    }
+
+    /** {@return the value in the file, or null when there is nothing to read} */
+    private static String stored(ModConfigSpec.ConfigValue<String> spec) {
+        try {
+            return text(spec, null);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** {@return true when the mod's own lines are worded in Russian} */
+    private static boolean russian() {
+        return "ru_ru".equalsIgnoreCase(getMessagesLanguage());
+    }
+
+    public static String getMessagesLanguage() {
+        try {
+            return text(MESSAGES_LANGUAGE, MESSAGES_LANGUAGES.getFirst());
+        } catch (Exception e) {
+            return MESSAGES_LANGUAGES.getFirst();
+        }
+    }
+
+    public static void setMessagesLanguage(String value) {
+        MESSAGES_LANGUAGE.set(value);
+        MESSAGES_LANGUAGE.save();
+    }
+
+    // ------------------------------------------------------------------
+    // The client menus
+    // ------------------------------------------------------------------
+
+    public static String getMenuMusic() {
+        try {
+            return text(MENU_MUSIC, MENU_MUSIC_DEFAULT);
+        } catch (Exception e) {
+            return MENU_MUSIC_DEFAULT;
+        }
+    }
+
+    public static void setMenuMusic(String value) {
+        MENU_MUSIC.set(value);
+        MENU_MUSIC.save();
+    }
+
+    public static double getMenuMusicVolume() {
+        try {
+            return MENU_MUSIC_VOLUME.get();
+        } catch (Exception e) {
+            return 1.0D;
+        }
+    }
+
+    public static void setMenuMusicVolume(double value) {
+        MENU_MUSIC_VOLUME.set(value);
+        MENU_MUSIC_VOLUME.save();
     }
 
     // ------------------------------------------------------------------

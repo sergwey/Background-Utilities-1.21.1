@@ -10,6 +10,7 @@ import com.lowdragmc.lowdraglib2.gui.ui.elements.Button;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.ColorSelector;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.Label;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.Selector;
+import com.lowdragmc.lowdraglib2.gui.ui.elements.TextElement;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.TextField;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.Toggle;
 import dev.vfyjxf.taffy.style.AlignContent;
@@ -93,27 +94,27 @@ public final class BackUtilsProfileEditorScreen extends Screen {
     private static final int GOOD = 0xFF8FD98F;
 
     private static final String DOCS_URL = "https://tysontheember.dev/embers-text-api/markup/syntax/";
-    private static final String DOCS_TEXT = "Syntax: tysontheember.dev/embers-text-api/markup/syntax/";
-    private static final String SAMPLE = "Hello there";
-    /** What {@code {player}} becomes in a preview when there is no name to put there. */
-    private static final String SAMPLE_PLAYER = "Player";
 
-    /** Shown only in advanced mode, above the raw field, for a player's own chat profile. */
+    /** Translation keys shown only in advanced mode, above the raw field, for a player's own chat profile. */
     private static final List<String> INSTRUCTIONS_SELF = List.of(
-            "Ember markup. {m} is your message; your name is not part of a profile.",
-            "Colours, gradients and animations only — no clicks, hovers or sounds.");
+            "backutils.editor.help.self.message",
+            "backutils.editor.help.self.restrictions");
 
     private static final List<String> INSTRUCTIONS_ADMIN_CHAT = List.of(
-            "Ember markup. {m} is the message; {player} is the account name.",
-            "Anything well-formed goes — the players' tag list does not apply to staff.");
+            "backutils.editor.help.admin_chat.message",
+            "backutils.editor.help.admin_chat.restrictions");
 
     private static final List<String> INSTRUCTIONS_ADMIN_NAME = List.of(
-            "Ember markup. {player} is the account name; {m} means nothing in a name.",
-            "Anything well-formed but sounds — a name is drawn on every nametag.");
+            "backutils.editor.help.admin_name.message",
+            "backutils.editor.help.admin_name.restrictions");
 
     private static BackUtilsProfileEditorScreen instance;
 
     private static final class Built {
+
+        /** One caption and the key behind it, so {@link #applyTexts} can write it out again. */
+        private record Caption(TextElement element, String key) {}
+
         ModularUI ui;
         UIElement root;
         UIElement panel;
@@ -141,6 +142,12 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         TextField advancedField;
         UIElement previewRow;
         Label status;
+        /**
+         * Every caption in the tree with the key it came from. The tree outlives a language change
+         * while ldlib2 flattens a string into a literal as it is set, so the keys are kept to write
+         * the captions again on every open.
+         */
+        final List<Caption> captions = new ArrayList<>();
     }
 
     private final Built built;
@@ -172,7 +179,7 @@ public final class BackUtilsProfileEditorScreen extends Screen {
     private int linkHeight;
 
     private BackUtilsProfileEditorScreen(Built built) {
-        super(Component.literal("Background Utilities - Profile"));
+        super(Component.translatable("backutils.editor.screen.title"));
         this.built = built;
     }
 
@@ -216,16 +223,17 @@ public final class BackUtilsProfileEditorScreen extends Screen {
     // ------------------------------------------------------------------
 
     private static void build(Built built) {
-        built.title = text("New profile", PLAIN, 12f, LINE + 4);
+        built.title = text(Text.of("backutils.editor.title.new_profile"), PLAIN, 12f, LINE + 4);
 
         built.nameField = new TextField();
         built.nameField.setText("", false);
         built.nameField.layout(l -> l.flex(1).height(14));
-        built.nameField.textFieldStyle(s -> s.placeholder(Component.literal("Profile name")));
+        built.nameField.textFieldStyle(s ->
+                s.placeholder(Component.translatable("backutils.editor.field.name")));
         built.nameField.setTextResponder(value -> {
             if (instance != null) instance.refreshStatus();
         });
-        UIElement nameRow = row("Name", built.nameField);
+        UIElement nameRow = row(built, "backutils.editor.label.name", built.nameField);
 
         built.boldToggle = styleToggle(value -> setStyle(StylePart.BOLD, value));
         built.italicToggle = styleToggle(value -> setStyle(StylePart.ITALIC, value));
@@ -258,7 +266,7 @@ public final class BackUtilsProfileEditorScreen extends Screen {
 
         built.colourValue = text("", MUTED, 9f, ROW);
         Button none = new Button();
-        none.setText("None", false);
+        translated(built, none.text, "backutils.editor.button.none");
         none.layout(l -> l.width(50).height(14));
         none.setOnClick(e -> {
             if (instance != null) instance.clearColour();
@@ -274,8 +282,10 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         UIElement styles = new UIElement();
         styles.layout(l -> l.flex(1).height(SIMPLE_BLOCK_HEIGHT)
                 .flexDirection(FlexDirection.COLUMN).justifyContent(AlignContent.CENTER).gapAll(GAP));
-        styles.addChildren(labelled(built.boldToggle, "Bold"), labelled(built.italicToggle, "Italic"),
-                labelled(built.underlineToggle, "Underline"), labelled(built.strikeToggle, "Strike"));
+        styles.addChildren(labelled(built, built.boldToggle, "backutils.editor.label.bold"),
+                labelled(built, built.italicToggle, "backutils.editor.label.italic"),
+                labelled(built, built.underlineToggle, "backutils.editor.label.underline"),
+                labelled(built, built.strikeToggle, "backutils.editor.label.strike"));
 
         built.simpleBlock = new UIElement();
         built.simpleBlock.layout(l -> l.widthPercent(100).height(SIMPLE_BLOCK_HEIGHT)
@@ -306,14 +316,15 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         built.soundField = new TextField();
         built.soundField.setText("", false);
         built.soundField.layout(l -> l.width(SOUND_FIELD_WIDTH).height(14));
-        built.soundField.textFieldStyle(s -> s.placeholder(Component.literal("any sound id")));
+        built.soundField.textFieldStyle(s ->
+                s.placeholder(Component.translatable("backutils.editor.field.sound")));
         built.soundField.setTextResponder(value -> {
             if (instance == null) return;
             instance.sound = value == null ? "" : value.trim();
             instance.refreshStatus();
         });
 
-        built.extraLabel = text("Sound", PLAIN, 9f, ROW);
+        built.extraLabel = text(Text.of("backutils.editor.label.sound"), PLAIN, 9f, ROW);
         built.extraLabel.layout(l -> l.width(LABEL_WIDTH).height(ROW));
 
         built.extraRow = new UIElement();
@@ -329,7 +340,8 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         built.advancedToggle.setOnToggleChanged(value -> {
             if (instance != null) instance.onAdvancedToggled(value);
         });
-        UIElement advancedRow = row("Advanced mode", built.advancedToggle);
+        UIElement advancedRow = row(built, "backutils.editor.label.advanced_mode",
+                built.advancedToggle);
 
         // Two lines always, so the strip only ever changes its words. Plain labels, because drawing
         // the explanation of markup through Ember would parse it.
@@ -364,7 +376,8 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         built.advancedFieldRow.layout(l -> l.widthPercent(100).height(ROW));
         built.advancedFieldRow.addChild(built.advancedField);
 
-        Label previewCaption = text("Preview", MUTED, 8f, LINE);
+        Label previewCaption = translated(built, "backutils.editor.label.preview",
+                MUTED, 8f, LINE);
         previewCaption.layout(l -> l.widthPercent(100).height(LINE));
 
         built.previewRow = new UIElement();
@@ -379,13 +392,14 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         buttons.layout(l -> l.widthPercent(100).height(ROW)
                 .flexDirection(FlexDirection.ROW).alignItems(AlignItems.CENTER).gapAll(GAP));
         Button save = new Button();
-        save.setText("Save", false);
-        save.layout(l -> l.width(60).height(14));
+        translated(built, save.text, "backutils.editor.button.save");
+        // Wide enough for "Сохранить", and the width AdminConfigTab's own Save button uses.
+        save.layout(l -> l.width(64).height(14));
         save.setOnClick(e -> {
             if (instance != null) instance.save();
         });
         Button cancel = new Button();
-        cancel.setText("Cancel", false);
+        translated(built, cancel.text, "backutils.editor.button.cancel");
         cancel.layout(l -> l.width(60).height(14));
         cancel.setOnClick(e -> {
             if (instance != null) instance.onClose();
@@ -408,6 +422,34 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         built.root.addChild(built.panel);
     }
 
+    /**
+     * Sets a caption from a translation key and remembers the pair, so {@link #applyTexts} can put
+     * the text back: ldlib2 keeps whatever string it was given as a literal, and the tree here is
+     * built once and kept for the life of the client.
+     */
+    private static void translated(Built built, TextElement element, String key) {
+        element.setText(Text.of(key), false);
+        built.captions.add(new Built.Caption(element, key));
+    }
+
+    /** {@return a caption label from a key}, written again like every other caption */
+    private static Label translated(Built built, String key, int colour, float size, int height) {
+        Label label = text(Text.of(key), colour, size, height);
+        built.captions.add(new Built.Caption(label, key));
+        return label;
+    }
+
+    /**
+     * Writes every remembered caption in the language the client is set to now. The language is
+     * chosen on another screen, which replaces this one, so doing it here reaches every change
+     * without a restart.
+     */
+    private static void applyTexts(Built built) {
+        for (Built.Caption caption : built.captions) {
+            caption.element().setText(Text.of(caption.key()), false);
+        }
+    }
+
     private static int instructionHeight() {
         return INSTRUCTIONS_SELF.size() * LINE + LINE + 6;
     }
@@ -422,8 +464,8 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         return toggle;
     }
 
-    private static UIElement labelled(Toggle toggle, String name) {
-        Label label = text(name, PLAIN, 9f, ROW);
+    private static UIElement labelled(Built built, Toggle toggle, String key) {
+        Label label = translated(built, key, PLAIN, 9f, ROW);
         label.layout(l -> l.width(48).height(ROW));
 
         UIElement holder = new UIElement();
@@ -446,8 +488,8 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         instance.refreshStatus();
     }
 
-    private static UIElement row(String label, UIElement control) {
-        Label name = text(label, PLAIN, 9f, ROW);
+    private static UIElement row(Built built, String key, UIElement control) {
+        Label name = translated(built, key, PLAIN, 9f, ROW);
         name.layout(l -> l.width(LABEL_WIDTH).height(ROW));
 
         UIElement element = new UIElement();
@@ -559,7 +601,9 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         if (!sound) this.sound = "";
 
         boolean shown = sound || text;
-        built.extraLabel.setText(sound ? "Sound" : "Text", false);
+        built.extraLabel.setText(sound
+                ? Text.of("backutils.editor.label.sound")
+                : Text.of("backutils.editor.label.text"), false);
         built.soundSelector.setDisplay(sound);
         // The free-text sound is the operator's half of the row: the dropdown offers the palette, this
         // offers the rest of the game's sounds.
@@ -598,21 +642,30 @@ public final class BackUtilsProfileEditorScreen extends Screen {
     }
 
     private List<String> instructionLines() {
-        return instructionLinesFor(adminMode, nameMode);
+        List<String> keys = instructionLinesFor(adminMode, nameMode);
+        List<String> lines = new ArrayList<>(keys.size());
+        for (String key : keys) {
+            lines.add(Text.of(key));
+        }
+        return lines;
     }
 
     private void applyTitle(ProfileListPayload.Row existing) {
         if (!adminMode) {
             built.title.setText(existing == null
-                    ? "New profile"
-                    : "Editing '" + existing.name() + "'", false);
+                    ? Text.of("backutils.editor.title.new_profile")
+                    : Text.of("backutils.editor.title.editing", existing.name()), false);
             return;
         }
 
-        String kind = nameMode ? "Name profile" : "Chat profile";
+        String kind = nameMode
+                ? Text.of("backutils.editor.title.name_profile")
+                : Text.of("backutils.editor.title.chat_profile");
         built.title.setText(existing == null
-                ? "New " + kind.toLowerCase(Locale.ROOT) + " for " + target
-                : kind + " '" + existing.name() + "' for " + target, false);
+                ? Text.of("backutils.editor.title.new_profile_for",
+                        kind.toLowerCase(Locale.ROOT), target)
+                : Text.of("backutils.editor.title.editing_profile_for",
+                        kind, existing.name(), target), false);
     }
 
     private void applyStyleToggles() {
@@ -652,7 +705,9 @@ public final class BackUtilsProfileEditorScreen extends Screen {
 
     private void updateColourLabel() {
         if (built.colourValue == null) return;
-        built.colourValue.setText(colour.isBlank() ? "none" : colour, false);
+        built.colourValue.setText(colour.isBlank()
+                ? Text.of("backutils.editor.value.none")
+                : colour, false);
     }
 
     /**
@@ -759,8 +814,11 @@ public final class BackUtilsProfileEditorScreen extends Screen {
     private String previewText() {
         ProfileMarkup.Result format = currentFormat();
         String text = format.ok() ? format.value() : (advanced ? currentAdvanced() : currentInner());
-        String who = target.isBlank() ? SAMPLE_PLAYER : target;
-        return text.replace(ProfileMarkup.PLAYER, who).replace(ProfileMarkup.MESSAGE, SAMPLE);
+        String who = target.isBlank()
+                ? Text.of("backutils.editor.preview.sample_player")
+                : target;
+        return text.replace(ProfileMarkup.PLAYER, who)
+                .replace(ProfileMarkup.MESSAGE, Text.of("backutils.editor.preview.sample_message"));
     }
 
     private void refreshStatus() {
@@ -772,11 +830,13 @@ public final class BackUtilsProfileEditorScreen extends Screen {
             return;
         }
         if (editing != null && !currentNewName().equals(editing.name())) {
-            setStatus("Will be renamed to '" + currentNewName() + "'.", GOOD);
+            setStatus(Text.of("backutils.editor.status.renamed", currentNewName()), GOOD);
             return;
         }
         String rewritten = storedForm();
-        setStatus(rewritten == null ? "Looks good" : rewritten, GOOD);
+        setStatus(rewritten == null
+                ? Text.of("backutils.editor.status.looks_good")
+                : rewritten, GOOD);
     }
 
     private String storedForm() {
@@ -784,7 +844,7 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         String typed = currentAdvanced();
         ProfileMarkup.Result format = currentFormat();
         if (!format.ok() || format.value().equals(typed)) return null;
-        return "Stored as " + format.value();
+        return Text.of("backutils.editor.status.stored_as", format.value());
     }
 
     private String localProblem() {
@@ -849,7 +909,7 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         String newName = currentNewName();
 
         sent = true;
-        setStatus("Saving...", MUTED);
+        setStatus(Text.of("backutils.editor.status.saving"), MUTED);
 
         if (adminMode) {
             // A different payload, not a flag on the player's own: that one carries no target, which is
@@ -993,6 +1053,13 @@ public final class BackUtilsProfileEditorScreen extends Screen {
 
     @Override
     public void init() {
+        // The tree is built once and kept, so the captions resolved as it was built are written
+        // again here: without that they would hold the language the window was first opened in.
+        applyTexts(built);
+        // The title is one of several keys rather than one fixed caption, so it is resolved the way
+        // loading the profile resolves it.
+        applyTitle(editing);
+
         layoutPanel();
 
         // Text measurement and rendering both have to see the raw string, or the caret and the text
@@ -1058,17 +1125,18 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         Font font = Minecraft.getInstance().font;
         int x = Math.round(built.instructionsRow.getPositionX());
         int y = Math.round(built.instructionsRow.getPositionY()) + INSTRUCTIONS_SELF.size() * LINE + 2;
+        String docsText = Text.of("backutils.editor.label.docs_link");
 
-        boolean hovered = mouseX >= x && mouseX < x + font.width(DOCS_TEXT)
+        boolean hovered = mouseX >= x && mouseX < x + font.width(docsText)
                 && mouseY >= y && mouseY < y + LINE;
-        Component link = Component.literal(DOCS_TEXT).withStyle(style -> style
+        Component link = Component.translatable("backutils.editor.label.docs_link").withStyle(style -> style
                 .withColor(hovered ? ChatFormatting.WHITE : ChatFormatting.AQUA)
                 .withUnderlined(true));
         graphics.drawString(font, link, x, y, PLAIN, false);
 
         linkX = x;
         linkY = y;
-        linkWidth = font.width(DOCS_TEXT);
+        linkWidth = font.width(docsText);
         linkHeight = LINE;
     }
 
@@ -1082,7 +1150,7 @@ public final class BackUtilsProfileEditorScreen extends Screen {
             handleComponentClicked(Style.EMPTY
                     .withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, DOCS_URL))
                     .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
-                            Component.literal("Open the Ember syntax reference"))));
+                            Component.translatable("backutils.editor.tooltip.docs_link"))));
             return true;
         }
 

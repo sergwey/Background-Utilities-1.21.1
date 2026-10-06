@@ -1,0 +1,85 @@
+{
+  "parent": "minecraft:item/handheld",
+  "textures": {
+    "layer0": "backutils:item/effect_tool",
+    "particle": "backutils:item/effect_tool"
+  },
+  "display": {
+    "thirdperson_righthand": {
+      "rotation": [0, -90, 55],
+      "translation": [0, 4.0, 0.5],
+      "scale": [0.0, 0.0, 0.0]
+    },
+    "thirdperson_lefthand": {
+      "rotation": [0, 90, -55],
+      "translation": [0, 4.0, 0.5],
+      "scale": [0.0, 0.0, 0.0]
+    },
+    "firstperson_righthand": {
+      "rotation": [0, -90, 25],
+      "translation": [1.13, 3.2, 1.13],
+      "scale": [0.68, 0.68, 0.68]
+    },
+    "firstperson_lefthand": {
+      "rotation": [0, 90, -25],
+      "translation": [1.13, 3.2, 1.13],
+      "scale": [0.68, 0.68, 0.68]
+    }
+  },
+  "elements": [
+    {
+      "name": "grip",
+      "from": [6.5, 0, 6.5],
+      "to": [9.5, 6, 9.5],
+      "rotation": { "origin": [8, 3, 8], "axis": "z", "angle": 45, "rescale": false },
+      "faces": {
+        "north": { "uv": [6, 10, 9, 16], "texture": "#layer0" },
+        "south": { "uv": [6, 10, 9, 16], "texture": "#layer0" },
+        "east": { "uv": [6, 10, 9, 16], "texture": "#layer0" },
+        "west": { "uv": [6, 10, 9, 16], "texture": "#layer0" },
+        "up": { "uv": [6, 6, 9, 9], "texture": "#layer0" },
+        "down": { "uv": [6, 6, 9, 9], "texture": "#layer0" }
+      }
+    },
+    {
+      "name": "ferrule",
+      "from": [6.9, 6, 6.9],
+      "to": [9.1, 7.5, 9.1],
+      "rotation": { "origin": [8, 6, 8], "axis": "z", "angle": 45, "rescale": false },
+      "faces": {
+        "north": { "uv": [7, 8, 9, 10], "texture": "#layer0" },
+        "south": { "uv": [7, 8, 9, 10], "texture": "#layer0" },
+        "east": { "uv": [7, 8, 9, 10], "texture": "#layer0" },
+        "west": { "uv": [7, 8, 9, 10], "texture": "#layer0" },
+        "up": { "uv": [7, 7, 9, 9], "texture": "#layer0" },
+        "down": { "uv": [7, 7, 9, 9], "texture": "#layer0" }
+      }
+    },
+    {
+      "name": "shaft",
+      "from": [7.3, 7.5, 7.3],
+      "to": [8.7, 13.5, 8.7],
+      "faces": {
+        "north": { "uv": [7, 3, 9, 9], "texture": "#layer0" },
+        "south": { "uv": [7, 3, 9, 9], "texture": "#layer0" },
+        "east": { "uv": [7, 3, 9, 9], "texture": "#layer0" },
+        "west": { "uv": [7, 3, 9, 9], "texture": "#layer0" },
+        "up": { "uv": [7, 7, 9, 9], "texture": "#layer0" },
+        "down": { "uv": [7, 7, 9, 9], "texture": "#layer0" }
+      }
+    },
+    {
+      "name": "crown",
+      "from": [6.4, 13.5, 6.4],
+      "to": [9.6, 16, 9.6],
+      "faces": {
+        "north": { "uv": [0, 0, 3, 3], "texture": "#layer0" },
+        "south": { "uv": [0, 0, 3, 3], "texture": "#layer0" },
+        "east": { "uv": [0, 0, 3, 3], "texture": "#layer0" },
+        "west": { "uv": [0, 0, 3, 3], "texture": "#layer0" },
+        "up": { "uv": [0, 0, 3, 3], "texture": "#layer0" },
+        "down": { "uv": [0, 0, 3, 3], "texture": "#layer0" }
+      }
+    }
+  ]
+}

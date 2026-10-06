@@ -4,8 +4,9 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.xlebupaksa.backutils.BackUtils;
+import net.xlebupaksa.backutils.BackUtilsConfig;
 
-/** Tells operators that an action just happened: every online operator, whoever performed it. */
+/** Tells operators that an action just happened. */
 public final class AdminAlerts {
 
     private AdminAlerts() {}
@@ -13,26 +14,30 @@ public final class AdminAlerts {
     /**
      * Sends the alert for one entry to every operator who should hear about it.
      *
-     * <p>The actor is included. The alert is what says the menu has something new and plays the
-     * operator's own alert sound, and an operator testing that alert is the actor — the one client
-     * that would otherwise never see it. Operators who do not want a bell for their own actions
-     * turn the alert off in their client config, which is the per-player choice the server cannot
-     * make for them.
+     * <p>The actor is included unless the server's {@code alertSelfActions} says otherwise. The
+     * alert is what says the menu has something new, and an operator testing that alert is the
+     * actor, so excluding them by default would leave the feature unobservable to whoever set it up.
+     *
+     * @param actor the player who performed the action, left out when self-alerts are off
      */
-    public static void notifyOperators(MinecraftServer server, long logId, String actorName) {
-        if (server == null) return;
+    public static void notifyOperators(MinecraftServer server, long logId, ServerPlayer actor) {
+        if (server == null || actor == null) return;
 
-        int told = 0;
+        String actorName = actor.getName().getString();
+        boolean selfAlerts = BackUtilsConfig.isSelfAlertEnabled();
+        int eligible = 0;
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             if (!player.hasPermissions(AdminNetwork.REQUIRED_LEVEL)) continue;
             if (!AdminNetwork.canReceive(player)) continue;
+            eligible++;
+            if (!selfAlerts && player.getUUID().equals(actor.getUUID())) continue;
 
             PacketDistributor.sendToPlayer(player, new AdminAlertPayload(logId, actorName));
-            told++;
         }
 
-        if (told == 0) {
-            // Said out loud, because an alert nobody receives looks exactly like a broken one.
+        if (eligible == 0) {
+            // Said out loud, because an alert nobody receives looks exactly like a broken one. Not
+            // raised when the actor was the only candidate and chose not to hear about their own.
             BackUtils.LOGGER.warn("No operator could be alerted about {}'s action: none online"
                     + " with permission level {} and the alert channel.", actorName,
                     AdminNetwork.REQUIRED_LEVEL);
@@ -43,9 +48,8 @@ public final class AdminAlerts {
     public static void openMenu(ServerPlayer player) {
         if (!AdminNetwork.canReceive(player)) {
             // Told, not ignored: the command exists, so the client is told why nothing happened.
-            player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
-                    "Your client cannot open the administrator menu; it is missing the channel."),
-                    false);
+            player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
+                    "backutils.admin.no_channel"), false);
             return;
         }
         PacketDistributor.sendToPlayer(player, new AdminMenuOpenPayload());

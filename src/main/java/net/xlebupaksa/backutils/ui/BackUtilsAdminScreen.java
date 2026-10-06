@@ -2,7 +2,6 @@ package net.xlebupaksa.backutils.ui;
 
 import com.lowdragmc.lowdraglib2.gui.texture.ColorRectTexture;
 import com.lowdragmc.lowdraglib2.gui.texture.IGuiTexture;
-import com.lowdragmc.lowdraglib2.gui.texture.VanillaSpriteTexture;
 import com.lowdragmc.lowdraglib2.gui.ui.ModularUI;
 import com.lowdragmc.lowdraglib2.gui.ui.UI;
 import com.lowdragmc.lowdraglib2.gui.ui.UIElement;
@@ -14,12 +13,12 @@ import com.lowdragmc.lowdraglib2.gui.ui.elements.Button;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.Label;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.ScrollerView;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.Tab;
-import com.lowdragmc.lowdraglib2.gui.ui.elements.TextField;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.TabView;
+import com.lowdragmc.lowdraglib2.gui.ui.elements.TextElement;
+import com.lowdragmc.lowdraglib2.gui.ui.elements.TextField;
 import com.lowdragmc.lowdraglib2.gui.ui.event.UIEvents;
 import dev.vfyjxf.taffy.style.AlignItems;
 import dev.vfyjxf.taffy.style.FlexDirection;
-import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
@@ -66,6 +65,16 @@ public final class BackUtilsAdminScreen extends Screen {
     private static final int PLAIN = 0xFFE2E8F0;
     private static final int MARKER_GREY = 0xFF8A8A8A;
 
+    /**
+     * The marker drawn in front of an entry an administrator would not normally be shown, and
+     * beside each witness it is withheld from. A sprite rather than a glyph, because Minecraft's
+     * fonts carry no emoji and the obvious ones rendered as an empty box.
+     */
+    private static final ResourceLocation HIDDEN_MARKER =
+            ResourceLocation.fromNamespaceAndPath(BackUtils.MOD_ID, "menu/hidden_action");
+    /** Drawn at the sprite's own size, which is the height a row of this list has room for. */
+    private static final int HIDDEN_MARKER_SIZE = 10;
+
     private static final int PAD = 10;
     private static final int GAP = 8;
     private static final int INNER_GAP = 4;
@@ -89,6 +98,10 @@ public final class BackUtilsAdminScreen extends Screen {
 
     /** Everything built once, resized on each show. */
     private static final class Built {
+
+        /** One caption and the key behind it, so {@link #applyTexts} can write it out again. */
+        private record Caption(TextElement element, String key) {}
+
         ModularUI ui;
         UIElement root;
         UIElement body;
@@ -120,6 +133,12 @@ public final class BackUtilsAdminScreen extends Screen {
         Label selectedId;
         Label selectedActor;
         Label selectedPlace;
+        /**
+         * Every caption in the tree with the key it came from. The tree outlives a language change
+         * while ldlib2 flattens a string into a literal as it is set, so the keys are kept to write
+         * the captions again on every open.
+         */
+        final List<Caption> captions = new ArrayList<>();
     }
 
     /** How long the delete button stays armed between its two clicks. */
@@ -143,7 +162,7 @@ public final class BackUtilsAdminScreen extends Screen {
     private boolean formSelected;
 
     private BackUtilsAdminScreen(Built built) {
-        super(Component.literal("Background Utilities - Administration"));
+        super(Component.translatable("backutils.admin.screen.title"));
         this.built = built;
     }
 
@@ -173,7 +192,7 @@ public final class BackUtilsAdminScreen extends Screen {
 
     private static void build(Built built) {
         Label title = new Label();
-        title.setText("Administration", false);
+        translated(built, title, "backutils.admin.screen.heading");
         title.textStyle(t -> t.fontSize(12f).textColor(PLAIN).textShadow(false)
                 .textAlignHorizontal(Horizontal.LEFT).textAlignVertical(Vertical.CENTER)
                 .adaptiveWidth(true));
@@ -205,7 +224,8 @@ public final class BackUtilsAdminScreen extends Screen {
         built.logFilter = new TextField();
         built.logFilter.setText("");
         built.logFilter.layout(l -> l.width(120).height(14));
-        built.logFilter.textFieldStyle(s -> s.placeholder(Component.literal("Search")));
+        built.logFilter.textFieldStyle(s -> s.placeholder(
+                Component.translatable("backutils.admin.log.search")));
         built.logFilter.setTextResponder(text -> {
             if (instance != null) instance.rebuildList();
         });
@@ -221,18 +241,18 @@ public final class BackUtilsAdminScreen extends Screen {
         details.layout(l -> l.flex(1).height(HEADER_HEIGHT)
                 .flexDirection(FlexDirection.COLUMN));
         details.addChildren(built.hoverActor, built.hoverDate, built.hoverPlace);
-        built.hoverPlace.setText("Hover an action, or click one, to see where it happened.", false);
+        translated(built, built.hoverPlace, "backutils.admin.detail.hint");
         built.details = details;
 
         // The details take the middle of the row, between the title and the search box. Over the
         // profile tab the title and the alert marker are the whole row, and the room freed is a row
         // of the player list.
-        built.refresh = refreshButton();
+        built.refresh = refreshButton(built);
         built.header = header;
         header.addChildren(title, built.refresh, alertLabel(), details, built.logFilter);
 
         TabView tabView = new TabView();
-        built.logTab = new Tab().setText("Action log", false);
+        built.logTab = translatedTab(built, "backutils.admin.tab.log");
         tabView.addTab(built.logTab, logHolder);
         tabView.layout(l -> l.flex(1));
         built.tabView = tabView;
@@ -242,8 +262,8 @@ public final class BackUtilsAdminScreen extends Screen {
         built.chatTab = new AdminProfileTab(false);
         built.nameTab = new AdminProfileTab(true);
 
-        built.chatTabHeader = new Tab().setText("Chat", false);
-        built.namesTabHeader = new Tab().setText("Names", false);
+        built.chatTabHeader = translatedTab(built, "backutils.admin.tab.chat");
+        built.namesTabHeader = translatedTab(built, "backutils.admin.tab.names");
         built.profileTabs = new TabView();
         // The inner tab view keeps its strip and gives up its panel border: the outer view already
         // draws a box.
@@ -252,12 +272,12 @@ public final class BackUtilsAdminScreen extends Screen {
         built.profileTabs.addTab(built.chatTabHeader, built.chatTab.root());
         built.profileTabs.addTab(built.namesTabHeader, built.nameTab.root());
 
-        built.profilesTab = new Tab().setText("Player profiles", false);
+        built.profilesTab = translatedTab(built, "backutils.admin.tab.profiles");
         tabView.addTab(built.profilesTab, built.profileTabs);
 
         // The settings tab: its sub-tabs are groups of settings, and one Save button sits below them.
         built.config = new AdminConfigTab();
-        built.configTab = new Tab().setText("Config", false);
+        built.configTab = translatedTab(built, "backutils.admin.tab.config");
         tabView.addTab(built.configTab, built.config.root());
 
         tabView.setOnTabSelected(tab -> {
@@ -279,10 +299,45 @@ public final class BackUtilsAdminScreen extends Screen {
         built.root.addChild(built.body);
     }
 
-    private static Button refreshButton() {
+    /**
+     * Sets a caption from a translation key and remembers the pair, so {@link #applyTexts} can put
+     * the text back: ldlib2 keeps whatever string it was given as a literal, and the tree here is
+     * built once and kept for the life of the client.
+     */
+    private static void translated(Built built, TextElement element, String key) {
+        element.setText(Text.of(key), false);
+        built.captions.add(new Built.Caption(element, key));
+    }
+
+    /** {@return a tab whose caption comes from a key}, written again like every other caption */
+    private static Tab translatedTab(Built built, String key) {
+        Tab tab = new Tab();
+        // Tab.setText delegates to this label, and the label is what has to be written again.
+        translated(built, tab.text, key);
+        return tab;
+    }
+
+    /**
+     * Writes every remembered caption in the language the client is set to now. The language is
+     * chosen on another screen, which replaces this one, so doing it here reaches every change
+     * without a restart.
+     */
+    private void applyTexts() {
+        for (Built.Caption caption : built.captions) {
+            caption.element().setText(Text.of(caption.key()), false);
+        }
+        // Delete is the one caption with a second wording, so it is written to the state it is in:
+        // coming back to an armed button must not have it read as unarmed.
+        if (deleteArmedAt != 0L) {
+            built.deleteButton.setText(Text.of("backutils.admin.option.delete.confirm"), false);
+        }
+    }
+
+    private static Button refreshButton(Built built) {
         Button button = new Button();
-        button.setText("Refresh", false);
-        button.layout(l -> l.width(54).height(14));
+        translated(built, button.text, "backutils.admin.screen.refresh");
+        // Wide enough for "Обновить", which needs 48 px of the width - 8 the button leaves.
+        button.layout(l -> l.width(56).height(14));
         button.setOnClick(e -> AdminMenuCache.refresh());
         return button;
     }
@@ -316,23 +371,29 @@ public final class BackUtilsAdminScreen extends Screen {
         if (shown == null) {
             built.hoverActor.setText("", false);
             built.hoverDate.setText("", false);
-            built.hoverPlace.setText("Hover an action, or click one, to see where it happened.",
-                    false);
+            built.hoverPlace.setText(Text.of("backutils.admin.detail.hint"), false);
             return;
         }
 
-        built.hoverActor.setText(shown.actor()
-                + (shown.visible() ? "" : "  (you were not a witness)"), false);
+        built.hoverActor.setText(shown.visible()
+                ? Text.of("backutils.admin.detail.actor", shown.actor())
+                : Text.of("backutils.admin.detail.actor.not.witness", shown.actor()), false);
         built.hoverDate.setText(shown.createdAt(), false);
-        built.hoverPlace.setText(shown.dimension() == null || shown.dimension().isBlank()
-                ? "no location recorded"
-                : shown.dimension() + "   " + Math.round(shown.x())
-                        + " " + Math.round(shown.y()) + " " + Math.round(shown.z()), false);
+        built.hoverPlace.setText(placeOf(shown), false);
+    }
+
+    /** {@return an entry's location, and the note an administrator alone is shown} */
+    private static String placeOf(AdminLogPayload.Row row) {
+        String place = row.dimension() == null || row.dimension().isBlank()
+                ? Text.of("backutils.admin.detail.no.location")
+                : row.dimension() + "   " + Math.round(row.x())
+                        + " " + Math.round(row.y()) + " " + Math.round(row.z());
+        return row.note() == null || row.note().isBlank() ? place : place + "   -   " + row.note();
     }
 
     private static void buildOptions(Built built) {
         Label heading = new Label();
-        heading.setText("Selected action", false);
+        translated(built, heading, "backutils.admin.option.heading");
         heading.textStyle(t -> t.fontSize(10f).textColor(PLAIN).textShadow(false)
                 .textAlignVertical(Vertical.CENTER).adaptiveWidth(true));
 
@@ -340,10 +401,10 @@ public final class BackUtilsAdminScreen extends Screen {
         built.selectedActor = detailLine(PLAIN);
         built.selectedId = detailLine(MUTED);
         built.selectedPlace = detailLine(MUTED);
-        built.selectedActor.setText("Click an action to see what can be done with it.", false);
+        translated(built, built.selectedActor, "backutils.admin.option.hint");
 
         Label witnessesHeading = new Label();
-        witnessesHeading.setText("Ticked players can see this action", false);
+        translated(built, witnessesHeading, "backutils.admin.witness.heading");
         witnessesHeading.textStyle(t -> t.fontSize(9f).textColor(MUTED).textShadow(false)
                 .adaptiveWidth(true).adaptiveHeight(true));
 
@@ -352,7 +413,8 @@ public final class BackUtilsAdminScreen extends Screen {
         built.filterField = new TextField();
         built.filterField.setText("");
         built.filterField.layout(l -> l.widthPercent(100).height(14));
-        built.filterField.textFieldStyle(s -> s.placeholder(Component.literal("Search")));
+        built.filterField.textFieldStyle(s -> s.placeholder(
+                Component.translatable("backutils.admin.witness.search")));
         built.filterField.setTextResponder(text ->
                 rebuildWitnesses(built, instance == null ? null : instance.selected));
 
@@ -368,18 +430,20 @@ public final class BackUtilsAdminScreen extends Screen {
         // is what shrinks.
         built.witnessList.layout(l -> l.widthPercent(100).flex(1));
 
-        Button hideListed = optionButton("Hide listed",
+        Button hideListed = optionButton(built, "backutils.admin.option.hide.listed",
                 () -> sendMany(AdminActionPayload.Kind.HIDE_FROM_MANY));
-        Button showListed = optionButton("Show listed",
+        Button showListed = optionButton(built, "backutils.admin.option.show.listed",
                 () -> sendMany(AdminActionPayload.Kind.UNHIDE_FROM_MANY));
 
-        Button copy = optionButton("Copy text", BackUtilsAdminScreen::copySelected);
-        Button toAction = optionButton("Teleport to action",
+        Button copy = optionButton(built, "backutils.admin.option.copy.text",
+                BackUtilsAdminScreen::copySelected);
+        Button toAction = optionButton(built, "backutils.admin.option.teleport.to.action",
                 () -> send(AdminActionPayload.of(AdminActionPayload.Kind.TELEPORT_TO_ACTION, idOrZero())));
-        Button toActor = optionButton("Teleport to actor",
+        Button toActor = optionButton(built, "backutils.admin.option.teleport.to.actor",
                 () -> send(AdminActionPayload.of(AdminActionPayload.Kind.TELEPORT_TO_ACTOR, idOrZero())));
 
-        built.deleteButton = optionButton("Delete record", BackUtilsAdminScreen::onDeleteClicked);
+        built.deleteButton = optionButton(built, "backutils.admin.option.delete.record",
+                BackUtilsAdminScreen::onDeleteClicked);
 
         built.optionsColumn = new UIElement();
         built.optionsColumn.layout(l -> l.flexDirection(FlexDirection.COLUMN).gapAll(INNER_GAP));
@@ -415,12 +479,14 @@ public final class BackUtilsAdminScreen extends Screen {
         long now = System.nanoTime();
         if (now - instance.deleteArmedAt > DELETE_CONFIRM_NANOS) {
             instance.deleteArmedAt = now;
-            instance.built.deleteButton.setText("Click again to delete", false);
+            instance.built.deleteButton.setText(Text.of("backutils.admin.option.delete.confirm"),
+                    false);
             return;
         }
 
         instance.deleteArmedAt = 0L;
-        instance.built.deleteButton.setText("Delete record", false);
+        instance.built.deleteButton.setText(Text.of("backutils.admin.option.delete.record"),
+                false);
         send(AdminActionPayload.of(AdminActionPayload.Kind.DELETE_RECORD, instance.selected.id()));
     }
 
@@ -445,23 +511,25 @@ public final class BackUtilsAdminScreen extends Screen {
     }
 
     /**
-     * Fills the witness list for the selected entry, with vanilla's font rather than buttons: the
-     * bold marker has to render, and ldlib2's text cannot draw markup.
+     * Fills the witness list for the selected entry, with {@link MarkupLabel} rather than buttons:
+     * the marker is a sprite, which ldlib2's own text element cannot draw.
      */
     private static void rebuildWitnesses(Built built, AdminLogPayload.Row row) {
         built.witnessList.clearAllScrollViewChildren();
         if (row == null) {
-            built.witnessList.addScrollViewChild(muted("Nobody selected."));
+            built.witnessList.addScrollViewChild(
+                    muted(Text.of("backutils.admin.witness.none.selected")));
             return;
         }
         if (row.witnesses().isEmpty()) {
-            built.witnessList.addScrollViewChild(muted("Nobody witnessed this action."));
+            built.witnessList.addScrollViewChild(muted(Text.of("backutils.admin.witness.none")));
             return;
         }
 
         List<String> shown = instance == null ? row.witnesses() : instance.listedWitnesses();
         if (shown.isEmpty()) {
-            built.witnessList.addScrollViewChild(muted("No witness matches that filter."));
+            built.witnessList.addScrollViewChild(
+                    muted(Text.of("backutils.admin.witness.no.match")));
             return;
         }
 
@@ -471,7 +539,8 @@ public final class BackUtilsAdminScreen extends Screen {
 
             MarkupLabel label = new MarkupLabel(List.of(witness), LINE_STEP,
                     canSee ? PLAIN : MUTED);
-            label.withPrefix(checkbox(canSee), canSee ? MARKER_GREY : MARKER_GREY);
+            label.withPrefix(checkbox(canSee), MARKER_GREY);
+            if (!canSee) label.withPrefixSprite(HIDDEN_MARKER, HIDDEN_MARKER_SIZE);
 
             UIElement element = new UIElement();
             element.layout(l -> l.widthPercent(100)
@@ -494,14 +563,7 @@ public final class BackUtilsAdminScreen extends Screen {
 
     /** {@return the tick box in front of a witness, with the marker when they cannot see it} */
     private static Component checkbox(boolean canSee) {
-        Component box = Component.literal(canSee ? "[x] " : "[ ] ");
-        return canSee ? box : box.copy().append(marker());
-    }
-
-    /** {@return the hidden marker, bold, as everything in this menu draws it} */
-    private static Component marker() {
-        return Component.literal(BackUtilsClientConfig.getHiddenMarker() + " ")
-                .withStyle(ChatFormatting.BOLD);
+        return Component.literal(canSee ? "[x] " : "[ ] ");
     }
 
     private static Label muted(String text) {
@@ -511,9 +573,9 @@ public final class BackUtilsAdminScreen extends Screen {
         return label;
     }
 
-    private static Button optionButton(String text, Runnable action) {
+    private static Button optionButton(Built built, String key, Runnable action) {
         Button button = new Button();
-        button.setText(text, false);
+        translated(built, button.text, key);
         button.layout(l -> l.widthPercent(100).height(16));
         button.setOnClick(e -> action.run());
         return button;
@@ -536,7 +598,10 @@ public final class BackUtilsAdminScreen extends Screen {
 
     private static void copySelected() {
         if (instance == null || instance.selected == null) return;
-        Minecraft.getInstance().keyboardHandler.setClipboard(instance.selected.text());
+        String note = instance.selected.note();
+        String text = instance.selected.text();
+        Minecraft.getInstance().keyboardHandler.setClipboard(note == null || note.isBlank()
+                ? text : text + " (" + note + ")");
     }
 
     /** {@return the log rows the action-log filter currently shows} */
@@ -582,7 +647,7 @@ public final class BackUtilsAdminScreen extends Screen {
         List<AdminLogPayload.Row> rows = AdminMenuCache.rows();
         if (rows.isEmpty()) {
             Label empty = new Label();
-            empty.setText("No actions recorded.", false);
+            empty.setText(Text.of("backutils.admin.log.empty"), false);
             empty.textStyle(t -> t.fontSize(9f).textColor(MUTED).textShadow(false).adaptiveWidth(true));
             built.logList.addScrollViewChild(empty);
             return;
@@ -591,7 +656,7 @@ public final class BackUtilsAdminScreen extends Screen {
         List<AdminLogPayload.Row> matching = matchingRows(rows);
         if (matching.isEmpty()) {
             Label none = new Label();
-            none.setText("No action matches that filter.", false);
+            none.setText(Text.of("backutils.admin.log.no.match"), false);
             none.textStyle(t -> t.fontSize(9f).textColor(MUTED).textShadow(false).adaptiveWidth(true));
             built.logList.addScrollViewChild(none);
             return;
@@ -615,7 +680,7 @@ public final class BackUtilsAdminScreen extends Screen {
             if (updated != null) showSelectionDetails(updated);
             else {
                 // On the leading line, which is where an answer is looked for.
-                built.selectedActor.setText("That action no longer exists.", false);
+                built.selectedActor.setText(Text.of("backutils.admin.option.gone"), false);
                 built.selectedId.setText("", false);
                 built.selectedPlace.setText("", false);
             }
@@ -627,13 +692,13 @@ public final class BackUtilsAdminScreen extends Screen {
     }
 
     private UIElement buildRow(AdminLogPayload.Row row) {
-        List<String> wrapped = MarkupWrap.wrapByWidth(row.text(), Math.max(40, listWidth - 40),
+        List<String> wrapped = MarkupWrap.wrapByWidth(shownText(row), Math.max(40, listWidth - 40),
                 line -> Minecraft.getInstance().font.width(MarkupUtil.strip(line)));
 
         MarkupLabel label = new MarkupLabel(wrapped, LINE_STEP, PLAIN);
         if (!row.visible()) {
             // The marker says the administrator would not normally be shown this entry.
-            label.withPrefix(marker(), MARKER_GREY);
+            label.withPrefixSprite(HIDDEN_MARKER, HIDDEN_MARKER_SIZE);
         }
 
         UIElement element = new UIElement();
@@ -664,6 +729,11 @@ public final class BackUtilsAdminScreen extends Screen {
         return element;
     }
 
+    /** {@return the entry's text with the administrator's note after it, when there is one} */
+    private static String shownText(AdminLogPayload.Row row) {
+        return MarkupUtil.withNote(row.text(), row.note());
+    }
+
     /** Selects a row, or teleports when the same row is clicked twice in quick succession. */
     private void onClickRow(AdminLogPayload.Row row, UIElement element) {
         long now = System.nanoTime();
@@ -684,7 +754,7 @@ public final class BackUtilsAdminScreen extends Screen {
 
         // A new selection disarms the delete button, so a confirmation cannot land on another row.
         deleteArmedAt = 0L;
-        built.deleteButton.setText("Delete record", false);
+        built.deleteButton.setText(Text.of("backutils.admin.option.delete.record"), false);
 
         rebuildWitnesses(built, row);
         showSelectionDetails(row);
@@ -694,13 +764,10 @@ public final class BackUtilsAdminScreen extends Screen {
     /** Writes the selected entry's three lines, the name first as above the log. */
     private void showSelectionDetails(AdminLogPayload.Row row) {
         built.selectedActor.setText(row.actor(), false);
-        built.selectedId.setText("#" + row.id()
-                + (row.visible() ? "" : "  (not a witness)")
-                + (row.hiddenAll() ? "  (hidden)" : ""), false);
-        built.selectedPlace.setText(row.dimension() == null || row.dimension().isBlank()
-                ? "no location recorded"
-                : row.dimension() + "   " + Math.round(row.x())
-                        + " " + Math.round(row.y()) + " " + Math.round(row.z()), false);
+        built.selectedId.setText(Text.of("backutils.admin.option.id", row.id(),
+                row.visible() ? "" : Text.of("backutils.admin.option.not.witness"),
+                row.hiddenAll() ? Text.of("backutils.admin.option.hidden") : ""), false);
+        built.selectedPlace.setText(placeOf(row), false);
     }
 
     // ------------------------------------------------------------------
@@ -730,6 +797,10 @@ public final class BackUtilsAdminScreen extends Screen {
 
     @Override
     public void init() {
+        // The tree is built once and kept, so the captions resolved as it was built are written
+        // again here: without that they would hold the language the menu was first opened in.
+        applyTexts();
+
         // Whatever tab was left selected is the one that opens: the screen is one reused instance,
         // so coming back from the editor lands where the edit started.
         formSelected = built.tabView.getSelectedTab() != built.logTab;

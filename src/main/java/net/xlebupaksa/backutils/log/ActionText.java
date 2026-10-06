@@ -72,13 +72,4 @@ public final class ActionText {
     public static String template(String body) {
         return ACTION_TEMPLATE.formatted(body.replace("\n", " ").trim());
     }
-
-    /**
-     * {@return the text to broadcast to chat for an action}
-     * <p>The asterisks are input syntax only. The name and body are joined into one string because Ember applies formatting
-     * per line, and a tag and the text it covers must not be split apart.
-     */
-    public static String emoteLine(String displayedName, String body) {
-        return displayedName + " " + body.replace("\n", " ").trim();
-    }
 }

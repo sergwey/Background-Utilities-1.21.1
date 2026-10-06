@@ -7,7 +7,6 @@ import net.minecraft.client.resources.sounds.TickableSoundInstance;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundSource;
-import net.minecraft.util.RandomSource;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -98,6 +97,16 @@ public final class ZoneMusicPlayer {
         }
         ACTIVE.clear();
         REPORTED.clear();
+    }
+
+    /**
+     * Fades the menu's music out, for a menu that has closed.
+     *
+     * <p>Stopped here rather than asked of the server: the client knows the moment its own menu goes
+     * away, and a round trip would leave the loop playing into a screen that is already gone.
+     */
+    public static void stopMenu() {
+        stop(ZoneMusicPayload.MENU_HANDLE, ZoneMusicPayload.Fade.OUT_TICKS);
     }
 
     @SubscribeEvent

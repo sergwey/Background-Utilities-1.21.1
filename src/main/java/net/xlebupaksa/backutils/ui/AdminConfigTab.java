@@ -24,6 +24,7 @@ import net.neoforged.api.distmarker.OnlyIn;
 import net.xlebupaksa.backutils.BackUtilsSettings;
 import net.xlebupaksa.backutils.data.MarkupUtil;
 import net.xlebupaksa.backutils.data.MarkupWrap;
+import net.xlebupaksa.backutils.log.Rolls;
 import net.xlebupaksa.backutils.network.AdminConfigCache;
 import net.xlebupaksa.backutils.network.AdminConfigEditPayload;
 import net.xlebupaksa.backutils.network.AdminConfigFeedbackCache;
@@ -42,8 +43,8 @@ import java.util.Map;
  *
  * <p>Rows are built from what the server sent, so no settings list lives here; the kind picks the
  * control — {@code Switch} for 0-or-1, {@code Slider} plus field for a number, {@code TextField}
- * for text, a {@link MarkupLabel} preview for the separators — a list is read-only with the
- * command that changes it, and unsaved rows are counted in the footer.
+ * for text, a {@link MarkupLabel} preview for a separator or a roll format — a list is read-only with
+ * the command that changes it, and unsaved rows are counted in the footer.
  */
 @OnlyIn(Dist.CLIENT)
 public final class AdminConfigTab {
@@ -59,6 +60,9 @@ public final class AdminConfigTab {
     private static final int ROW = 18;
     private static final int COMMENT = 10;
     private static final int PREVIEW = 12;
+    /** How many rows of a preview are shown; a longer line wraps and is cut at this. */
+    private static final int PREVIEW_ROWS = 2;
+    private static final int PREVIEW_HEIGHT = PREVIEW * PREVIEW_ROWS;
     private static final int LABEL_WIDTH = 132;
     private static final int FIELD_WIDTH = 52;
     private static final int UNIT_WIDTH = 48;
@@ -69,7 +73,11 @@ public final class AdminConfigTab {
     private static final int TAB_STRIP = 22;
 
     private static final String PREVIEW_NAME = "Dev";
-    private static final String PREVIEW_MESSAGE = "Hello there";
+
+    /** {@return the sample message the separator preview puts after its separator} */
+    private static String previewMessage() {
+        return Text.of("backutils.config.preview.message");
+    }
 
     private final UIElement root = new UIElement();
     private final TabView tabs = new TabView();
@@ -90,6 +98,11 @@ public final class AdminConfigTab {
 
     private int builtRevision = -1;
     private int builtFeedbackRevision = -1;
+    /**
+     * How wide the setting rows are, which is what the previews wrap to. Only {@link #layout} knows
+     * it: a preview wrapped before the layout has run wraps to nothing and shows its first word.
+     */
+    private int contentWidth;
 
     public AdminConfigTab() {
         build();
@@ -116,11 +129,11 @@ public final class AdminConfigTab {
         // The strip stays, the panel border goes: a box inside the menu's own tab view is a mistake.
         tabs.tabContentContainer(c -> c.style(s -> s.backgroundTexture(IGuiTexture.EMPTY)));
 
-        save.setText("Save", false);
+        save.setText(Text.of("backutils.config.save"), false);
         save.layout(l -> l.width(64).height(14));
         save.setOnClick(e -> save());
 
-        revert.setText("Revert", false);
+        revert.setText(Text.of("backutils.config.revert"), false);
         revert.layout(l -> l.width(64).height(14));
         revert.setOnClick(e -> revert());
 
@@ -157,6 +170,11 @@ public final class AdminConfigTab {
         for (ScrollerView list : lists.values()) {
             list.layout(l -> l.width(innerWidth).height(innerHeight));
         }
+
+        // The previews wrap to the width of the rows, so they are drawn again once it is known: a
+        // preview wrapped before this ran was wrapped to the floor and showed one word of the line.
+        contentWidth = innerWidth;
+        for (String key : previews.keySet()) updatePreview(key);
     }
 
     // ------------------------------------------------------------------
@@ -191,7 +209,8 @@ public final class AdminConfigTab {
         }
         for (Map.Entry<BackUtilsSettings.Group, ScrollerView> entry : lists.entrySet()) {
             if (counts.getOrDefault(entry.getKey(), 0) == 0) {
-                entry.getValue().addScrollViewChild(muted("Nothing in this group."));
+                entry.getValue().addScrollViewChild(
+                        muted(Text.of("backutils.config.group.empty")));
             }
         }
         refreshFooter();
@@ -216,7 +235,7 @@ public final class AdminConfigTab {
         UIElement block = new UIElement();
         block.layout(l -> l.widthPercent(100).height(ROW + COMMENT + 2)
                 .flexDirection(FlexDirection.COLUMN));
-        boolean separator = false;
+        boolean previewed = false;
 
         switch (setting.kind()) {
             case BOOL -> {
@@ -232,9 +251,12 @@ public final class AdminConfigTab {
             }
             case TEXT -> {
                 row.addChild(fieldFor(setting));
-                separator = isSeparator(setting.key());
-                if (separator) block.layout(l -> l.widthPercent(100)
-                        .height(ROW + COMMENT + 2 + PREVIEW).flexDirection(FlexDirection.COLUMN));
+                // A separator, or one of the roll's formats. Both are markup, and the field shows
+                // the tags as they are rather than what they will draw, so both are previewed.
+                previewed = isSeparator(setting.key()) || Rolls.isFormat(setting.key());
+                if (previewed) block.layout(l -> l.widthPercent(100)
+                        .height(ROW + COMMENT + 2 + PREVIEW_HEIGHT)
+                        .flexDirection(FlexDirection.COLUMN));
             }
             case LIST -> row.addChild(readOnly(setting));
         }
@@ -245,9 +267,9 @@ public final class AdminConfigTab {
         comment.layout(l -> l.widthPercent(100).height(COMMENT));
         block.addChild(comment);
 
-        if (separator) {
+        if (previewed) {
             MarkupLabel preview = new MarkupLabel(List.of(""), COMMENT + 2, PLAIN);
-            preview.layout(l -> l.widthPercent(100).height(PREVIEW));
+            preview.layout(l -> l.widthPercent(100).height(PREVIEW_HEIGHT));
             previews.put(setting.key(), preview);
             block.addChild(preview);
             updatePreview(setting.key());
@@ -264,7 +286,7 @@ public final class AdminConfigTab {
         // notify = false: loading a value is not a change the administrator made.
         toggle.setOn(Boolean.parseBoolean(setting.value()), false);
         toggle.setOnSwitchChanged(on -> {
-            readout.setText(on ? "on" : "off", false);
+            readout.setText(Text.of(on ? "backutils.config.on" : "backutils.config.off"), false);
             set(setting.key(), String.valueOf(on));
         });
         return toggle;
@@ -290,6 +312,10 @@ public final class AdminConfigTab {
     private TextField fieldFor(AdminConfigPayload.Row setting) {
         TextField field = new TextField();
         field.setText(setting.value(), false);
+        // The field draws its value as one literal, which Ember would parse: the tags would vanish
+        // and the text would take on their formatting, leaving nothing to edit. Handing it a
+        // component split so that no piece can be parsed shows the markup as it was typed.
+        field.setFormatter(MarkupUtil::asLiteral);
         boolean number = setting.kind() == BackUtilsSettings.Kind.NUMBER;
         if (number) {
             field.layout(l -> l.width(FIELD_WIDTH).height(14));
@@ -327,18 +353,25 @@ public final class AdminConfigTab {
         return value;
     }
 
-    /** Draws a separator through {@link MarkupLabel}, as it will read in chat. */
+    /**
+     * Draws the value through {@link MarkupLabel}, as it will read in the log: a separator between
+     * two sample words, or a roll's format with a sample roll filled into it.
+     */
     private void updatePreview(String key) {
         MarkupLabel preview = previews.get(key);
         TextField field = fields.get(key);
         if (preview == null || field == null) return;
 
-        String separator = field.getText();
-        String line = PREVIEW_NAME + (separator == null ? "" : separator) + PREVIEW_MESSAGE;
-        int width = Math.max(40, Math.round(root.getSizeWidth()) - LABEL_WIDTH - GAP * 2);
+        String value = field.getText();
+        String line = isSeparator(key)
+                ? PREVIEW_NAME + (value == null ? "" : value) + previewMessage()
+                : Rolls.preview(key, value);
+        // The width the rows have, less the label and the gaps: the same room the field above has.
+        int width = Math.max(80, contentWidth - LABEL_WIDTH - GAP * 2);
         List<String> wrapped = MarkupWrap.wrapByWidth(line, width,
                 text -> Minecraft.getInstance().font.width(MarkupUtil.strip(text)));
-        preview.setRows(wrapped.isEmpty() ? List.of("") : wrapped.subList(0, 1));
+        preview.setRows(wrapped.isEmpty() ? List.of("")
+                : wrapped.subList(0, Math.min(PREVIEW_ROWS, wrapped.size())));
     }
 
     // ------------------------------------------------------------------
@@ -364,7 +397,7 @@ public final class AdminConfigTab {
     /** Sends everything unsaved, after checking it the way the server will. */
     private void save() {
         if (pending.isEmpty()) {
-            setStatus("Nothing to save.", MUTED);
+            setStatus(Text.of("backutils.config.nothing.to.save"), MUTED);
             return;
         }
 
@@ -382,14 +415,15 @@ public final class AdminConfigTab {
         }
 
         AdminConfigNetwork.send(new AdminConfigEditPayload(changes));
-        setStatus("Saving...", MUTED);
+        setStatus(Text.of("backutils.config.saving"), MUTED);
     }
 
     /** Drops the unsaved values and draws the server's again. */
     private void revert() {
         boolean had = !pending.isEmpty();
         rebuild();
-        setStatus(had ? "Reverted to the server's values." : "Nothing to revert.", MUTED);
+        setStatus(Text.of(had ? "backutils.config.reverted"
+                : "backutils.config.nothing.to.revert"), MUTED);
     }
 
     // ------------------------------------------------------------------
@@ -399,9 +433,10 @@ public final class AdminConfigTab {
     private void refreshFooter() {
         int count = pending.size();
         if (count == 0) {
-            setStatus("No unsaved changes", MUTED);
+            setStatus(Text.of("backutils.config.no.unsaved.changes"), MUTED);
         } else {
-            setStatus(count + (count == 1 ? " unsaved change" : " unsaved changes"), PLAIN);
+            setStatus(Text.of(count == 1 ? "backutils.config.unsaved.change"
+                    : "backutils.config.unsaved.changes", count), PLAIN);
         }
     }
 
@@ -432,14 +467,15 @@ public final class AdminConfigTab {
     }
 
     private static String onOff(String value) {
-        return Boolean.parseBoolean(value) ? "on" : "off";
+        return Boolean.parseBoolean(value)
+                ? Text.of("backutils.config.on") : Text.of("backutils.config.off");
     }
 
     /** {@return the unit a number is measured in, which is presentation and not config} */
     private static String unit(String key) {
         return switch (key) {
-            case "localChatRadius", "logRadius" -> "blocks";
-            case "typingSpeed" -> "chars/s";
+            case "localChatRadius", "logRadius" -> Text.of("backutils.config.unit.blocks");
+            case "typingSpeed" -> Text.of("backutils.config.unit.chars.per.second");
             default -> "";
         };
     }

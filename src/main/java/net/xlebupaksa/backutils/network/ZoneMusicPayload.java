@@ -31,6 +31,12 @@ public record ZoneMusicPayload(
         float pitch
 ) implements CustomPacketPayload {
 
+    /**
+     * The handle the menu's own music loops under, so that a menu and a zone can never fight over
+     * the same loop: zone ids are counted up from one by the database, and this is below zero.
+     */
+    public static final long MENU_HANDLE = -1L;
+
     public static final CustomPacketPayload.Type<ZoneMusicPayload> TYPE =
             new CustomPacketPayload.Type<>(
                     ResourceLocation.fromNamespaceAndPath(BackUtils.MOD_ID, "zone_music"));
