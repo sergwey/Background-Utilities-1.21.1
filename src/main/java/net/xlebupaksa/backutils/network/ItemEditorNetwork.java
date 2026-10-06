@@ -96,7 +96,9 @@ public final class ItemEditorNetwork {
         if (name == null || name.isBlank()) {
             stack.remove(DataComponents.CUSTOM_NAME);
         } else {
-            stack.set(DataComponents.CUSTOM_NAME, ItemEdit.component(name));
+            // The markup itself, under this editor's own default style, and not a component parsed out of it:
+            // that is what lets the library read an effect while the item is being drawn — see ItemEdit.line.
+            stack.set(DataComponents.CUSTOM_NAME, ItemEdit.line(name));
         }
 
         // Only when the message says so: a screen that cannot show the lore has not said the item
@@ -107,7 +109,7 @@ public final class ItemEditorNetwork {
                 stack.remove(DataComponents.LORE);
             } else {
                 List<Component> lines = new ArrayList<>();
-                for (String line : lore) lines.add(ItemEdit.component(line));
+                for (String line : lore) lines.add(ItemEdit.line(line));
                 stack.set(DataComponents.LORE, new ItemLore(lines));
             }
         }

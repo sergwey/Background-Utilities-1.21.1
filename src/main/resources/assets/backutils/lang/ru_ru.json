@@ -216,6 +216,7 @@
   "backutils.item_editor.style.italic": "К",
   "backutils.item_editor.style.underline": "Ч",
   "backutils.item_editor.style.strike": "З",
+  "backutils.item_editor.style.obfuscated": "О",
   "backutils.item_editor.style.bold": "Ж",
   "backutils.item_editor.button.symbols": "☺"
 }

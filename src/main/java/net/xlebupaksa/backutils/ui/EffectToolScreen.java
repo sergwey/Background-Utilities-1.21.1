@@ -140,6 +140,17 @@ public final class EffectToolScreen extends Screen {
     private EffectToolConfig.AutoRotate chosenAutoRotate = EffectToolConfig.AutoRotate.DEFAULT;
     /** The slot the tool was hovered in, searched again on every write. */
     private EffectToolSlot.Address source;
+
+    /**
+     * The tool that was hovered when this screen was opened, which is what it is about.
+     *
+     * <p>Kept beside the address rather than looked up again, because the address is a place and the place
+     * does not survive this screen: opening it closes the container it was opened from, so a lookup that
+     * answered a moment ago answers with an empty slot — or with the player's inventory menu, which is not
+     * where the tool was. A screen that said "No effect tool is held." to an operator who had just held W on
+     * one was reading the place instead of the tool.
+     */
+    private ItemStack opened = ItemStack.EMPTY;
     /** True while an edit waits for the server, with the time it was sent to measure that wait. */
     private boolean waitingForAnswer;
     private long askedAt;
@@ -152,14 +163,20 @@ public final class EffectToolScreen extends Screen {
     /**
      * Opens the screen on a tool, named by the address the server is told about.
      *
+     * <p>The tool travels with the address because an address is only a place. What the screen is about is the
+     * stack that was hovered, and it holds that from the moment it opens: the place it was taken from is gone
+     * by then — this screen has closed the container — and asking the place again is how the screen came to
+     * say there was no tool at all to an operator who had just held W on one.
+     *
      * <p>A null address is not a failure to open: it is a tool the server cannot be told about, which
      * is what the creative screen's item list holds, and the screen says so rather than doing nothing
      * and leaving the hold looking broken.
      */
-    public static void open(EffectToolSlot.Address address) {
+    public static void open(EffectToolSlot.Address address, ItemStack tool) {
         if (Minecraft.getInstance().player == null) return;
         EffectToolScreen screen = screen();
         screen.source = address;
+        screen.opened = tool == null ? ItemStack.EMPTY : tool;
         Minecraft.getInstance().setScreen(screen);
     }
 
@@ -444,36 +461,45 @@ public final class EffectToolScreen extends Screen {
     // Reading and writing the tool
     // ------------------------------------------------------------------
 
-    /** {@return the tool in the slot it was hovered in}, or empty when that slot holds no tool */
-    private ItemStack heldTool() {
+    /**
+     * {@return the tool this screen is about}, which is the one that was hovered when it was opened
+     *
+     * <p>While the address still names a tool, that stack is the answer and is remembered: a tool the server
+     * has just written to, or one that was moved into another slot, is the tool the operator is looking at, and
+     * the boxes follow it. When the address names nothing — the container it came from is long closed — the
+     * tool that was hovered is still the tool this screen is about, and forgetting it is what a screen that
+     * says "No effect tool is held." was doing.
+     */
+    private ItemStack tool() {
         Player player = Minecraft.getInstance().player;
-        if (player == null || source == null) return ItemStack.EMPTY;
+        if (player == null) return ItemStack.EMPTY;
 
-        ItemStack stack = EffectToolSlot.stackAt(player, source);
-        return stack.getItem() instanceof EffectToolItem ? stack : ItemStack.EMPTY;
+        ItemStack live = EffectToolSlot.stackAt(player, source);
+        if (live.getItem() instanceof EffectToolItem) {
+            opened = live;
+            return live;
+        }
+        return opened;
     }
 
-    /** Writes the held tool's values into the boxes, or says why there is nothing to write. */
+    /** Writes the tool's values into the boxes, or says why there is nothing to write. */
     private void load() {
-        ItemStack tool = heldTool();
-        if (tool.isEmpty()) {
+        ItemStack stack = tool();
+        if (stack.isEmpty()) {
             built.apply.setActive(false);
             // The controls stay where they are, showing what they last held. They used to be hidden
             // outright, and that is the wrong failure: a screen with every field gone, one red line
             // and a live-looking Apply reads as a broken screen rather than as a slot with no tool in
             // it, and an operator cannot tell the two apart. Apply is what is taken away, because
             // that is the only part of this that could have changed anything.
-            setStatus(Text.of(source == null
-                            ? "backutils.effect_tool.status.not_here"
-                            : "backutils.effect_tool.status.no_tool"),
-                    WARNING);
+            setStatus(Text.of("backutils.effect_tool.status.no_tool"), WARNING);
             return;
         }
 
         built.apply.setActive(true);
         showFields();
 
-        EffectToolConfig config = EffectToolItem.configOf(tool);
+        EffectToolConfig config = EffectToolItem.configOf(stack);
         chosenMode = config.mode();
         built.mode.setSelected(config.mode().key(), false);
         chosenAutoRotate = config.autoRotate();
@@ -561,13 +587,13 @@ public final class EffectToolScreen extends Screen {
      * store the edit, and the answer replaces the status line when it arrives.
      */
     private void apply() {
-        ItemStack tool = heldTool();
-        if (tool.isEmpty()) {
+        ItemStack stack = tool();
+        if (stack.isEmpty()) {
             load();
             return;
         }
 
-        EffectToolConfig old = EffectToolItem.configOf(tool);
+        EffectToolConfig old = EffectToolItem.configOf(stack);
         // Boxes the player is part-way through typing in are not numbers yet: they keep what the
         // tool had, and the status line says so rather than reporting a change that did not happen.
         boolean[] kept = {false};
@@ -630,7 +656,7 @@ public final class EffectToolScreen extends Screen {
         // The server sends the slot before its answer, so a reload here reads what it stored. The
         // status goes on after the reload, which has a status of its own; a slot that holds no tool
         // has already been reported by the reload, and that report is the more useful one.
-        boolean present = !heldTool().isEmpty();
+        boolean present = !tool().isEmpty();
         load();
         if (present) setStatus(Text.of(reason.key()), reason.stored() ? GOOD : WARNING);
     }
@@ -683,7 +709,7 @@ public final class EffectToolScreen extends Screen {
         for (ResourceLocation id : PhotonFx.listEffects()) {
             candidates.add(id.toString());
         }
-        if (candidates.isEmpty() || heldTool().isEmpty()) {
+        if (candidates.isEmpty() || tool().isEmpty()) {
             built.effects.setDisplay(false);
             return;
         }
@@ -702,10 +728,14 @@ public final class EffectToolScreen extends Screen {
     }
 
     private void refreshStatus() {
-        if (heldTool().isEmpty()) {
-            setStatus(Text.of(source == null
-                    ? "backutils.effect_tool.status.not_here"
-                    : "backutils.effect_tool.status.no_tool"), WARNING);
+        if (tool().isEmpty()) {
+            setStatus(Text.of("backutils.effect_tool.status.no_tool"), WARNING);
+            return;
+        }
+        if (source == null) {
+            // The tool is known and its settings are on screen, and there is nowhere to write them: that is the
+            // creative screen's item list, which holds pictures of tools rather than tools the server keeps.
+            setStatus(Text.of("backutils.effect_tool.status.not_here"), WARNING);
             return;
         }
         setStatus(chosenMode == EffectToolConfig.Mode.NONE
@@ -778,6 +808,6 @@ public final class EffectToolScreen extends Screen {
             waitingForAnswer = false;
             setStatus(Text.of("backutils.effect_tool.status.no_answer"), WARNING);
         }
-        if (heldTool().isEmpty() && built.apply.isActive()) load();
+        if (tool().isEmpty() && built.apply.isActive()) load();
     }
 }

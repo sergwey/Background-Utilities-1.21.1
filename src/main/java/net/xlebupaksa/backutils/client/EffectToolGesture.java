@@ -123,7 +123,7 @@ public final class EffectToolGesture {
         if (System.nanoTime() - startedAt < HOLD_NANOS) return;
 
         abandon();
-        EffectToolScreen.open(EffectToolSlot.of(Minecraft.getInstance(), hovered));
+        EffectToolScreen.open(EffectToolSlot.of(Minecraft.getInstance(), hovered), hovered.getItem());
     }
 
     /** Draws the hold's own lines on the tool's tooltip: the bar that fills, and the item's id. */

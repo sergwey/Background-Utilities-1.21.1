@@ -216,6 +216,7 @@
   "backutils.item_editor.style.italic": "I",
   "backutils.item_editor.style.underline": "U",
   "backutils.item_editor.style.strike": "S",
+  "backutils.item_editor.style.obfuscated": "O",
   "backutils.item_editor.style.bold": "B",
   "backutils.item_editor.button.symbols": "☺"
 }

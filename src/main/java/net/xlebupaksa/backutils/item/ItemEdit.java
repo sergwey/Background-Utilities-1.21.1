@@ -8,10 +8,9 @@ import net.minecraft.network.chat.contents.PlainTextContents;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.EquipmentSlotGroup;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
-import net.minecraft.world.item.Rarity;
-import net.minecraft.world.item.component.ItemLore;
 import net.tysontheember.emberstextapi.immersivemessages.api.MarkupParser;
 import net.tysontheember.emberstextapi.immersivemessages.api.TextSpan;
+import net.tysontheember.emberstextapi.immersivemessages.effects.Effect;
 import net.xlebupaksa.backutils.BackUtils;
 
 import java.util.ArrayList;
@@ -73,12 +72,53 @@ public final class ItemEdit {
         }
     }
 
+    /** The colour every line this editor writes starts from, which is the one the game gives text with none. */
+    private static final int DEFAULT_COLOUR = 0xFFFFFF;
+
+    /**
+     * The style every line this editor writes starts from: white, and not italic.
+     *
+     * <p>Neither of those is what the game would do by itself. An item that has been renamed has its name drawn
+     * in its rarity's colour and in italic, and a line of lore in dark purple italic — the game merges both of
+     * those into the line before it draws it — so a name typed here with nothing said about its colour would
+     * come out yellow on an uncommon item and leaning to the right on every item. This is set on the component
+     * itself, which is deeper than anything the library can do: the game's own style is applied <em>under</em>
+     * this one, and a value said here wins.
+     *
+     * <p>It is a floor and not a ceiling. A colour chosen in the picker, a weight, a slant written by hand: the
+     * markup is read over this, so what an operator says about their own text is what their text wears.
+     */
+    public static final Style DEFAULT_STYLE = Style.EMPTY
+            .withColor(DEFAULT_COLOUR)
+            .withItalic(false);
+
+    /**
+     * {@return one line of an item as the component the item is given}
+     *
+     * <p><b>The markup is carried as the text of the component</b>, and not parsed into styled runs. That is
+     * what makes an effect possible at all: a colour and a weight are things a component can hold, but an
+     * animation is not — the library turns an effect into an object as it reads the markup, and the only place
+     * it can do that is while something is being drawn. So the text travels as it was typed, the library's own
+     * hook on a literal parses it as the game draws it, and a rainbow is a rainbow. A line with no markup in it
+     * is a plain literal and is drawn as one.
+     *
+     * <p>The cost is worth writing down: on a client without the library the tags are drawn as the text they
+     * are, because nothing there parses them. That is the same trade the profile names already make, and the
+     * only one available — a component that a client without the library can read is a component with no
+     * effects in it.
+     */
+    public static Component line(String markup) {
+        // Written in the form the library draws before it is handed over, so that a colour typed the other way
+        // — which the library reads and then does not apply to a literal — arrives as the colour it says.
+        return Component.literal(effectColours(markup)).withStyle(DEFAULT_STYLE);
+    }
+
     /**
      * {@return the component an Ember markup string describes}
      *
-     * <p>What a name or a lore line is built from. The same call serves both, because a lore line is a
-     * component exactly as a name is — which is worth saying, because the plan this was written from
-     * expected to have to use plain text for the lore.
+     * <p>What a line of the item <em>says</em>, read the way the renderer reads it: no effects survive this,
+     * because they are not text, and this is the reading a preview measures its characters in rather than the
+     * reading an item is given. {@link #line} is the latter.
      */
     public static Component component(String markup) {
         return component(spans(markup));
@@ -160,12 +200,123 @@ public final class ItemEdit {
      * keep the place they had, moved along by whatever tags the line grew, so that a second button wraps
      * the same words rather than the end of the line.
      *
-     * <p>Twice is the same as once: a tag already over the words is not written again, because a second
-     * pair inside the first changes nothing the item shows and makes the field harder to read.
+     * <p>Putting a pair on words that already wear one is not what a button does — a button asks
+     * {@link #wearsAll} first, and takes the style off instead — but it is what this does, because it is the
+     * plain half of that: the tag is added and nothing is decided.
      */
     public static Edited wrapped(String text, int from, int to, String open, String close) {
         Tag pair = Tag.pair(open, close);
         return reformat(text, from, to, (atom, stack) -> with(stack, pair));
+    }
+
+    /**
+     * {@return the text with a pair of tags put round one run of its characters, or taken off it}
+     *
+     * <p>Which of the two it is, is decided before this is asked — see {@link #wearsAll} — and decided once for
+     * the whole selection rather than run by run, because a selection can cover a bold line and a plain one and
+     * an operator pressing a button means one thing by it. Half a button pressed — the bold words unbolded and
+     * the plain ones bolded — is a state nobody asked for and nobody can predict from the button.
+     *
+     * <p>Taking a style off is by name and not by spelling: a run bolded as {@code <b>} is bold, and a button
+     * that could not see that would leave the weight on and open a second pair beside it.
+     */
+    public static Edited unwrapped(String text, int from, int to, String open) {
+        Tag pair = Tag.of(open);
+        return reformat(text, from, to, (atom, stack) -> without(stack, pair));
+    }
+
+    /**
+     * {@return whether every character of every one of these runs is drawn under this tag}
+     *
+     * <p>The question a button asks once, about every part of a selection that falls on a line of the item: a
+     * selection that is bold on one line and plain on the next does not wear bold, so the button that writes
+     * bold puts it on rather than taking half of it off.
+     */
+    public static boolean wearsAll(List<Run> runs, String open) {
+        Tag tag = Tag.of(open);
+        boolean any = false;
+        for (Run run : runs) {
+            if (run.from() >= run.to()) continue;
+            any = true;
+            if (!wears(run.line(), run.from(), run.to(), tag)) return false;
+        }
+        return any;
+    }
+
+    /**
+     * One line of the item and the run of the characters it shows that a selection covers on it.
+     *
+     * <p>What a button is pressed on. A selection runs across the lines of an item, and each line takes its own
+     * part of it: the first from where the drag began, the last to where it ended, and the lines between whole.
+     * The line's own text is carried rather than an index into a list of them, because the caller is the one
+     * that knows which line it is holding.
+     */
+    public record Run(String line, int from, int to) { }
+
+    /**
+     * {@return whether every character of one run of the text is drawn under this tag}
+     *
+     * <p>Asked of the runs the way everything else here is, and only of the runs that have characters: a tag
+     * that stands on its own is drawn rather than being text, and a selection that reaches over one has not
+     * thereby put its characters in the style.
+     */
+    private static boolean wears(String text, int from, int to, Tag tag) {
+        String source = text == null ? "" : text;
+        int start = Math.max(0, Math.min(Math.min(from, to), source.length()));
+        int end = Math.max(start, Math.min(Math.max(from, to), source.length()));
+        if (start == end) return false;
+
+        boolean any = false;
+        for (Piece piece : pieces(source)) {
+            if (piece.atom()) continue;
+            int a = Math.max(piece.start(), start);
+            int b = Math.min(piece.end(), end);
+            if (b <= a) continue;
+            any = true;
+            if (!holds(piece.stack(), tag)) return false;
+        }
+        return any;
+    }
+
+    /** {@return the tags without this one}, which is what taking a style off a run of words means */
+    private static List<Tag> without(List<Tag> stack, Tag tag) {
+        List<Tag> out = new ArrayList<>();
+        for (Tag existing : stack) {
+            if (!sameTag(existing, tag)) out.add(existing);
+        }
+        return out.isEmpty() ? List.of() : List.copyOf(out);
+    }
+
+    /** {@return whether one of these tags is the tag being looked for}, under any of the names it is written */
+    private static boolean holds(List<Tag> stack, Tag tag) {
+        for (Tag existing : stack) {
+            if (sameTag(existing, tag)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * {@return whether two tags are the same style}, whatever they are called
+     *
+     * <p>The library reads a handful of styles under two names each — {@code <b>} and {@code <bold>},
+     * {@code <i>} and {@code <italic>} — and both are what the game draws. A button that asked only after the
+     * name it writes itself would not see the other one: pressed on words bolded as {@code <b>}, it would put
+     * a second weight on them and then take that one off again, which is a button that does nothing. The colour
+     * is not here, because a colour is set by the picker rather than switched — see {@link #isColour}.
+     */
+    private static boolean sameTag(Tag one, Tag other) {
+        String name = one.name();
+        String wanted = other.name();
+        if (name == null || wanted == null) return false;
+        if (name.equalsIgnoreCase(wanted)) return true;
+        return switch (wanted.toLowerCase()) {
+            case "bold" -> name.equalsIgnoreCase("b");
+            case "italic" -> name.equalsIgnoreCase("i");
+            case "underline" -> name.equalsIgnoreCase("u");
+            case "strikethrough" -> name.equalsIgnoreCase("s");
+            case "obfuscated" -> name.equalsIgnoreCase("obf");
+            default -> false;
+        };
     }
 
     /**
@@ -212,12 +363,13 @@ public final class ItemEdit {
      * it did not understand.
      */
     public static Edited recoloured(String text, int from, int to, String colour) {
-        Tag pair = Tag.pair("<color value=" + colour + ">", "</color>");
+        // The effect form of the colour, which is the form the library draws: see effectColours.
+        Tag pair = Tag.pair("<color col=" + colour + ">", "</color>");
         return reformat(text, from, to, (atom, stack) -> {
             List<Tag> out = new ArrayList<>();
             boolean set = false;
             for (Tag tag : stack) {
-                if (!isColour(tag)) {
+                if (!isColourName(tag.name())) {
                     out.add(tag);
                 } else if (!set) {
                     // Where the old colour stood rather than beside it: the pair already round the words is
@@ -248,8 +400,19 @@ public final class ItemEdit {
 
         /** {@return the tag a pair of literals makes}, taking its name from the opening one */
         static Tag pair(String open, String close) {
+            return new Tag(open, close, nameOf(open));
+        }
+
+        /** {@return the tag an opening literal makes}, closed by the name it turned out to hold */
+        static Tag of(String open) {
+            String name = nameOf(open);
+            return new Tag(open, "</" + name + ">", name);
+        }
+
+        /** {@return the name an opening literal is written with}, which is what two tags are compared by */
+        private static String nameOf(String open) {
             Found found = tagAt(open, 0);
-            return new Tag(open, close, found == null ? "" : found.name());
+            return found == null ? "" : found.name();
         }
     }
 
@@ -421,7 +584,11 @@ public final class ItemEdit {
         for (Piece piece : pieces) {
             int shared = common(open, piece.stack());
             for (int i = open.size() - 1; i >= shared; i--) out.append(open.get(i).close());
-            for (int i = shared; i < piece.stack().size(); i++) out.append(piece.stack().get(i).open());
+            for (int i = shared; i < piece.stack().size(); i++) {
+                // Written the way the library draws it rather than the way it was found — see drawnTag — because
+                // a colour the library reads and does not draw is a colour this editor has written for nothing.
+                out.append(drawnTag(piece.stack().get(i).open()));
+            }
             open = piece.stack();
 
             if (atFrom < 0 && piece.start() >= from) atFrom = out.length();
@@ -451,9 +618,130 @@ public final class ItemEdit {
         return List.copyOf(out);
     }
 
-    /** {@return whether this tag is one that sets a colour}, which is the one a colour picker replaces */
-    private static boolean isColour(Tag tag) {
-        return "color".equalsIgnoreCase(tag.name()) || "c".equalsIgnoreCase(tag.name());
+    /**
+     * {@return the markup with every colour written the way the library draws it}
+     *
+     * <p>What {@link #line} is built from, and what {@link #write} does to each tag it writes. The library reads
+     * a colour in two forms and draws only one of them: {@code <color value=FF0000>} sets the span's colour,
+     * and a span's colour is applied to a component, which is not what an item's text is any more — an item's
+     * text is a literal, and the library's own reader for a literal applies weight, slant, lines, fonts and
+     * effects, and does not apply the span's colour. {@code <color col=FF0000>} is read as an <em>effect</em>
+     * instead, and effects are applied. So a colour written the other way is a colour written for nothing: this
+     * is the form that draws.
+     */
+    public static String effectColours(String markup) {
+        String source = markup == null ? "" : markup;
+        if (source.indexOf('<') < 0 || source.indexOf('>') < 0) return source;
+
+        StringBuilder out = new StringBuilder();
+        int at = 0;
+        while (at < source.length()) {
+            Found found = tagAt(source, at);
+            if (found == null) {
+                out.append(source.charAt(at));
+                at++;
+                continue;
+            }
+            out.append(drawnTag(source.substring(at, found.end())));
+            at = found.end();
+        }
+        return out.toString();
+    }
+
+    /**
+     * {@return one tag written the way the library draws it}, which for a colour means as an effect
+     *
+     * <p>Any other tag is given back exactly as it was found: this rewrites what the library would silently
+     * not draw, and nothing else. A colour that already names its colour in the drawing form is left as it is,
+     * so a line that has been through this once reads the same the second time.
+     */
+    private static String drawnTag(String literal) {
+        Found found = tagAt(literal, 0);
+        if (found == null || found.closing() || !isColourName(found.name())) return literal;
+
+        String attributes = literal.substring(1 + found.name().length(),
+                literal.length() - (found.selfClosing() ? 2 : 1));
+        // The form the library draws, first; then the two names it reads but does not draw. A bare word is a
+        // value to the library — `value` is what it calls the first thing that is not a name — so it is read
+        // here as one too.
+        String value = attribute(attributes, "col", "c");
+        if (value == null) value = attribute(attributes, "value", "color");
+        if (value == null) return literal;
+        return "<color col=" + value + ">";
+    }
+
+    /** {@return the value of the first of these attributes that is written}, or null when none of them is */
+    private static String attribute(String attributes, String... names) {
+        for (String name : names) {
+            for (String[] written : attributes(attributes)) {
+                if (written[1] != null && written[0].equalsIgnoreCase(name)) return written[1];
+            }
+        }
+        return null;
+    }
+
+    /**
+     * {@return the attributes of a tag}, as pairs of a name and the value it was given
+     *
+     * <p>The grammar is the library's own, as it is in {@link #tagAt}: a name, and a value that may be bare or
+     * quoted in either kind of quote. The first word with no name on it is the value — the library's reading,
+     * where the first bare thing it finds is filed under {@code value} — which is why a value of null is
+     * answered for it under that name.
+     */
+    private static List<String[]> attributes(String attributes) {
+        List<String[]> out = new ArrayList<>();
+        int n = attributes.length();
+        int i = 0;
+        boolean first = true;
+        while (i < n) {
+            while (i < n && space(attributes.charAt(i))) i++;
+            if (i >= n) break;
+
+            if (!letter(attributes.charAt(i))) {
+                // Not an attribute: the bare value the library calls `value`, and then it stops reading.
+                if (first) out.add(new String[]{"value", word(attributes, i)});
+                break;
+            }
+
+            int nameStart = i;
+            while (i < n && attrChar(attributes.charAt(i))) i++;
+            String name = attributes.substring(nameStart, i);
+            String value = null;
+            if (i < n && (attributes.charAt(i) == '=' || attributes.charAt(i) == ':')) {
+                i++;
+                if (i < n && (attributes.charAt(i) == '"' || attributes.charAt(i) == '\'')) {
+                    char quote = attributes.charAt(i);
+                    int close = attributes.indexOf(quote, i + 1);
+                    if (close < 0) break;
+                    value = attributes.substring(i + 1, close);
+                    i = close + 1;
+                } else {
+                    int valueStart = i;
+                    while (i < n && !space(attributes.charAt(i))
+                            && attributes.charAt(i) != '>' && attributes.charAt(i) != '/') i++;
+                    value = attributes.substring(valueStart, i);
+                }
+            }
+            // The first thing written with no name on it is the value, whatever it looks like: that is the
+            // library's own reading, and it is why `<color red>` is a colour and `<color red blue>` is not.
+            if (value == null && first) out.add(new String[]{"value", name});
+            else out.add(new String[]{name, value});
+            first = false;
+        }
+        return out;
+    }
+
+    /** {@return one bare word of a tag's attributes}, which is as far as the library reads a bare value */
+    private static String word(String attributes, int at) {
+        int end = at;
+        while (end < attributes.length() && !space(attributes.charAt(end))
+                && attributes.charAt(end) != '>' && attributes.charAt(end) != '/') end++;
+        return attributes.substring(at, end);
+    }
+
+    /** {@return whether a tag with this name is one that sets a colour} */
+    private static boolean isColourName(String name) {
+        return "color".equalsIgnoreCase(name) || "c".equalsIgnoreCase(name);
     }
 
     /**
@@ -469,39 +757,8 @@ public final class ItemEdit {
     }
 
     // ------------------------------------------------------------------
-    // What the game draws a hover in, for a preview that has to be the same picture
+    // Reading an item's own text back into the editor
     // ------------------------------------------------------------------
-
-    /**
-     * {@return the style the game draws an item's tooltip name in}
-     *
-     * <p>The item's rarity, and italic as well when the item has been renamed — which is the state this
-     * editor leaves an item in, so it is the state a preview has to draw. Read off the rarity rather than
-     * written out here because rarity is part of the item and a mod can give one its own; the two together
-     * are what the game itself does to the hover name, and a preview that draws a renamed item in plain
-     * white is a preview of an item nobody has.
-     *
-     * @param rarity what {@code ItemStack.getRarity()} answers for the item
-     * @param named  whether the item carries a custom name, which is what the italic is for
-     */
-    public static Style nameStyle(Rarity rarity, boolean named) {
-        Style style = (rarity == null ? Rarity.COMMON : rarity).getStyleModifier().apply(Style.EMPTY);
-        return named ? style.withItalic(true) : style;
-    }
-
-    /**
-     * {@return the style the game draws a line of lore in}
-     *
-     * <p>Dark purple and italic, and asked of the game rather than written out here: a lore line is drawn
-     * from the component the game styles for itself, and this is that component's style with nothing in it.
-     * A preview that draws lore in grey — which is what this did — shows an item that does not exist.
-     *
-     * <p>The line's own style still wins over this one, because the game merges a lore line's style
-     * <em>over</em> the style it adds: a line marked with a colour keeps it and takes the italic.
-     */
-    public static Style loreStyle() {
-        return new ItemLore(List.of(Component.empty())).styledLines().get(0).getStyle();
-    }
 
     /**
      * {@return the run of the markup that covers one run of the characters it shows}
@@ -535,6 +792,44 @@ public final class ItemEdit {
         if (Character.isLowSurrogate(text.charAt(lastIndex)) && lastIndex > 0) lastIndex--;
         int last = map[lastIndex] + Character.charCount(text.codePointAt(lastIndex));
         return new int[]{map[start], last};
+    }
+
+    /**
+     * {@return the markup of one run of the characters a line shows}, with the tags over that run written
+     *         round it
+     *
+     * <p>What a preview needs and a slice of the markup cannot give. The characters of one drawn row are the
+     * ones to draw, but the colour and the weight they are drawn in were written round the whole line and
+     * reach over the row's ends — cutting the markup at the characters throws away exactly those tags, which
+     * is how a name written as {@code <color value=F73636>asdas</color>} came out white: the colour was round
+     * every character of it and round none of the row that was drawn.
+     *
+     * <p>Written through the same runs an edit is written through, so what comes back is the run and the tags
+     * it is under, balanced and in the order it had them: a row that begins inside a colour and a weight is
+     * given both, and a row that ends inside them closes both.
+     */
+    public static String marked(String markup, int from, int to) {
+        String source = markup == null ? "" : markup;
+        int start = Math.max(0, Math.min(Math.min(from, to), source.length()));
+        int end = Math.max(start, Math.min(Math.max(from, to), source.length()));
+
+        List<Piece> out = new ArrayList<>();
+        for (Piece piece : pieces(source)) {
+            // The ends of the run cut the pieces they fall inside, and only the pieces the run covers are
+            // kept: what is written is the run, with whatever was over it written over it again.
+            List<Integer> cuts = new ArrayList<>();
+            cuts.add(piece.start());
+            if (!piece.atom() && start > piece.start() && start < piece.end()) cuts.add(start);
+            if (!piece.atom() && end > piece.start() && end < piece.end()) cuts.add(end);
+            cuts.add(piece.end());
+
+            for (int i = 0; i + 1 < cuts.size(); i++) {
+                int a = cuts.get(i);
+                int b = cuts.get(i + 1);
+                if (a >= start && b <= end) out.add(new Piece(a, b, piece.stack(), piece.atom()));
+            }
+        }
+        return write(out, source, start, end).text();
     }
 
     /**
@@ -711,13 +1006,18 @@ public final class ItemEdit {
      * <p>The hex form rather than a colour name, because a name is not a palette entry: the colour came
      * from an item, not from a list of colours this mod offers, and any of the sixteen million values
      * has to survive.
+     *
+     * <p>What this editor says by default is not written back. White is the colour a line starts from and an
+     * italic that says no is how the game's own slant is kept off it, so an item this editor has written comes
+     * back to the field as the markup it was given — without a {@code <color value=FFFFFF>} round every line,
+     * which would otherwise grow by one pair every time an item was opened and applied.
      */
     private static String tagged(String text, Style style) {
         StringBuilder open = new StringBuilder();
         StringBuilder close = new StringBuilder();
 
-        if (style.getColor() != null) {
-            open.append("<color value=").append(hex(style.getColor())).append('>');
+        if (style.getColor() != null && style.getColor().getValue() != DEFAULT_COLOUR) {
+            open.append("<color col=").append(hex(style.getColor())).append('>');
             close.insert(0, "</color>");
         }
         if (Boolean.TRUE.equals(style.isBold())) tag(open, close, "bold");

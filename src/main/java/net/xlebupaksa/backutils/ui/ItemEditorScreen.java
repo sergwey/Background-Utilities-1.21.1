@@ -27,13 +27,11 @@ import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.Style;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.EquipmentSlotGroup;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Rarity;
 import net.minecraft.world.item.component.ItemAttributeModifiers;
 import net.minecraft.world.item.component.ItemLore;
 import net.neoforged.api.distmarker.Dist;
@@ -59,12 +57,20 @@ import java.util.function.Consumer;
  * actually show, drawn by the game's own text renderer from the same component the server will write —
  * so what is being edited is never guessed at, and a tag that does not parse is visible as the literal
  * text it becomes. Special effects and values are written straight into the fields: the preview shows
- * the result and does not try to be a pallette of everything the text can contain.
+ * the result and does not try to be a pallette of everything the text can contain. An effect written
+ * into a line animates here, because the line is drawn the way the item's is — see {@link ItemEdit#line}.
+ *
+ * <p><b>The text is white and upright unless the markup says otherwise.</b> The game draws a renamed
+ * item's name in its rarity's colour and in italic, and a line of lore in dark purple italic, and none of
+ * that is what this editor writes: the default style says white and not italic, so what the preview shows
+ * and what the item shows is what the operator typed and not what the game would have done with it.
  *
  * <p><b>The buttons work on what is selected in the preview.</b> Dragging over the drawn name or lore
  * selects the characters the item shows — not the markup's, whose tags nobody can see — and a button
  * wraps its tag around exactly those, leaving them selected so that the next button applies to the same
- * words. The name field's own selection is used when nothing is selected in the preview, which is the
+ * words. The drag may cross lines: the preview draws the item's lines one under another, a selection is a
+ * run of that whole text, and a button writes the part of it that falls on each line. The name field's own
+ * selection is used when nothing is selected in the preview, which is the
  * shorter way to format something already being typed there. The colour is not a button: a colour is
  * chosen in the picker and letting go of the picker is what applies it to the selection.
  *
@@ -135,18 +141,46 @@ public final class ItemEditorScreen extends Screen {
     private static final int SYMBOL_MENU_SHIFT = STYLE_BUTTON + 8;
 
     /**
-     * The room the two halves of the preview are given.
+     * The room the lore's half of the preview is given before it has measured its own text.
      *
-     * <p>Asked for in the layout and used again for the drawing, because a preview is drawn by this
-     * screen rather than by a widget: the height has to be the same number in both places, or the text is
-     * clipped by one of them and overflows the other. The lore's is a floor rather than a height — it
-     * takes what is left of the panel, and this is the least it will take.
+     * <p>Asked for in the layout and used again for the drawing, because a preview is drawn by this screen
+     * rather than by a widget: the height has to be the same number in both places, or the text is clipped by
+     * one of them and overflows the other. It is only what the layout starts with — the first frame to draw it
+     * measures the wrapped text and asks for the room that takes, so that a tooltip of two lines does not leave
+     * the attribute list at the foot of the screen with a screenful of nothing above it. The name's box is the
+     * icon's, and needs no constant of its own.
      */
-    private static final int NAME_PREVIEW_HEIGHT = 22;
     private static final int LORE_PREVIEW_HEIGHT = 126;
 
-    /** How far the preview's text is indented, which is the room the item's own icon takes beside it. */
-    private static final int PREVIEW_INDENT = 22;
+    /**
+     * How large the item's own icon is drawn in the preview, which is the game's sixteen made a little larger.
+     *
+     * <p>The icon is what the preview is of, so it leads: the room the text is given beside it, the height of
+     * the box it stands in and the room inside the frame round the two are all measured from this.
+     */
+    private static final int PREVIEW_ICON = 20;
+
+    /** How far the preview's text is indented, which is the icon and the room beside it. */
+    private static final int PREVIEW_INDENT = PREVIEW_ICON + 6;
+
+    /** How far the item and its description are inset from the frame that holds them. */
+    private static final int PREVIEW_PAD = 6;
+
+    /**
+     * The wash inside the frame the item stands in, and the line round it.
+     *
+     * <p>Chosen against the panel's own near-black: the wash is a shade lighter than the panel so that the
+     * frame reads as a thing rather than as a hole, and the edge is lighter again so that it reads as a frame
+     * rather than as a smudge. Both are one number away from being changed.
+     */
+    private static final int PREVIEW_BG = 0xC02F2A34;
+    private static final int PREVIEW_EDGE = 0xFF4A4550;
+
+    /** The room the name is given, which is the icon drawn in its box and two pixels above and below it. */
+    private static final int NAME_PREVIEW_HEIGHT = PREVIEW_ICON + 4;
+
+    /** The air between the name and the lore under it, which is what a tooltip leaves between its lines. */
+    private static final int PREVIEW_GAP = 2;
 
     /** How far the icon is inset from the corner of the box it is drawn in. */
     private static final int ICON_PAD = 1;
@@ -320,7 +354,10 @@ public final class ItemEditorScreen extends Screen {
         UIElement loreRow = new UIElement();
         loreRow.layout(l -> l.widthPercent(100).height(LORE_FIELD_HEIGHT)
                 .flexDirection(FlexDirection.ROW)
-                .alignItems(AlignItems.CENTER)
+                // The caption stands at the top of the field rather than at the middle of it: the field is one
+                // area with room for many lines, and a label floating in the middle of it reads as a label for
+                // the middle line.
+                .alignItems(AlignItems.FLEX_START)
                 .gapAll(GAP));
         loreRow.addChildren(caption("backutils.item_editor.label.lore"), lore);
 
@@ -328,10 +365,26 @@ public final class ItemEditorScreen extends Screen {
         // with its own styles and the game's renderer is the only thing that draws one exactly as an item
         // would. Two spaces rather than one: the name is the item's title and the lore hangs under it, and
         // the gap between the two pieces is what says so.
-        namePreview.layout(l -> l.widthPercent(100).height(NAME_PREVIEW_HEIGHT));
-        // Nine pixels up, which is one line of the game's font: the lore belongs under the name the way a
-        // tooltip has it, and the gap the panel leaves between two rows is one row too many here.
-        lorePreview.layout(l -> l.widthPercent(100).flex(1).minHeight(LORE_PREVIEW_HEIGHT).marginTop(-9));
+        //
+        // Inset by the frame's own padding at the sides, because the frame is drawn round these two boxes: a box
+        // on the content edge with a frame round it puts the frame outside the column every other row is
+        // aligned to, which is a frame that looks like a mistake.
+        namePreview.layout(l -> l.marginLeft(PREVIEW_PAD).marginRight(PREVIEW_PAD)
+                .widthPercent(100).height(NAME_PREVIEW_HEIGHT));
+        // The lore is pulled up under the name by all of the name's box that is not the line of text drawn at
+        // the top of it, less the two pixels of air a tooltip leaves between its lines. The name's box is the
+        // icon's — twenty-four pixels for a twenty-pixel icon — while the words are nine, so without this the
+        // lore would hang a third of an inch below the name it belongs to.
+        int under = rowHeight() + PREVIEW_GAP - NAME_PREVIEW_HEIGHT;
+        lorePreview.layout(l -> l.marginLeft(PREVIEW_PAD).marginRight(PREVIEW_PAD)
+                .widthPercent(100).height(LORE_PREVIEW_HEIGHT).marginTop(under));
+
+        // Neither of these two boxes is ever a target: they hold room for what this screen draws, and a box
+        // that holds room is not something to click. Left to take a hit test, one of them swallows the clicks
+        // of whatever it stands over — which is how half of the Apply button came to do nothing, because the
+        // box for the lore is a hundred per cent wide and stood over it.
+        namePreview.setAllowHitTest(false);
+        lorePreview.setAllowHitTest(false);
 
         attributeRows.layout(l -> l.widthPercent(100)
                 .flexDirection(FlexDirection.COLUMN).gapAll(2));
@@ -393,10 +446,11 @@ public final class ItemEditorScreen extends Screen {
      * {@return the row of formatting buttons}
      *
      * <p>One letter each, which is what was asked for: the basic decoration an item is named with, and no
-     * button for anything better written into the field. Each wraps its tag around whatever is selected —
-     * in the preview first, in the name field when the preview has no selection — or leaves an empty pair
-     * with the caret between them when there is nothing selected at all, which is how a tag's value is
-     * typed. The colour is not here: the picker below applies its own.
+     * button for anything better written into the field. Each is a switch over whatever is selected — in the
+     * preview first, in the name field when the preview has no selection — and presses a tag on to it or, on
+     * words that already wear it, takes it off again; with nothing selected at all it leaves an empty pair
+     * with the caret between them, which is how a tag's value is typed. The colour is not here: the picker
+     * below applies its own.
      */
     private UIElement styleRow() {
         UIElement row = new UIElement();
@@ -425,7 +479,11 @@ public final class ItemEditorScreen extends Screen {
             extra.setVisible(false);
             extra.layout(l -> l.display(TaffyDisplay.NONE));
         }
-        picker.setColor(0xFFFFFF, false);
+        // White with no alpha, which is what the field under the picker shows back: a colour written as
+        // 0xFFFFFF leaves the alpha at nothing, and a hex field reading "#00ffffff" tells an operator their
+        // colour is transparent when what it is, is white. The markup has no alpha in it either way — this
+        // mod's colour tag is six digits — so the alpha here is only what the picker says about itself.
+        picker.setColor(0xFFFFFFFF, false);
 
         // No colour button: the picker is the colour control, and letting go of it applies what it holds
         // to whatever is selected — see mouseReleased. It stands beside the buttons rather than at the far
@@ -436,6 +494,11 @@ public final class ItemEditorScreen extends Screen {
                 styleButton("backutils.item_editor.style.italic", "italic"),
                 styleButton("backutils.item_editor.style.underline", "underline"),
                 styleButton("backutils.item_editor.style.strike", "strikethrough"),
+                // The one button that cannot wear its own formatting: obfuscated text is drawn as glyphs the
+                // client picks at random, so a label written that way is a label nobody can read, and it is not
+                // a small label that wobbles — it is a row that wobbles, because the random glyphs are not all
+                // the same width. Its letter says what it does instead, the way the others do with theirs.
+                styleButton("backutils.item_editor.style.obfuscated", "obfuscated"),
                 plainButton("backutils.item_editor.style.clear", () -> clearStyle()));
 
         row.addChild(picker);
@@ -532,13 +595,21 @@ public final class ItemEditorScreen extends Screen {
         return button;
     }
 
-    /** {@return the style a tag draws its own label in} */
+    /**
+     * {@return the style a tag draws its own label in}
+     *
+     * <p>Obfuscation is in here because it was asked for, and it is worth saying what it costs: the label is
+     * drawn as glyphs the client picks at random, so it is not a word any more — it is the shape of the effect
+     * — and the random glyphs are not all the same width, so the label shifts about inside its button. That is
+     * what the style looks like, which is the point of a button wearing its own formatting.
+     */
     private static ChatFormatting formattingOf(String tag) {
         return switch (tag) {
             case "bold" -> ChatFormatting.BOLD;
             case "italic" -> ChatFormatting.ITALIC;
             case "underline" -> ChatFormatting.UNDERLINE;
             case "strikethrough" -> ChatFormatting.STRIKETHROUGH;
+            case "obfuscated" -> ChatFormatting.OBFUSCATED;
             default -> ChatFormatting.RESET;
         };
     }
@@ -560,19 +631,26 @@ public final class ItemEditorScreen extends Screen {
      * and a field that has lost the focus has lost its selection, so the value has to have been taken
      * while it still had one.
      *
-     * <p>Both paths end the same way — one line of the item replaced, and the field's own selection put
+     * <p>Both paths end the same way — the lines of the item replaced, and the field's own selection put
      * back on the words — so they are written once here rather than once for each button. Where the words
      * end up is {@link ItemEdit}'s answer rather than arithmetic here, because getting that wrong is
      * invisible until somebody presses a second button and finds the tag on the end of the line.
+     *
+     * <p>A selection that runs across lines is written to every line it covers, one at a time, because a line
+     * of an item is a component of its own: the run the selection covers on each of them is wrapped on that
+     * line, and a line the selection passes through whole is wrapped whole. The lines in the middle of such a
+     * selection are wholly covered, which is what a selection means in a field of several lines.
      *
      * @param change what to do to a line and to the run of it that is selected
      */
     private void edit(BiFunction<String, int[], ItemEdit.Edited> change) {
         Mark selection = live();
         if (selection != null) {
-            String text = markup(selection.field());
-            int[] range = rangeOf(selection);
-            setMarkup(selection.field(), change.apply(text, range).text());
+            for (int field = selection.fromField(); field <= selection.toField(); field++) {
+                int[] range = rangeOn(selection, field);
+                if (range == null) continue;
+                setMarkup(field, change.apply(markup(field), range).text());
+            }
             // The selection itself does not move. What was put round it is invisible, so the same
             // characters of the item's text are still the ones selected, and the next button applies to
             // them rather than to whatever the offsets have become.
@@ -585,9 +663,31 @@ public final class ItemEditorScreen extends Screen {
         name.setSelection(edited.from(), edited.to());
     }
 
-    /** Wraps a pair of tags around whatever is selected. */
+    /**
+     * Presses a button on whatever is selected: the pair of tags goes on, or comes off again if it is there.
+     *
+     * <p>Which of the two it is, is decided once for the whole selection and then applied line by line. A
+     * selection can run across the lines of an item and cover a bold line and a plain one, and an operator
+     * pressing the button means one thing by it: deciding line by line would bold the plain line and unbold the
+     * bold one, which is half a button pressed and a state nobody can predict from the button.
+     */
     void wrap(String open, String close) {
-        edit((text, range) -> ItemEdit.wrapped(text, range[0], range[1], open, close));
+        Mark selection = live();
+        boolean off = selection != null && wears(selection, open);
+        edit(off
+                ? (text, range) -> ItemEdit.unwrapped(text, range[0], range[1], open)
+                : (text, range) -> ItemEdit.wrapped(text, range[0], range[1], open, close));
+    }
+
+    /** {@return whether every character the selection covers already wears this style} */
+    private boolean wears(Mark selection, String open) {
+        List<ItemEdit.Run> runs = new ArrayList<>();
+        for (int field = selection.fromField(); field <= selection.toField(); field++) {
+            int[] range = rangeOn(selection, field);
+            if (range == null) continue;
+            runs.add(new ItemEdit.Run(markup(field), range[0], range[1]));
+        }
+        return ItemEdit.wearsAll(runs, open);
     }
 
     /** Takes every formatting tag out of the selection, which is what the clear button does. */
@@ -601,10 +701,21 @@ public final class ItemEditorScreen extends Screen {
         edit((text, range) -> ItemEdit.recoloured(text, range[0], range[1], hex));
     }
 
-    /** {@return the run of a line's markup that the selected characters of the item cover} */
-    private int[] rangeOf(Mark selection) {
-        String text = markup(selection.field());
-        return ItemEdit.shownRange(text, ItemEdit.shown(text), selection.from(), selection.to());
+    /**
+     * {@return the run of one line's markup that the selection covers on that line}, or null when it covers
+     *         none of it
+     *
+     * <p>The selection is held in the characters the item shows, and one run of them can run across several
+     * lines of it: the first line of such a selection begins where the drag did, the last ends where it did,
+     * and the lines between are covered from end to end.
+     */
+    private int[] rangeOn(Mark selection, int field) {
+        String text = markup(field);
+        String shown = ItemEdit.shown(text);
+        int from = field == selection.fromField() ? selection.fromAt() : 0;
+        int to = field == selection.toField() ? selection.toAt() : shown.length();
+        if (from >= to) return null;
+        return ItemEdit.shownRange(text, shown, from, to);
     }
 
     /** {@return the markup of one line of the item}, which is what is edited and what the server gets */
@@ -917,27 +1028,20 @@ public final class ItemEditorScreen extends Screen {
     }
 
     /**
-     * {@return one line of the item as a component the game can draw}, under the style of the hover it is a
-     *         line of
+     * {@return one line of the item as the component the game can draw}
      *
-     * <p>Built from the parsed runs, which is the reading that carries the static styling: a colour, a
-     * weight, a slant, a line. That is what the library calls its static path, and it is the whole of what
-     * can be drawn here — the animated effects are rendered by the library's own message layer, which draws
-     * to the screen rather than into a component, so a preview drawn as a component cannot show them
-     * however the markup is written. Markup the parser refuses is drawn as the text it is.
+     * <p>The very component the server writes — {@link ItemEdit#line} — so that this is not a drawing of the
+     * item but the item: the markup travels as the text of a literal, the library's own hook parses it as the
+     * game draws it, and an effect written into a line animates here exactly as it will animate on the item.
+     * That is the whole reason the line is not taken apart into runs first, which is what this used to do: a
+     * component can hold a colour and a weight, and it cannot hold an animation.
      *
-     * <p>And on a name of this editor's own making they are never drawn at all: the library's item hook
-     * restyles the <em>default</em> name of an item and steps aside for one somebody set, which is the one
-     * this editor is setting. So a preview that drew them would be promising an effect the hover will not
-     * have; what is drawn here is what the hover shows, effects and all.
-     *
-     * <p>The style goes on a component the line is appended to rather than on the line, so that it is
-     * inherited the way the game inherits it: a run that names its own colour or its own slant keeps it, and
-     * takes the rest of the hover's style — the rarity's colour, the italic of a renamed item or of a line of
-     * lore. Which is the same order the game merges the two in for its own tooltip.
+     * <p>The one place that differs is the size, which is the preview's own: it is drawn a little larger than
+     * the game's font — see drawPreview — and that is a matter of the pose it is drawn in, not of the
+     * component, so nothing here has to know about it.
      */
-    private static Component drawable(String markup, Style base) {
-        return Component.empty().append(ItemEdit.component(ItemEdit.spans(markup))).withStyle(base);
+    private static Component drawable(String markup) {
+        return ItemEdit.line(markup);
     }
 
 
@@ -951,20 +1055,33 @@ public final class ItemEditorScreen extends Screen {
     /** One drawn line: the line of the item it came from, where it sits, and the characters on it. */
     private record Line(int field, int y, List<Glyph> glyphs) { }
 
-    /** Where the mouse is: which line of the item, which character of it, which drawn line. */
-    private record Spot(int field, int at, int line) { }
+    /** Where the mouse is: which line of the item, and which character of that line. */
+    private record Spot(int field, int at) { }
 
-    /** What is selected: one line of the item, and a run of the characters that line shows. */
-    private record Mark(int field, int from, int to) { }
+    /**
+     * What is selected: a run of the characters the item shows, from one place in it to another.
+     *
+     * <p>Held as the two ends rather than as one line and a run of it, because the preview draws every line of
+     * the item one under another and a drag can cross from one to the next: the name is the first line of what
+     * is drawn and the lore follows it, so a selection is a run of that whole text and only the drawing knows
+     * where the lines break in it.
+     */
+    private record Mark(int fromField, int fromAt, int toField, int toAt) { }
 
     /**
      * Draws both halves of the preview: the name and the lore as the game would draw them, from the same
-     * markup the server is about to be given.
+     * markup the server is about to be given, inside a frame of their own.
      *
      * <p>Drawn here rather than by widgets because a widget takes a plain string, and a plain string is the
      * one thing this must not be: what is being checked is the formatting. Where to draw is asked of the
      * pieces that reserve the space rather than worked out from a row count, because a row count has to be
      * kept in step with the layout by hand — which is what put the preview across the style row once.
+     *
+     * <p>The frame is drawn rather than given as an element around the two boxes, and that is a decision made
+     * after trying the other way: a box put round them in the layout came out shorter than what it held, so
+     * the lore was positioned below its own frame and stood over the attribute list — where, being a box that
+     * takes a hit test, it swallowed half the Apply button. A rectangle drawn from the two boxes this screen
+     * already measures cannot do either: it is the same numbers the drawing is done from.
      *
      * <p>It also writes down what it drew, and that is what the mouse is measured against afterwards: the
      * geometry of the last frame is the only text on screen, so it is the only thing a click can mean.
@@ -975,25 +1092,51 @@ public final class ItemEditorScreen extends Screen {
         // One copy of the item for the whole frame: the icon draws it, and both halves of the preview ask it
         // how the game draws their line.
         ItemStack preview = previewStack();
+
+        int left = Math.round(namePreview.getPositionX()) - PREVIEW_PAD;
+        int top = Math.round(namePreview.getPositionY()) - PREVIEW_PAD;
+        int right = Math.round(namePreview.getPositionX() + namePreview.getSizeWidth()) + PREVIEW_PAD;
+        int bottom = Math.round(lorePreview.getPositionY() + lorePreview.getSizeHeight()) + PREVIEW_PAD;
+
+        // Clipped to the frame, which is also what keeps the icon inside it: an item's model is larger than the
+        // sixteen pixels it is given room for, and a panel that has been scrolled must not have a model drawn
+        // over whatever took its place.
+        graphics.enableScissor(left, top, right, bottom);
+        graphics.fill(left, top, right, bottom, PREVIEW_BG);
+        graphics.fill(left, top, right, top + 1, PREVIEW_EDGE);
+        graphics.fill(left, bottom - 1, right, bottom, PREVIEW_EDGE);
+        graphics.fill(left, top, left + 1, bottom, PREVIEW_EDGE);
+        graphics.fill(right - 1, top, right, bottom, PREVIEW_EDGE);
+
         drawIcon(graphics, preview);
         drawPreview(graphics, namePreview, true, preview);
         drawPreview(graphics, lorePreview, false, preview);
+        graphics.disableScissor();
     }
 
     /**
-     * Draws the item's own icon at the head of the preview.
+     * Draws the item's own icon at the head of the preview, larger than the game's own sixteen.
      *
      * <p>From a copy of the stack carrying the name and the lore the fields now hold, because that is what the
      * server is about to write: a mod that restyles an item from its name reads the stack, and a preview of
      * the stack as it stands would show the item as it was rather than as it is about to be. The component is
      * built the same way the server builds it, for the same reason.
+     *
+     * <p>Drawn through a moved and scaled pose rather than by asking for a bigger icon, because there is no
+     * bigger icon to ask for: an item is drawn in a slot sixteen pixels square, and the way to have it larger is
+     * to draw the slot larger. Everything about the icon is scaled together that way — the model, whatever a
+     * resource pack or another mod has done to it, and the light on it.
      */
     private void drawIcon(GuiGraphics graphics, ItemStack preview) {
         if (preview == null) return;
 
-        graphics.renderItem(preview,
-                Math.round(namePreview.getPositionX()) + ICON_PAD,
-                Math.round(namePreview.getPositionY()) + ICON_PAD);
+        float scale = PREVIEW_ICON / 16f;
+        graphics.pose().pushPose();
+        graphics.pose().translate(Math.round(namePreview.getPositionX()) + ICON_PAD,
+                Math.round(namePreview.getPositionY()) + ICON_PAD, 0);
+        graphics.pose().scale(scale, scale, 1f);
+        graphics.renderItem(preview, 0, 0);
+        graphics.pose().popPose();
     }
 
     /** {@return the item as the editor is about to leave it}, or null when the slot holds nothing */
@@ -1006,12 +1149,12 @@ public final class ItemEditorScreen extends Screen {
         if (markup.isEmpty()) {
             preview.remove(DataComponents.CUSTOM_NAME);
         } else {
-            preview.set(DataComponents.CUSTOM_NAME, ItemEdit.component(markup));
+            preview.set(DataComponents.CUSTOM_NAME, ItemEdit.line(markup));
         }
 
         List<Component> lines = new ArrayList<>();
         for (String line : loreLines()) {
-            if (!line.isEmpty()) lines.add(ItemEdit.component(line));
+            if (!line.isEmpty()) lines.add(ItemEdit.line(line));
         }
         if (lines.isEmpty()) {
             preview.remove(DataComponents.LORE);
@@ -1042,42 +1185,77 @@ public final class ItemEditorScreen extends Screen {
         if (bottom <= top) bottom = top + (title ? NAME_PREVIEW_HEIGHT : LORE_PREVIEW_HEIGHT);
 
         List<String> lines = title ? List.of(name.getText() == null ? "" : name.getText()) : loreLines();
-        int lineHeight = minecraft.font.lineHeight;
-        // The style the game itself draws this half of the hover in, so that the preview is the tooltip an
-        // operator will see rather than this mod's idea of one: the name in the item's rarity — italic as well
-        // when the item carries a custom name, which is the state the editor leaves it in — and a lore line in
-        // the dark purple italic the game gives every line of lore.
-        Style base = tooltipStyle(preview, title);
+        // The room one drawn row takes. The text is drawn at the game's own size — a preview is read beside the
+        // text it is of, and two sizes of the same words on one screen is a screen that looks wrong — so this is
+        // the font's own line height and nothing else.
+        int lineHeight = rowHeight();
+
+        // Wrapped for the whole half rather than row by row inside the drawing loop, because the room the lore
+        // asks for is the room its text takes and that has to be known before anything is drawn. Measuring the
+        // rows that fit in the box instead would have a preview clipped to a box smaller than its text measure
+        // itself as smaller still, and never grow.
+        List<List<Wrapped>> rows = new ArrayList<>();
+        int wanted = 0;
+        for (String line : lines) {
+            List<Wrapped> wrapped = wrap(minecraft.font, line, inner);
+            rows.add(wrapped);
+            wanted += wrapped.size();
+        }
+        if (title) {
+            // The icon and one line of text are the least the name asks for: a name long enough to wrap is shown
+            // whole rather than cut at the edge, and the icon keeps the room it is drawn in.
+            roomFor(namePreview, Math.max(NAME_PREVIEW_HEIGHT, wanted * lineHeight));
+        } else {
+            // The lore's box is exactly its text, and nothing when there is no text: a tooltip has no room
+            // after its last line, and the room a preview does not use is room the attribute list wants.
+            roomFor(lorePreview, wanted * lineHeight);
+        }
 
         // Clipped to the room it was given, the way a widget would be: the panel scrolls, and a preview
         // that has been scrolled out of the way must not be drawn over whatever took its place. The clip
         // starts at the box rather than the text, so the icon drawn beside it is inside it too.
         graphics.enableScissor(box, top, box + inner + PREVIEW_INDENT, bottom);
         int y = top;
-        for (int index = 0; index < lines.size() && y + lineHeight <= bottom; index++) {
-            for (Wrapped line : wrap(minecraft.font, lines.get(index), inner)) {
+        for (int index = 0; index < rows.size() && y + lineHeight <= bottom; index++) {
+            for (Wrapped line : rows.get(index)) {
                 if (y + lineHeight > bottom) break;
-                drawLine(graphics, line, title ? NAME_FIELD : index, left, y, base);
+                drawLine(graphics, line, title ? NAME_FIELD : index, left, y, lineHeight);
                 y += lineHeight;
             }
         }
         graphics.disableScissor();
     }
 
-    /**
-     * {@return the style the game draws one half of the hover in}
-     *
-     * <p>Asked of {@link ItemEdit}, which asks the game: the colours and the italics of a tooltip are the
-     * game's, and a preview that invents its own is a preview of some other item.
-     */
-    private static Style tooltipStyle(ItemStack preview, boolean title) {
-        if (!title) return ItemEdit.loreStyle();
-        if (preview == null) return ItemEdit.nameStyle(Rarity.COMMON, false);
-        return ItemEdit.nameStyle(preview.getRarity(), preview.has(DataComponents.CUSTOM_NAME));
+    /** {@return the room one drawn row of the preview takes}, which is the game's own line height */
+    private static int rowHeight() {
+        return Minecraft.getInstance().font.lineHeight;
     }
 
-    /** One drawn line: the characters of the item it shows, and the markup that draws them. */
-    private record Wrapped(String markup, String shown) { }
+    /**
+     * Asks the layout for the room one half of the preview has measured that it needs, if it has not got it
+     *
+     * <p>Asked for only when the number has changed, and that is not a saving but a requirement: the layout is
+     * recomputed whenever the tree is dirty, so a height written on every frame would leave it dirty on every
+     * frame — a relayout per frame for a number that is the same, and a warning about it from the library in a
+     * development environment. The asking is done while the frame is being drawn and is applied to the next
+     * one, which is a frame nobody can see.
+     */
+    private static void roomFor(UIElement element, int height) {
+        float current = element.getSizeHeight();
+        if (!Float.isNaN(current) && Math.abs(current - height) <= 0.5F) return;
+        element.layout(l -> l.height(height));
+        element.markTaffyStyleDirty();
+    }
+
+    /**
+     * One drawn line: the row's own markup and characters, and where in its line of the item the row begins.
+     *
+     * <p>The place it begins is carried because a line of the item can be drawn on several rows and a
+     * selection is counted in the characters of the <em>line</em>: a click on the second row of a wrapped lore
+     * line is a click on a character of that line, not on the first character of the row, and without this the
+     * two would be the same number.
+     */
+    private record Wrapped(String markup, String shown, int from) { }
 
     /**
      * {@return one line of markup broken into the lines the preview draws it on}
@@ -1114,7 +1292,10 @@ public final class ItemEditorScreen extends Screen {
             if (end == start) end = Math.min(start + 1, shown.length());
 
             int[] range = ItemEdit.shownRange(markup, shown, start, end);
-            out.add(new Wrapped(markup.substring(range[0], range[1]), shown.substring(start, end)));
+            // The run with the tags over it written round it, and not a slice of the markup: a colour written
+            // round a whole line reaches over the ends of every row it wraps into, and a slice would leave the
+            // row drawn in whatever the hover gives unstyled text — which is how a coloured name came out white.
+            out.add(new Wrapped(ItemEdit.marked(markup, range[0], range[1]), shown.substring(start, end), start));
             start = end;
         }
         return out;
@@ -1127,20 +1308,21 @@ public final class ItemEditorScreen extends Screen {
      * reason a click on a drawn character can become a position in a field: what is drawn and what is
      * selected are the same text, and that index says which part of it this character is.
      */
-    private void drawLine(GuiGraphics graphics, Wrapped line, int field, int left, int y, Style base) {
+    private void drawLine(GuiGraphics graphics, Wrapped line, int field, int left, int y, int lineHeight) {
         Minecraft minecraft = Minecraft.getInstance();
         Font font = minecraft.font;
         List<Glyph> glyphs = new ArrayList<>();
 
         // Measured here rather than asked of the renderer, because these are the numbers a selection is made
         // of, and they have to be the characters' own: the index each glyph carries is its place in what the
-        // item shows, which is what a selection means and what the markup's own indices are not.
+        // line of the item shows — the row's place in it added to the character's place in the row — which is
+        // what a selection means and what the markup's own indices are not.
         int pen = left;
         for (int i = 0; i < line.shown().length(); ) {
             int codepoint = line.shown().codePointAt(i);
             String character = new String(Character.toChars(codepoint));
             int width = font.width(character);
-            glyphs.add(new Glyph(pen, width, i, i + character.length()));
+            glyphs.add(new Glyph(pen, width, line.from() + i, line.from() + i + character.length()));
             pen += width;
             i += character.length();
         }
@@ -1148,25 +1330,41 @@ public final class ItemEditorScreen extends Screen {
         // Behind the text rather than over it, so that what is selected can still be read while it is.
         for (Glyph glyph : glyphs) {
             if (!selected(field, glyph.from(), glyph.to())) continue;
-            graphics.fill(glyph.x(), y - 1, glyph.x() + glyph.width(), y + font.lineHeight - 1, SELECTION_BG);
+            graphics.fill(glyph.x(), y - 1, glyph.x() + glyph.width(), y + lineHeight - 1, SELECTION_BG);
         }
-        // Drawn from this mod's runs under the style of the hover, and not from the raw markup: the runs are
-        // the component the server writes, and the library's markup is not read for an item's own name at all
-        // — see drawable. The colour here is only the last resort the game uses for text with no colour of
-        // its own, which the style always gives it.
-        graphics.drawString(font, drawable(line.markup(), base), left, y, 0xFFFFFF);
+
+        // The component the server writes, drawn by the game's own renderer: the library's hook on a literal
+        // parses it as it is drawn, which is what makes a colour and an effect appear here as they will appear
+        // on the item. The colour given here is only the last resort the game uses for text with none of its
+        // own, which the line's default style always gives it.
+        graphics.drawString(font, drawable(line.markup()), left, y, 0xFFFFFF);
         drawn.add(new Line(field, y, glyphs));
     }
 
     /** {@return whether one character of the item's text is inside what is selected} */
     private boolean selected(int field, int from, int to) {
         Mark selection = mark;
-        return markLive && selection != null && selection.field() == field
-                && from < selection.to() && to > selection.from();
+        // The character is inside the run when it starts before the run ends and ends after it starts, in the
+        // order the preview draws the item's lines in — which is the name first and the lore under it.
+        return markLive && selection != null
+                && before(field, from, selection.toField(), selection.toAt())
+                && before(selection.fromField(), selection.fromAt(), field, to);
+    }
+
+    /** {@return whether one place in the item's text comes before another}, the name counting first */
+    private static boolean before(int field, int at, int otherField, int otherAt) {
+        int line = order(field);
+        int other = order(otherField);
+        return line != other ? line < other : at < otherAt;
+    }
+
+    /** {@return where a line of the item stands in the preview}, which is the name and then the lore */
+    private static int order(int field) {
+        return field == NAME_FIELD ? 0 : field + 1;
     }
 
     /**
-     * {@return the selection, or null when the text it was measured in is no longer what the line holds}
+     * {@return the selection, or null when the text it was measured in is no longer what the lines hold}
      *
      * <p>The one place the question is answered, so that the highlight and the buttons cannot disagree
      * about whether there is a selection at all.
@@ -1174,11 +1372,26 @@ public final class ItemEditorScreen extends Screen {
     private Mark live() {
         Mark selection = mark;
         if (selection == null) return null;
-        if (marked != null && ItemEdit.shown(markup(selection.field())).equals(marked)) return selection;
+        if (marked != null && shownOf(selection).equals(marked)) return selection;
 
         mark = null;
         marked = null;
         return null;
+    }
+
+    /**
+     * {@return the characters the lines of a selection show}
+     *
+     * <p>What a selection is remembered by, and what tells a stale one from a live one: the characters of the
+     * item's text are the same after a button has wrapped them as they were before, so a selection whose
+     * characters are still there is one the buttons can still be pressed on.
+     */
+    private String shownOf(Mark selection) {
+        StringBuilder out = new StringBuilder();
+        for (int field = selection.fromField(); field <= selection.toField(); field++) {
+            out.append(ItemEdit.shown(markup(field))).append('\n');
+        }
+        return out.toString();
     }
 
     /**
@@ -1189,7 +1402,7 @@ public final class ItemEditorScreen extends Screen {
      * of them it is nearer the front of.
      */
     private Spot spot(double mouseX, double mouseY) {
-        int lineHeight = Minecraft.getInstance().font.lineHeight;
+        int lineHeight = rowHeight();
         for (int i = 0; i < drawn.size(); i++) {
             Line line = drawn.get(i);
             if (mouseY < line.y() || mouseY >= line.y() + lineHeight) continue;
@@ -1200,7 +1413,7 @@ public final class ItemEditorScreen extends Screen {
                 if (mouseX < glyph.x() + glyph.width()) break;
             }
             // An empty line has no characters to be between.
-            return at < 0 ? null : new Spot(line.field(), at, i);
+            return at < 0 ? null : new Spot(line.field(), at);
         }
         return null;
     }
@@ -1208,27 +1421,42 @@ public final class ItemEditorScreen extends Screen {
     /**
      * {@return the selection a drag has reached}
      *
-     * <p>It stays on the line of the item the drag began on, because the buttons write to one line: a
-     * selection running on into the next would name two fields and could only be written to one of them.
-     * Running off the end of a line therefore takes the rest of that line, which is what dragging past
-     * the end of a line means everywhere else.
+     * <p>It runs across lines, because that is what a selection over a preview is: the name is the first line
+     * of what is drawn and the lore follows under it, and dragging from a word in the name to a word in the
+     * lore selects everything between them — which the buttons then write to line by line.
+     *
+     * <p>A drag that has left the drawn text takes the rest of the preview: downwards everything to the end of
+     * the last line drawn and upwards everything from the start of the first, which is what running off the
+     * end of a field means everywhere else.
      */
     private Mark extend(double mouseX, double mouseY) {
-        if (anchor == null) return null;
+        if (anchor == null || drawn.isEmpty()) return null;
+
         Spot spot = spot(mouseX, mouseY);
-        if (spot == null || spot.field() != anchor.field()) {
-            boolean upwards = spot != null ? spot.line() < anchor.line()
-                    : anchor.line() < drawn.size() && mouseY < drawn.get(anchor.line()).y();
-            int end = ItemEdit.shown(markup(anchor.field())).length();
-            return upwards ? new Mark(anchor.field(), 0, anchor.at())
-                    : new Mark(anchor.field(), anchor.at(), end);
+        if (spot == null) {
+            // The mouse is above the first row drawn, below the last, or in the seam between two of them — the
+            // name's box is taller than the line drawn in it, and the lore is pulled up into the rest of it. The
+            // nearest row is the one the drag has reached, and which end of it is taken depends on which way the
+            // mouse is going, so a drag stopped in a seam still takes the whole of the line it was heading for
+            // rather than everything to the end of the preview.
+            Line nearest = drawn.get(0);
+            for (Line row : drawn) {
+                if (Math.abs(row.y() - mouseY) < Math.abs(nearest.y() - mouseY)) nearest = row;
+            }
+            boolean upwards = mouseY < nearest.y();
+            int at = upwards ? 0 : ItemEdit.shown(markup(nearest.field())).length();
+            spot = new Spot(nearest.field(), at);
         }
 
-        int from = Math.min(anchor.at(), spot.at());
-        int to = Math.max(anchor.at(), spot.at());
+        // The two ends in the order the item is read, whichever way round the drag went.
+        boolean forwards = before(anchor.field(), anchor.at(), spot.field(), spot.at());
+        Mark wanted = forwards
+                ? new Mark(anchor.field(), anchor.at(), spot.field(), spot.at())
+                : new Mark(spot.field(), spot.at(), anchor.field(), anchor.at());
         // A drag that has not crossed a character has selected nothing, and an empty selection is nothing
         // rather than a run of no characters that the next button would wrap.
-        return from == to ? null : new Mark(anchor.field(), from, to);
+        boolean crossed = wanted.fromField() != wanted.toField() || wanted.fromAt() != wanted.toAt();
+        return crossed ? wanted : null;
     }
 
     @Override
@@ -1286,7 +1514,7 @@ public final class ItemEditorScreen extends Screen {
         }
         if (dragging) {
             mark = extend(mouseX, mouseY);
-            marked = mark == null ? null : ItemEdit.shown(markup(mark.field()));
+            marked = mark == null ? null : shownOf(mark);
             return true;
         }
         return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
