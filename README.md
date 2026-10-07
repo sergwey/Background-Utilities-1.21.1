@@ -149,3 +149,7 @@ What is worth checking there: that the server starts with the mod at all, that t
 under `run-server/serverconfig/backutils/`, that the mod's commands are all present and gated as they
 should be, and that what one player does is recorded and shown to the players around them — which
 takes two clients and is the one thing a single player cannot test.
+
+## Licence
+
+GPL-3.0-only, copyright (C) 2026 xlebupaksa. The full text is in [LICENSE](LICENSE).

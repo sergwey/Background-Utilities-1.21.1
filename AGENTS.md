@@ -73,6 +73,13 @@ publishes a GitHub release with the jar attached, using the repository's own tok
 action and no contributor is added. The release notes are `.github/release-notes.md`, so what a
 release says is reviewable in the repository rather than typed into a form.
 
+## Licence
+
+**GPL-3.0-only** — `mod_license` in `gradle.properties`, full text in `LICENSE`. Photon is GPL-3.0 and
+this mod calls its API directly, which is where the obligation comes from. Anything added to the
+project has to be under a GPL-3.0-compatible licence, and code must not be copied from a project whose
+licence is not compatible with it.
+
 ## Checks that exist here
 
 The maintainer keeps a throwaway harness under `build/tmp/` — a compile check, a lint pass, a
