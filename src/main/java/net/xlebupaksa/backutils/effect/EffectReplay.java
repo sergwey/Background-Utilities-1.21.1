@@ -1,5 +1,6 @@
 package net.xlebupaksa.backutils.effect;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -16,6 +17,7 @@ import net.xlebupaksa.backutils.data.EffectData;
 import net.xlebupaksa.backutils.data.EffectPlacement;
 import net.xlebupaksa.backutils.data.PlacedEffect;
 import net.xlebupaksa.backutils.item.EffectToolConfig;
+import net.xlebupaksa.backutils.item.EffectToolPlacement.Point;
 import net.xlebupaksa.backutils.network.EffectPlacedPayload;
 import net.xlebupaksa.backutils.network.EffectToolNetwork;
 
@@ -117,6 +119,14 @@ public class EffectReplay {
      * <p>An effect attached to a mob is not in a chunk the way a placed one is — it follows the mob —
      * so what brings it back is the entity being tracked again rather than the ground being loaded.
      * The owner's report is exactly this: it has to be re-sent every time it is loaded, entity or not.
+     *
+     * <p><b>An accurate effect is one of these too, and that is the half that was missing.</b> Its
+     * anchor is the blank display the server put in the world, and a display is tracked like any other
+     * entity — at its own range, which need not be the range the ground is kept at. So a player who
+     * flies far enough has the display untracked and the effect with it, while the chunk stays loaded
+     * and watched: no chunk is ever sent again, nothing re-sends the effect, and it is gone for the
+     * session. Which entity the row hangs off is what decides the answer here, and a row names it in
+     * one of two columns depending on the mode.
      */
     @SubscribeEvent
     @SuppressWarnings("unused") // called by the event bus
@@ -152,7 +162,13 @@ public class EffectReplay {
         for (PlacedEffect effect : store.all()) {
             EffectPlacement where = effect.placement();
             if (where == null || !where.dimension().equals(dimension)) continue;
-            if (where.blockX() >> 4 != chunk.x || where.blockZ() >> 4 != chunk.z) continue;
+            // The block the effect is in now rather than the one its row was written at: an accurate
+            // effect hangs off a display anything may move, and the effect goes with it — so the chunk
+            // that brings it back is the display's. See EffectAnchor.whereIs.
+            Point at = EffectAnchor.whereIs(level, effect);
+            if (at == null) continue;
+            BlockPos block = BlockPos.containing(at.x(), at.y(), at.z());
+            if (block.getX() >> 4 != chunk.x || block.getZ() >> 4 != chunk.z) continue;
             sendOne(player, level, store, effect);
         }
     }
@@ -163,6 +179,12 @@ public class EffectReplay {
      * <p>Found by the identity the row kept when it was placed. A row that names no entity is not one
      * of these, and a row naming an entity the player cannot see is skipped by the level's own
      * lookup — which is the same question as "is this effect in front of them".
+     *
+     * <p>Either column answers: a row names the mob an entity effect is <em>on</em> in one, and the
+     * display an accurate effect <em>hangs off</em> in the other, and both are entities the library
+     * attaches the effect to and therefore both are entities whose being tracked again is what puts
+     * the effect back on a client that lost it. Asking only about the first is what left an accurate
+     * effect gone for the session after the display was untracked — see {@link #onStartTracking}.
      */
     private static void sendFor(ServerPlayer player, String targetUuid) {
         if (player == null || targetUuid == null || targetUuid.isBlank()) return;
@@ -175,7 +197,9 @@ public class EffectReplay {
         for (PlacedEffect effect : store.all()) {
             EffectPlacement where = effect.placement();
             if (where == null || !where.dimension().equals(dimension)) continue;
-            if (!targetUuid.equals(effect.targetUuid())) continue;
+            if (!targetUuid.equals(effect.targetUuid()) && !targetUuid.equals(effect.anchorUuid())) {
+                continue;
+            }
             sendOne(player, level, store, effect);
         }
     }
@@ -251,9 +275,14 @@ public class EffectReplay {
             EffectPlacement where = effect.placement();
             if (where == null || !where.dimension().equals(dimension)) continue;
 
-            double dx = where.centreX() - eye.x;
-            double dy = where.centreY() - eye.y;
-            double dz = where.centreZ() - eye.z;
+            // Measured to where the effect is now rather than to the point its row was written at,
+            // which is the same question the drawing asks: an accurate effect follows the display it
+            // hangs off, and a player standing in front of that display is a player who can see it.
+            Point at = EffectAnchor.whereIs(level, effect);
+            if (at == null) continue;
+            double dx = at.x() - eye.x;
+            double dy = at.y() - eye.y;
+            double dz = at.z() - eye.z;
             if (dx * dx + dy * dy + dz * dz > reach) continue;
 
             sendOne(player, level, store, effect);

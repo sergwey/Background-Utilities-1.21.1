@@ -92,8 +92,11 @@ final class EffectPick {
             // Every placed effect's box is a small cube centred on the point the effect is at rather
             // than on the middle of the block that point falls in, and a block-side effect's is
             // pushed out of the block as well — see markerCentre, which is the one place that is
-            // decided, so the drawn cube and the picked one cannot be two different boxes.
-            Point at = markerCentre(entry.anchor(), entry.placement().mode(), entry.placement().face());
+            // decided, so the drawn cube and the picked one cannot be two different boxes. The point
+            // is read for a moment rather than taken from the row, because an accurate effect follows
+            // the display it hangs off and that display can be moved — see anchorAt.
+            Point at = markerCentre(entry.anchor(partialTick), entry.placement().mode(),
+                    entry.placement().face());
             return new Cube(at.plus(-ITEM_SIZE / 2.0D, -ITEM_SIZE / 2.0D, -ITEM_SIZE / 2.0D),
                     ITEM_SIZE);
         }
@@ -145,14 +148,61 @@ final class EffectPick {
      * <p>An accurate effect answers null as well, and it is the case worth naming: it hangs off a
      * blank display the server put in the world, so there <em>is</em> an entity at its id. That
      * display is a prop with a box of nothing, not the thing the effect is on — the effect is at the
-     * point it was aimed at. Reading the display as the anchor is what put a box around an invisible
-     * prop instead of a cube at the effect.
+     * point the display stands at, which is the point it was aimed at only for as long as nobody
+     * moves it. Reading the display as the anchor is what put a box around an invisible prop instead
+     * of a cube at the effect; {@link #displayOf} is the reading that is wanted instead.
      */
     static Entity anchorOf(PlacedEffects.Entry entry) {
         if (!entry.hangsOffEntity() || entry.anchorEntityId() < 0) return null;
         Minecraft minecraft = Minecraft.getInstance();
         ClientLevel level = minecraft.level;
         return level == null ? null : level.getEntity(entry.anchorEntityId());
+    }
+
+    /**
+     * {@return the display an accurate effect hangs off and that this client can see}, or null
+     *
+     * <p>Null for every other kind of entry, and that is the whole of the difference from
+     * {@link #anchorOf}: an effect attached to an entity is <em>on</em> that entity and is drawn as
+     * its own box, where an accurate effect hangs off a prop standing in a place and is drawn as a
+     * cube at the effect's point — so the prop is wanted here only in order to know where that point
+     * is now.
+     *
+     * <p>A display in another level, or one that has not reached this client yet, answers null, which
+     * is the ordinary state of an effect that is still waiting to be attached.
+     */
+    static Entity displayOf(PlacedEffects.Entry entry) {
+        if (!entry.hangsOffDisplay()) return null;
+        ClientLevel level = Minecraft.getInstance().level;
+        return level == null ? null : level.getEntity(entry.anchorEntityId());
+    }
+
+    /**
+     * {@return where an effect is, read from the thing it hangs off as that thing is now}
+     *
+     * <p>An accurate effect hangs off the blank display the server put in the world rather than off
+     * the point it was aimed at, and a display is an entity: whatever moves entities — a prop set up
+     * for roleplay, a tool like Axiom, a command — moves the effect with it, because the library
+     * re-reads the display's own position every frame. A cube left at the planned point would
+     * therefore stand where the effect no longer is, and a click on it would name a block the server
+     * finds no effect in.
+     *
+     * <p>The point is the library's own: {@code EntityEffectExecutor} puts an entity-anchored effect
+     * at the entity's eye plus the effect's offset, so that is what is read here, through
+     * {@link EffectAttachment#at} — the one place that sum is written. An item display is an entity
+     * of no size, so its eye is its position; it is asked for as the eye rather than as the position
+     * because that is the accessor the effect itself is placed through, and reading it any other way
+     * would be the coincidence this is meant not to depend on.
+     *
+     * <p>An entry whose display this client cannot see answers with the point the row holds, which is
+     * where the effect was planned: there is nothing to follow yet, and that point is where the
+     * effect will be once the display arrives.
+     */
+    static Point anchorAt(PlacedEffects.Entry entry, float partialTick) {
+        Entity display = displayOf(entry);
+        if (display == null) return effectAt(entry.attachment());
+        Vec3 at = display.getEyePosition(partialTick);
+        return entry.attachment().at(at.x, at.y, at.z);
     }
 
     /**
@@ -166,13 +216,13 @@ final class EffectPick {
      * not a rounding difference: it is a block-side cube landing at the block's own down-left corner
      * rather than on the face it was aimed at.
      *
-     * <p>It lives here, pure, so that the preview and the marker a placement leaves behind cannot be
-     * two copies of one sum — which is exactly how they came apart.
+     * <p>Kept here as this package's name for the sum, and answered by
+     * {@link EffectAttachment#at()}, which is where it is written: the server asks the same question
+     * of a row — where is this effect now — and a second copy of the arithmetic here would be a
+     * second answer.
      */
     static Point effectAt(EffectAttachment attachment) {
-        return new Point(attachment.x() + attachment.offset().x(),
-                attachment.y() + attachment.offset().y(),
-                attachment.z() + attachment.offset().z());
+        return attachment.at();
     }
 
     /**
@@ -357,14 +407,14 @@ final class EffectPick {
         /**
          * {@return the block a click on this place empties}
          *
-         * <p>Read from the anchor the cube is centred on rather than from the block the crosshair
-         * happens to be over: the two are the same for a cube sitting on the grid, and they are not
-         * for an accurate effect, which is deliberately off it. Every effect in the block the picked
-         * one is in is what a click removes, which is the spec's "all the placed effects in this
-         * place".
+         * <p>Read from the box the ray was tested against rather than from the effect's anchor a
+         * second time: what a click removes is what the crosshair was on, and this box is what it was
+         * on. That is what makes it right for an accurate effect, whose cube is centred on the display
+         * it hangs off — a display anything may move — since the block named is then the block the
+         * cube was drawn in, for this frame, rather than the block the row was written at.
          */
         BlockPos placeBlock() {
-            return hit == null ? null : blockOf(hit.anchor());
+            return hit == null || box == null ? null : blockOf(box.centre());
         }
     }
 }

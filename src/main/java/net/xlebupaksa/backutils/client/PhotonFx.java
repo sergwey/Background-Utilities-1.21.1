@@ -116,19 +116,45 @@ public final class PhotonFx {
     }
 
     /**
-     * {@return true when an effect has run to its own end}
+     * {@return true when there is nothing left of this effect to draw}
      *
-     * <p>How an effect that carries its own lifetime is noticed. Photon's answer is the only one
-     * there is: {@code isFinished} is true when the effect's timeline has run out <b>and</b> nothing
-     * of it is still alive, which is exactly "this effect is over" rather than "the effect was told
-     * to stop". A runtime that is gone, or that throws when asked, is over as well — there is
-     * nothing left to draw either way, and a caller that kept it would be keeping a row for an
-     * effect nobody can see.
+     * <p>Three ways for that to be so, and this answers all of them: the effect played its own
+     * timeline out, the library stopped it because its anchor went away, and the particle engine
+     * discarding its particles. The last is the one worth naming, because it is invisible from here —
+     * the runtime object is still there, nothing says it ended, and yet nothing is drawn.
+     * {@code FXRuntime.isValid} is the library's own answer to it and says in as many words that it is
+     * <b>the safe check for callers who cache a runtime</b>, which is exactly what this mod does:
+     * a level change, {@code /photon_client clear_particles}, or another mod reaching into the engine
+     * discards the particles and leaves a cached runtime looking alive for ever.
+     *
+     * <p>What the three mean to the caller is <em>not</em> the same, and this deliberately says only
+     * that the effect is over: whether it played out, was stopped, or was dropped is asked separately,
+     * because reporting the wrong one deletes a row that still describes an effect in the world.
      */
     public static boolean finished(FXRuntime runtime) {
         if (runtime == null) return true;
         try {
-            return runtime.isFinished() || !runtime.isAlive();
+            return runtime.isFinished() || !runtime.isValid();
+        } catch (Throwable e) {
+            return true;
+        }
+    }
+
+    /**
+     * {@return true when an effect played its own timeline out rather than being stopped}
+     *
+     * <p>The one ending that means the row describes nothing any more: the effect carried its own
+     * lifetime and has run out of it. Every other way of being over leaves a row that still describes
+     * an effect somebody put in the world, which is why this is asked apart from {@link #finished}.
+     *
+     * <p>A runtime that was <em>destroyed</em> answers true here as well — its objects are gone and
+     * its timeline stopped — so a caller has to ask {@link #destroyed} first, which is what makes the
+     * distinction; this is not where that is decided.
+     */
+    public static boolean playedOut(FXRuntime runtime) {
+        if (runtime == null) return true;
+        try {
+            return runtime.isFinished();
         } catch (Throwable e) {
             return true;
         }

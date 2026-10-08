@@ -324,7 +324,7 @@ public final class EffectToolPreviewRenderer {
      * Draws the effects that are already placed, which is what the delete tool is held for.
      *
      * <p>One small cube per effect rather than one per block, centred on
-     * {@link PlacedEffects.Entry#anchor()} — where the effect actually is, which is the planning
+     * {@link PlacedEffects.Entry#anchor(float)} — where the effect actually is, which is the planning
      * point plus the offset it was attached with. A cube on the block a placement floors to would
      * name the block rather than the effect, and an accurate placement is deliberately off the grid,
      * so there would be nothing on the grid to draw at all.
@@ -377,7 +377,10 @@ public final class EffectToolPreviewRenderer {
         for (PlacedEffects.Entry entry : PlacedEffects.places()) {
             Cube cube = EffectPick.boxOf(entry, partialTick);
             boolean hovered = entry == scene.hit();
-            boolean deleted = flashing.contains(placeOf(entry).asLong());
+            // The block the cube is in, read from the cube rather than from the row: an accurate
+            // effect's cube follows the display it hangs off, and the flash is keyed by the block the
+            // click named, which is the block the cube was in when it was made.
+            boolean deleted = flashing.contains(EffectPick.blockOf(cube.centre()).asLong());
             if (deleted && !lit) continue;
             drawCube(poses, buffers, cube, level, camera, hovered || deleted ? RED : PINK);
         }
@@ -386,7 +389,7 @@ public final class EffectToolPreviewRenderer {
         // drawn from the position it was written as. Drawn after the effects that are still there,
         // and in the one colour a deletion leaves behind.
         for (long place : flashing) {
-            if (!lit || anchoring(level, BlockPos.of(place))) continue;
+            if (!lit || anchoring(level, BlockPos.of(place), partialTick)) continue;
             drawCube(poses, buffers, cubeAt(middleOf(BlockPos.of(place))), level, camera, RED);
         }
 
@@ -425,23 +428,23 @@ public final class EffectToolPreviewRenderer {
         }
     }
 
-    /** {@return true when this client is drawing an effect in a block} */
-    private static boolean anchoring(ClientLevel level, BlockPos pos) {
+    /**
+     * {@return true when this client is drawing an effect's cube in a block}
+     *
+     * <p>Asked of the cubes this frame is drawing rather than of the rows, because the two are the
+     * same question only while nothing moves: an accurate effect's cube is centred on the display it
+     * hangs off, and a display can be picked up and carried. The flash is keyed by the block a click
+     * named, so what has to be known here is whether a cube is already being drawn there — a second
+     * cube at the middle of the block beside it would be the same deletion said twice.
+     */
+    private static boolean anchoring(ClientLevel level, BlockPos pos, float partialTick) {
         String dimension = level.dimension().location().toString();
         for (PlacedEffects.Entry entry : PlacedEffects.places()) {
-            EffectPlacement where = entry.placement();
-            if (where.dimension().equals(dimension) && where.blockX() == pos.getX()
-                    && where.blockY() == pos.getY() && where.blockZ() == pos.getZ()) {
-                return true;
-            }
+            if (!entry.placement().dimension().equals(dimension)) continue;
+            Cube cube = EffectPick.boxOf(entry, partialTick);
+            if (EffectPick.blockOf(cube.centre()).equals(pos)) return true;
         }
         return false;
-    }
-
-    /** {@return the block a placed effect's row names}, which is what a click on it empties */
-    private static BlockPos placeOf(PlacedEffects.Entry entry) {
-        return new BlockPos(entry.placement().blockX(), entry.placement().blockY(),
-                entry.placement().blockZ());
     }
 
     /** {@return the middle of a block}, which is where a block-mode effect sits */
@@ -739,7 +742,9 @@ public final class EffectToolPreviewRenderer {
      * <p>The centre is built exactly as the placement is, through
      * {@link EffectAttachment#offsetOf(EffectToolConfig, EffectPlacement, EffectToolConfig.Mode)} —
      * the same sum the effect will be handed, and the same one
-     * {@link PlacedEffects.Entry#anchor()} gives for a placed effect once its offset has been added.
+     * {@link PlacedEffects.Entry#anchor(float)} gives for a placed effect once its offset has been
+     * added — read there for a moment rather than once, because an accurate effect follows the display
+     * it hangs off rather than sitting where the row was written.
      * That is the whole point of a preview: the cube seen before the click and the marker left behind
      * by it are one arithmetic read twice, so they cannot land in different places.
      *

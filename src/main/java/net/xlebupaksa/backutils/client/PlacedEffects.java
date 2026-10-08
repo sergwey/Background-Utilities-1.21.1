@@ -62,6 +62,16 @@ public final class PlacedEffects {
     private static final int WAITING_TICKS = 100;
 
     /**
+     * How many times one entry may be started again after its drawing was taken away.
+     *
+     * <p>Four: three more than a level change or a mod reaching into the particle engine ever needs,
+     * and few enough that an effect this client cannot keep started costs a handful of attempts rather
+     * than one every other tick for as long as the player stands there. What is given up on is not the
+     * row: the effect comes back from the server on the next chunk watch, tracking packet or arrival.
+     */
+    private static final int MAX_REVIVALS = 4;
+
+    /**
      * How often the list is walked.
      *
      * <p>Every other tick: an effect's own ending is not an emergency, and this is a walk over a
@@ -78,6 +88,9 @@ public final class PlacedEffects {
         private final int anchorEntityId;
         private FXRuntime runtime;
         private int waited;
+
+        /** How many times this effect has been started again after its drawing was taken away. */
+        private int revivals;
 
         private Entry(long id, EffectPlacement placement, EffectAttachment attachment,
                       int anchorEntityId) {
@@ -97,6 +110,17 @@ public final class PlacedEffects {
             return placement;
         }
 
+        /**
+         * {@return what this effect was attached with}, which its own anchor is read from
+         *
+         * <p>Reached for by {@link EffectPick} rather than kept there, so that the offset an effect is
+         * drawn with is the offset it was placed with: the arithmetic is the attachment's own, and an
+         * entry that carried a second copy of it could be drawn as something else.
+         */
+        EffectAttachment attachment() {
+            return attachment;
+        }
+
         /** {@return true once this effect is attached and running} */
         public boolean running() {
             return runtime != null;
@@ -110,11 +134,17 @@ public final class PlacedEffects {
          * and an accurate one is the point with its offset. What is drawn, picked and clicked has to
          * be where the effect is rather than where its row points, or the box would sit in the middle
          * of a block an effect is hanging off the side of.
+         *
+         * <p>Answered for a moment rather than once, because one mode's anchor moves: an accurate
+         * effect hangs off the blank display the server put in the world, and the effect follows that
+         * display wherever anything takes it. {@link EffectPick#anchorAt} is where the live reading
+         * and the point the row holds as its fallback are decided.
          */
-        public EffectToolPlacement.Point anchor() {
-            // The one sum, shared with the preview that promised it: EffectPick.effectAt holds it, and
-            // says why the middle of the block is what an offset is measured from.
-            return EffectPick.effectAt(attachment);
+        public EffectToolPlacement.Point anchor(float partialTick) {
+            // The one sum, shared with the preview that promised it and with the server that removes
+            // the place: EffectAttachment.at holds it, and says why the middle of the block is what an
+            // offset is measured from.
+            return EffectPick.anchorAt(this, partialTick);
         }
 
         /**
@@ -144,6 +174,43 @@ public final class PlacedEffects {
          */
         public boolean hangsOffEntity() {
             return attachment.kind() == EffectAttachment.Kind.ENTITY;
+        }
+
+        /**
+         * {@return true when this effect hangs off a display the world holds}
+         *
+         * <p>An accurate placement is the only one. The server puts a blank item-display where the
+         * effect was aimed and every client attaches the effect to it, which is what makes it the same
+         * effect for everybody; a block effect hangs off a place, and an entity effect off the entity
+         * it is on, which are the two other questions — see {@link #hangsOffEntity()}.
+         *
+         * <p>Kept apart from those two rather than folded into either, because what it decides is
+         * whether an effect's position has to be read from an entity as it is <em>now</em> instead of
+         * from the point the row was written at: a display can be moved, and the effect moves with it.
+         */
+        public boolean hangsOffDisplay() {
+            return attachment.kind() == EffectAttachment.Kind.POINT
+                    && anchorEntityId != EffectPlacedPayload.NO_ENTITY;
+        }
+
+        /**
+         * {@return true when the thing this effect hangs off is still here}
+         *
+         * <p>What decides whether an effect whose drawing was taken away can be started again as it
+         * stands: ground that is loaded for a block effect, and a living entity for the three others —
+         * the mob an entity effect is on, the display an accurate one hangs off, and the player a self
+         * one is attached to. A missing entity and unloaded ground are deliberately the same answer,
+         * because they are the same state: the effect is not lost, it is waiting for something that has
+         * not arrived, and starting it against nothing is what the library refuses to do.
+         */
+        boolean anchorHere(ClientLevel level) {
+            if (attachment.kind() == EffectAttachment.Kind.BLOCK) {
+                return level.isLoaded(BlockPos.containing(placement.x(), placement.y(),
+                        placement.z()));
+            }
+            if (anchorEntityId == EffectPlacedPayload.NO_ENTITY) return false;
+            Entity entity = level.getEntity(anchorEntityId);
+            return entity != null && entity.isAlive();
         }
 
         /** {@return the entity this effect hangs off}, or {@link EffectPlacedPayload#NO_ENTITY} */
@@ -256,31 +323,6 @@ public final class PlacedEffects {
         return List.copyOf(ENTRIES.values());
     }
 
-    /**
-     * {@return the effects that are placed in one block}
-     *
-     * <p>What the delete tool asks: it removes a place rather than an effect, so the tool has to be
-     * able to find the effects that share one.
-     *
-     * <p><b>Only effects that hang off a place.</b> An effect attached to an entity records where
-     * that entity was standing when it was placed, and that block is not a place the effect is in —
-     * offering it would highlight a block for an effect that follows a mob around, and a click there
-     * would empty a block that has nothing to do with what is on screen.
-     */
-    public static List<Entry> at(ClientLevel level, BlockPos pos) {
-        List<Entry> found = new ArrayList<>();
-        String dimension = dimension(level);
-        for (Entry entry : ENTRIES.values()) {
-            EffectPlacement where = entry.placement();
-            if (entry.placed() && where.dimension().equals(dimension)
-                    && where.blockX() == pos.getX() && where.blockY() == pos.getY()
-                    && where.blockZ() == pos.getZ()) {
-                found.add(entry);
-            }
-        }
-        return found;
-    }
-
     /** {@return every effect that hangs off a place in the world}, for the boxes and the picking */
     public static List<Entry> places() {
         List<Entry> found = new ArrayList<>();
@@ -342,21 +384,61 @@ public final class PlacedEffects {
         for (Entry entry : List.copyOf(ENTRIES.values())) {
             if (entry.running()) {
                 if (!PhotonFx.finished(entry.runtime)) continue;
-                // Two ways to be over, and they mean opposite things. An effect that was *destroyed*
-                // was stopped by something other than its own end — walking out of its range is the
-                // ordinary case, because the library gives up on an effect it can no longer draw —
-                // and it is only forgotten here: the row still describes an effect that is there, and
-                // it is sent again when the player comes back. An effect that finished and was not
-                // destroyed played itself out, and the row describes nothing, so the server is told
-                // and the row goes. Reporting the first as the second would delete a row whenever a
-                // player walked away from it.
-                if (PhotonFx.destroyed(entry.runtime)) remove(entry.id());
-                else end(entry);
+                // Three ways to be over, and the third is the one that means the row goes. An effect
+                // that played its own timeline out describes nothing any more, so the server is told
+                // and the row is removed with its display. An effect that was *destroyed* was stopped
+                // by something other than its own end — the library gives up on an effect whose anchor
+                // has gone, which is walking out of its range, unloaded ground, or a mob that died —
+                // and an effect the engine has quietly dropped is that same state seen from another
+                // angle: nothing is drawn, and the row still describes an effect that is there.
+                // Neither of those is reported, because reporting one would delete a row whenever a
+                // player walked away from its effect; both are revived instead — started again where
+                // the anchor is still here, and forgotten where it is not, in which case the server
+                // sends the effect again when that ground or that entity arrives. The destruction is
+                // asked first because a destroyed runtime is finished as well.
+                if (!PhotonFx.destroyed(entry.runtime) && PhotonFx.playedOut(entry.runtime)) {
+                    end(entry);
+                    continue;
+                }
+                revive(entry, level);
                 continue;
             }
             entry.waited += POLL_INTERVAL_TICKS;
             if (start(entry, level, holder) || entry.waited > WAITING_TICKS) remove(entry.id());
         }
+    }
+
+    /**
+     * Starts an effect again whose drawing was taken away, or forgets it when it cannot be drawn.
+     *
+     * <p>What this is for: the server has said this client is drawing an effect, and it is not. Two
+     * things take one away without the server being told, and neither is the effect ending. The
+     * library stops an effect whose anchor has gone, and the particle engine discards an effect's
+     * particles — on a level change, when another mod reaches into the engine, or whenever the
+     * library's own root stops being ticked — which leaves a runtime that looks alive for ever and
+     * draws nothing (see {@link PhotonFx#finished}).
+     *
+     * <p>An anchor that is still here is one this client can attach to again, and attaching again is
+     * not inventing anything: the effect, the anchor and the settings are the ones the server sent,
+     * so what is drawn is what the server believes is drawn. A display that has gone, ground that is
+     * not loaded, or a mob that died answers the other way, and then the entry is forgotten — the row
+     * is left alone and the effect comes back from the server when that entity is tracked or that
+     * ground is sent again, which is what {@link net.xlebupaksa.backutils.effect.EffectReplay} is for.
+     *
+     * <p>Bounded by {@link #MAX_REVIVALS}: an effect this client has had to start again four times is
+     * one it cannot keep started, and the honest answer then is to stop pretending until the server
+     * says something — which it does on every chunk watch, tracking packet and arrival.
+     */
+    private static void revive(Entry entry, ClientLevel level) {
+        if (entry.revivals >= MAX_REVIVALS || !entry.anchorHere(level)) {
+            remove(entry.id());
+            return;
+        }
+        entry.revivals++;
+        // Forgetting the runtime is what puts the entry back in the waiting state the next poll
+        // starts from, and the wait is reset so a fresh five seconds is spent on the new attempt.
+        entry.runtime = null;
+        entry.waited = 0;
     }
 
     /**

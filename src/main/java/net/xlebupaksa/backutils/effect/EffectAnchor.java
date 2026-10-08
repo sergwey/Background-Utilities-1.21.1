@@ -7,6 +7,11 @@ import net.minecraft.world.entity.Display;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec3;
+import net.xlebupaksa.backutils.data.EffectPlacement;
+import net.xlebupaksa.backutils.data.PlacedEffect;
+import net.xlebupaksa.backutils.item.EffectAttachment;
+import net.xlebupaksa.backutils.item.EffectToolPlacement;
 
 import java.util.Set;
 import java.util.UUID;
@@ -213,9 +218,44 @@ public final class EffectAnchor {
         return display.level();
     }
 
-    /** {@return the block an anchor stands in}, which the delete tool removes a place by */
-    public static BlockPos blockOf(Entity display) {
-        return display.blockPosition();
+    /**
+     * {@return where a stored effect is now, which is where the display it hangs off is}
+     *
+     * <p>A row records the point an accurate effect was aimed at, and that is where the effect
+     * <em>was</em>: the blank display the server put there is an entity anything in the world may
+     * move — a prop set up for roleplay, a tool like Axiom, a command — and the effect follows it,
+     * because the library re-reads the entity's own position every frame. So "where is this effect"
+     * is a question whose answer is not the one the row holds, and every caller that cares asks it
+     * here rather than reading the coordinates out of the row: the delete tool, which removes by
+     * place, the replay, which sends what a player can see, and the ending a client reports, which is
+     * bounded by how near the reporter is.
+     *
+     * <p>The point is the library's own sum, read through {@link EffectAttachment#at}: the display's
+     * eye plus the offset the effect was attached with. An item display is an entity of no size, so
+     * its eye is its position — asked for as the eye because that is the accessor the effect is placed
+     * through, rather than because the two agree here.
+     *
+     * <p>A row that names no display answers with the point it holds, and so does one whose display
+     * this server cannot see: the row is then the only thing that knows where the effect was asked
+     * for, which is a better answer than a point nobody can check. <b>Loaded entities only</b>, as
+     * {@link #find} is: a caller asking about a place the player is looking at is asking about ground
+     * that is loaded, and a display that is not loaded cannot be standing in it.
+     *
+     * @return the point the effect is at, or null when the row names no place at all
+     */
+    public static EffectToolPlacement.Point whereIs(ServerLevel level, PlacedEffect effect) {
+        EffectPlacement where = effect.placement();
+        if (where == null) return null;
+
+        EffectToolPlacement.Point planned =
+                new EffectToolPlacement.Point(where.centreX(), where.centreY(), where.centreZ());
+        if (effect.anchorUuid() == null || effect.anchorUuid().isBlank()) return planned;
+
+        Entity display = find(level, effect.anchorUuid());
+        if (display == null) return planned;
+
+        Vec3 eye = display.getEyePosition();
+        return EffectAttachment.of(effect.config(), where).at(eye.x, eye.y, eye.z);
     }
 
     /** {@return the identity a stored string names}, or null when it names none */

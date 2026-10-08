@@ -84,6 +84,33 @@ public record EffectAttachment(
     }
 
     /**
+     * {@return where the effect is, given where the thing it hangs off is}
+     *
+     * <p>The library's own sum, and the one every drawing of an effect has to make: it adds this
+     * offset to the anchor it was handed — the middle of a block for a block effect, the entity's own
+     * eye for one attached to an entity — so an effect's position is its anchor plus this offset and
+     * nothing else.
+     *
+     * <p>The anchor is taken as three numbers rather than read from {@link #x}, {@link #y} and
+     * {@link #z}, because those are only where the effect was <em>planned</em>. An accurate effect
+     * hangs off a blank display the world holds, and a display is an entity that anything may move:
+     * the effect follows it, so "where is this effect" is a question to be asked of the display as it
+     * is now. Both ends ask it here — the client that draws the cube and the server that removes the
+     * place — so that the two cannot be answers that disagree.
+     *
+     * @param x the anchor's own x: the display's position for a moved accurate effect, and this
+     *          attachment's own for everything else
+     */
+    public EffectToolPlacement.Point at(double x, double y, double z) {
+        return new EffectToolPlacement.Point(x + offset.x(), y + offset.y(), z + offset.z());
+    }
+
+    /** {@return where the effect was planned to be}, which is the anchor it was attached at */
+    public EffectToolPlacement.Point at() {
+        return at(x, y, z);
+    }
+
+    /**
      * {@return what to place for a configuration and the point it goes to}
      *
      * <p>{@code placement} is null for a self effect and only for one: every other mode names a

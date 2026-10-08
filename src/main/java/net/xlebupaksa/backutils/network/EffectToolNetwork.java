@@ -1,5 +1,6 @@
 package net.xlebupaksa.backutils.network;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -338,7 +339,8 @@ public final class EffectToolNetwork {
                 // only reaches as far as the player can — so a block named from further off than
                 // that is not one the tool could have been pointed at.
                 if (!withinReach(player, payload.x(), payload.y(), payload.z())) return;
-                forgetWhere(server, store, effect -> effect.sameBlockAs(where));
+                ServerLevel level = player.serverLevel();
+                forgetWhere(server, store, effect -> inPlace(level, effect, where));
             }
             case MINE -> forgetWhere(server, store,
                     effect -> effect.ownedBy(player.getUUID().toString()));
@@ -361,6 +363,35 @@ public final class EffectToolNetwork {
                 // Nothing was named, which is what a kind this build does not know reads as.
             }
         }
+    }
+
+    /**
+     * {@return true when a stored effect is in one place, as that place is named now}
+     *
+     * <p>Two questions, because a row can be right in two ways. The block the row itself holds is
+     * where the effect was placed, and is the whole answer for a block effect and for an accurate one
+     * whose display nobody has moved — the ordinary case. An accurate effect hangs off a display the
+     * world holds, and a display is an entity anything may move, so the second question is where that
+     * display is <em>now</em>: see {@link EffectAnchor#whereIs}, which makes the same sum the clicking
+     * client draws its cube at, so that a cube drawn red is a cube a click removes.
+     *
+     * <p>The row is asked about the level the click was made in before either question: a row of
+     * another dimension would otherwise answer the second one with the coordinates it was written at,
+     * and two dimensions that happen to share a block coordinate would remove an effect in the world
+     * the player is not standing in.
+     */
+    private static boolean inPlace(ServerLevel level, PlacedEffect effect, EffectPlacement where) {
+        EffectPlacement row = effect.placement();
+        if (row == null || !row.dimension().equals(level.dimension().location().toString())) {
+            return false;
+        }
+        if (effect.sameBlockAs(where)) return true;
+
+        EffectToolPlacement.Point now = EffectAnchor.whereIs(level, effect);
+        if (now == null) return false;
+        BlockPos block = BlockPos.containing(now.x(), now.y(), now.z());
+        return block.getX() == where.blockX() && block.getY() == where.blockY()
+                && block.getZ() == where.blockZ();
     }
 
     /**
@@ -417,9 +448,15 @@ public final class EffectToolNetwork {
                 return;
             }
             Vec3 eye = player.getEyePosition();
-            double dx = effect.placement().x() - eye.x;
-            double dy = effect.placement().y() - eye.y;
-            double dz = effect.placement().z() - eye.z;
+            // Where the effect is now rather than where its row was written: an accurate effect
+            // follows the display it hangs off, and a report from a player standing beside that
+            // display is a report worth acting on — which reading the row's own point would refuse,
+            // leaving the row to outlive its effect and play again for whoever arrives next.
+            EffectToolPlacement.Point at = EffectAnchor.whereIs(player.serverLevel(), effect);
+            if (at == null) return;
+            double dx = at.x() - eye.x;
+            double dy = at.y() - eye.y;
+            double dz = at.z() - eye.z;
             if (dx * dx + dy * dy + dz * dz > ENDED_REPORT_RANGE * ENDED_REPORT_RANGE) return;
 
             forget(player.getServer(), store, payload.effectId());
