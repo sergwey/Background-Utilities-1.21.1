@@ -80,10 +80,11 @@ so commit subjects are written to be read as changelog entries.
 
 ## Licence
 
-**GPL-3.0-only** — `mod_license` in `gradle.properties`, full text in `LICENSE`. Photon is GPL-3.0 and
-this mod calls its API directly, which is where the obligation comes from. Anything added to the
-project has to be under a GPL-3.0-compatible licence, and code must not be copied from a project whose
-licence is not compatible with it.
+**GPL-3.0-only** — `mod_license` in `gradle.properties`, full text in `LICENSE`. The same licence is
+chosen on Modrinth, and the two are kept the same. Photon is GPL-3.0 and this mod calls its API
+directly, which is where the obligation comes from. Anything added to the project has to be under a
+GPL-3.0-compatible licence, and code must not be copied from a project whose licence is not compatible
+with it.
 
 One piece of somebody else's code ships inside the jar — sqlite-jdbc, Apache 2.0, bundled unmodified
 by `jarJar`, its licence text inside the nested jar — and the README's licence section says so. The

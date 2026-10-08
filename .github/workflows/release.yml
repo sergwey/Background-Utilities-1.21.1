@@ -116,8 +116,18 @@ jobs:
           modrinth-token: ${{ env.MODRINTH_TOKEN }}
           modrinth-name: Background Utilities ${{ github.ref_name }}
           modrinth-version: ${{ steps.version.outputs.version }}
-          modrinth-version-type: release
+          modrinth-version-type: alpha
+          modrinth-environment: client | server
           modrinth-changelog: ${{ steps.changelog.outputs.changelog }}
           modrinth-loaders: neoforge
           modrinth-game-versions: ${{ steps.version.outputs.minecraft }}
+          # The dependency set version 0.1.0 carries, so an automated release does not arrive bare.
+          # mc-publish reads these from the project's metadata file by default, but this project keeps
+          # its metadata as a template that is expanded at build time, so the list is declared here.
+          # These are Modrinth slugs, not mod ids: they differ for two of the four.
+          modrinth-dependencies: |
+            ldlib(required)
+            embers-text-api(required)
+            symbol-chat(optional)
+            photon-editor(optional)
           modrinth-fail-mode: warn
