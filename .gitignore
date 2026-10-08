@@ -38,6 +38,10 @@ run/
 # The Symbol Chat compatibility run: a game directory of its own, so the mods Connector needs are
 # never mixed into the ordinary run.
 run-symbolchat/
+# The CIT Resewn and RP Renames compatibility run, for the same reason: Fabric mods loaded through
+# Connector, and the patcher that keeps them working there, downloaded into a game directory of their
+# own rather than into the ordinary run.
+run-citresewn/
 # The dedicated test server's game directory, for the same reason and one more: a server and a client
 # cannot share a game directory at all, and what a server writes there - the world, its logs, the
 # databases under serverconfig - has no business in the repository.

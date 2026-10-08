@@ -14,10 +14,13 @@ from the code and are expensive to learn by breaking them.
 ./gradlew runClient    # a dev client, game directory run/
 ./gradlew runServer    # a dedicated server in run-server/, meant to run beside a client
 ./gradlew runSymbolChat # the client with Sinytra Connector and Symbol Chat, game directory run-symbolchat/
+./gradlew runCitResewn # the client with Connector, CIT Resewn, its NeoForge patcher and RP Renames, in
+                       # run-citresewn/: the arrangement in which RP Renames' creative tab goes missing
 ```
 
-`run/` and `run-server/` are separate game directories on purpose; the README explains the test
-server, including the address to connect to.
+`run/`, `run-server/`, `run-symbolchat/` and `run-citresewn/` are separate game directories on
+purpose; the README explains the test server, including the address to connect to, and the CIT Resewn
+run, including which creative tab it exists to reproduce.
 
 ## What "it works" has to mean
 
@@ -79,6 +82,17 @@ release says is reviewable in the repository rather than typed into a form.
 this mod calls its API directly, which is where the obligation comes from. Anything added to the
 project has to be under a GPL-3.0-compatible licence, and code must not be copied from a project whose
 licence is not compatible with it.
+
+One piece of somebody else's code ships inside the jar — sqlite-jdbc, Apache 2.0, bundled unmodified
+by `jarJar`, its licence text inside the nested jar — and the README's licence section says so. The
+mods tested alongside this one are never redistributed: the two compatibility runs install them into
+game directories that git ignores.
+
+RP Renames is under the Team Durt Licence, which permits use as a library or integration **provided it
+is a soft or hard dependency taken from their own sources** — which is what the reflective call in
+`RpRenamesTab` is — but forbids publishing, distributing or sublicensing it. So: never copy RP Renames
+code, assets or jar into this project or its release, and keep reaching it reflectively. Its own
+licence notice belongs with its own files, not here.
 
 ## Checks that exist here
 

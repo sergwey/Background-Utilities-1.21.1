@@ -150,6 +150,43 @@ under `run-server/serverconfig/backutils/`, that the mod's commands are all pres
 should be, and that what one player does is recorded and shown to the players around them — which
 takes two clients and is the one thing a single player cannot test.
 
+## Testing with CIT Resewn and RP Renames
+
+RP Renames shows every textured CIT and CEM rename a resource pack provides, and CIT Resewn is what
+gives it CITs to show. Neither has a NeoForge build for 1.21.1 — RP Renames' NeoForge line begins at
+0.12.0, on a later Minecraft — so on this version both are Fabric jars loaded through Sinytra
+Connector, and CITResewnNeoPatcher is the NeoForge mod that keeps CIT Resewn working in that
+arrangement. All of it goes into a third game directory of its own:
+
+```
+./gradlew runCitResewn
+```
+
+`installCitMods` downloads Connector, the Forgified Fabric API, RP Renames, CIT Resewn and the patcher
+into `run-citresewn/mods` the first time the run is used, and `cleanCitMods` removes them again. The
+versions are properties in `gradle.properties`, so one that the run rejects can be changed without
+touching the build file.
+
+RP Renames registers a creative tab whose contents generator adds nothing to it — the renames live in
+a list RP Renames draws itself, when its own screen takes over that tab. An empty tab is not drawn on
+NeoForge: its creative menu keeps only tabs that have something in them, and leaves the rest in no page
+at all, silently. (Fabric shows the same tab, because Fabric's screen accepts an empty one — which is
+why this is a NeoForge symptom and not a fault in RP Renames. RP Renames later fixed it upstream, for
+its own NeoForge line, by giving the tab one item.)
+
+[RpRenamesTab](src/main/java/net/xlebupaksa/backutils/client/RpRenamesTab.java) does the same thing
+from outside, for the build that has no such fix: it offers that tab the item RP Renames uses as its
+own icon, and asks it to refill the list behind it, so the tab appears with its renames in it. The tab
+is on the second page of the creative menu, behind the `>` button — NeoForge fits ten tabs to a page
+and vanilla's come first.
+
 ## Licence
 
 GPL-3.0-only, copyright (C) 2026 xlebupaksa. The full text is in [LICENSE](LICENSE).
+
+The released jar carries one piece of somebody else's code inside it: sqlite-jdbc,
+copyright the Xerial project, under the Apache License 2.0, bundled whole and unmodified by `jarJar`.
+Its licence text travels with it, inside the nested jar. Nothing else here is bundled, and the mods
+this one is tested alongside — ldlib2, Photon, Ember's Text API, Connector, the Forgified Fabric API,
+Symbol Chat, RP Renames, CIT Resewn and CITResewnNeoPatcher — are separate downloads that are never
+redistributed by this project.

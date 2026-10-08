@@ -57,6 +57,12 @@ def modId = mod_id
 // so that the mods Connector brings are never mixed into the ordinary run.
 def compatRunDir = file('run-symbolchat')
 
+// The CIT Resewn stack gets a game directory of its own as well: RP Renames and CIT Resewn are both
+// Fabric mods that only load here through Connector, and CITResewnNeoPatcher is the NeoForge mod that
+// keeps CIT Resewn working under it. Two mods that rewrite how the game loads have no business in the
+// run where this mod is tested on its own.
+def citRunDir = file('run-citresewn')
+
 // Connector will not start in a dev run until it is told where the *clean* Minecraft jar is. In
 // production it works that path out for itself, from the launcher's libraries; on a dev classpath
 // there is nothing for it to work out, and it gives up with "Could not determine clean minecraft
@@ -139,6 +145,18 @@ neoForge {
             }
         }
 
+        // RP Renames, CIT Resewn and CITResewnNeoPatcher, in a third game directory, for the one
+        // thing that cannot be tested anywhere else: the creative tab RP Renames registers. It shows
+        // when RP Renames is on its own, and disappears once CIT Resewn and its patcher are loaded
+        // beside it. Their jars are put in place by installCitMods, which this run depends on.
+        citResewn {
+            client()
+            gameDirectory = citRunDir
+            if (connectorCleanJar != null) {
+                systemProperty 'connector.clean.path', connectorCleanJar.absolutePath
+            }
+        }
+
         // applies to all the run configs above
         configureEach {
             // Recommended logging data for a userdev environment
@@ -178,6 +196,15 @@ configurations {
     // they are installed into one dedicated run, and the integration is reached reflectively whether
     // they are installed or not.
     compatMods {
+        canBeConsumed = false
+        canBeResolved = true
+    }
+
+    // The CIT Resewn compatibility stack: RP Renames and CIT Resewn, both Fabric, and the NeoForge
+    // patcher that keeps CIT Resewn working through Connector. None of them is compiled against or
+    // bundled; they are installed into the citResewn run alone. Connector and the Forgified Fabric
+    // API come from compatMods, which that run installs as well.
+    citMods {
         canBeConsumed = false
         canBeResolved = true
     }
@@ -226,6 +253,15 @@ dependencies {
     compatMods "maven.modrinth:connector:${connector_version}"
     compatMods "maven.modrinth:forgified-fabric-api:${forgified_fabric_api_version}"
     compatMods "maven.modrinth:symbol-chat:${symbolchat_version}"
+
+    // The stack the citResewn run installs, newest 1.21.1 builds of each. RP Renames has no NeoForge
+    // build on 1.21.1 - its NeoForge line begins at 0.12.0, on a later Minecraft - so the Fabric jar
+    // through Connector is the only route to it here, and the patcher is what makes CIT Resewn
+    // survivable in that arrangement. Versions live in gradle.properties so one the run rejects can
+    // be changed without touching this file.
+    citMods "maven.modrinth:rp-renames:${rprenames_version}"
+    citMods "maven.modrinth:cit-resewn:${citresewn_version}"
+    citMods "maven.modrinth:cit-resewn-neopatcher:${citresewn_neopatcher_version}"
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.
@@ -284,9 +320,26 @@ tasks.register('cleanCompatMods', Delete) {
     delete new File(compatRunDir, 'mods')
 }
 
+// The same arrangement for the CIT Resewn stack: Connector and its Fabric API out of compatMods, and
+// RP Renames, CIT Resewn and the patcher out of citMods.
+var installCitMods = tasks.register('installCitMods', Copy) {
+    group = 'backutils'
+    description = 'Downloads RP Renames, CIT Resewn and CITResewnNeoPatcher, with Connector and its Fabric API, into the citResewn run.'
+    from configurations.compatMods
+    from configurations.citMods
+    into new File(citRunDir, 'mods')
+}
+
+tasks.register('cleanCitMods', Delete) {
+    group = 'backutils'
+    description = 'Removes the downloaded CIT Resewn compatibility stack.'
+    delete new File(citRunDir, 'mods')
+}
+
 // configureEach rather than named, so that nothing here depends on when the run's task is registered.
 tasks.configureEach {
     if (name == 'runSymbolChat') dependsOn installCompatMods
+    if (name == 'runCitResewn') dependsOn installCitMods
 }
 
 tasks.withType(JavaCompile).configureEach {
