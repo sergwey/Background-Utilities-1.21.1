@@ -41,6 +41,7 @@ jobs:
       # A tag that disagrees with the version inside would publish a file whose name contradicts the
       # release it is attached to, so it stops here instead.
       - name: Check the tag against the mod version
+        id: version
         run: |
           tag="${GITHUB_REF_NAME#v}"
           version="$(grep -m1 '^mod_version=' gradle.properties | cut -d= -f2 | tr -d '\r')"
@@ -49,6 +50,8 @@ jobs:
             echo "::error::tag ${GITHUB_REF_NAME} does not match mod_version ${version} in gradle.properties"
             exit 1
           fi
+          echo "version=${tag}" >> "${GITHUB_OUTPUT}"
+          echo "minecraft=$(grep -m1 '^minecraft_version=' gradle.properties | cut -d= -f2 | tr -d '\r')" >> "${GITHUB_OUTPUT}"
 
       # The same build the development workflow runs.
       - name: Build
@@ -74,3 +77,30 @@ jobs:
           else
             gh release create "${tag}" --title "${title}" --notes-file .github/release-notes.md build/libs/*.jar
           fi
+
+      # The same release, on Modrinth, once the repository is told where to put it:
+      #
+      #   a variable  MODRINTH_ID     the project's id or slug
+      #   a secret    MODRINTH_TOKEN  a personal access token with the CREATE_VERSION scope
+      #
+      # Until both are set this step is skipped, and a release is the GitHub one alone. Modrinth's own
+      # route is Minotaur, a Gradle plugin, which would put publishing inside the build; this keeps it
+      # out, so nothing about Modrinth can stop the mod being built. That is also why the failure mode
+      # is a warning: by the time this runs, the release above has already happened, and a Modrinth
+      # outage or a stale token should not be reported as a failed release.
+      - name: Publish to Modrinth
+        if: ${{ env.MODRINTH_ID != '' && env.MODRINTH_TOKEN != '' }}
+        env:
+          MODRINTH_ID: ${{ vars.MODRINTH_ID }}
+          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+        uses: Kir-Antipov/mc-publish@v3
+        with:
+          modrinth-id: ${{ env.MODRINTH_ID }}
+          modrinth-token: ${{ env.MODRINTH_TOKEN }}
+          modrinth-name: Background Utilities ${{ github.ref_name }}
+          modrinth-version: ${{ steps.version.outputs.version }}
+          modrinth-version-type: release
+          modrinth-changelog-file: .github/release-notes.md
+          modrinth-loaders: neoforge
+          modrinth-game-versions: ${{ steps.version.outputs.minecraft }}
+          modrinth-fail-mode: warn

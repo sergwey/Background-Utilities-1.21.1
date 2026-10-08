@@ -106,9 +106,21 @@ git push origin v0.2.0
 ```
 
 `.github/workflows/release.yml` then builds the mod exactly as the development workflow does, and
-publishes a release with the jar attached, using the repository's own token: no third-party action is
-involved and no outside account becomes a contributor. What a release says comes from
-`.github/release-notes.md`, so it is reviewable here rather than typed into a form at release time.
+publishes a release with the jar attached, using the repository's own token — for that part no
+third-party action is involved and no outside account becomes a contributor. What a release says comes
+from `.github/release-notes.md`, so it is reviewable here rather than typed into a form at release time.
+
+The same tag can put the same jar on Modrinth, and does once the repository is told where. Set both of
+these and every release is published in both places:
+
+- a **variable** `MODRINTH_ID` — the Modrinth project's id or slug
+- a **secret** `MODRINTH_TOKEN` — a personal access token from
+  [modrinth.com/settings/account](https://modrinth.com/settings/account) with the `CREATE_VERSION` scope
+
+With either missing, the step is skipped and a release is the GitHub one alone, which is what happens
+by default. It runs after the GitHub release and its failures are warnings rather than errors, so
+nothing on Modrinth can stop a release from being built or published here. Modrinth's own route is its
+Minotaur Gradle plugin instead, which would put the upload inside the build rather than beside it.
 
 ## Testing on a dedicated server
 
