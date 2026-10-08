@@ -122,6 +122,9 @@ by default. It runs after the GitHub release and its failures are warnings rathe
 nothing on Modrinth can stop a release from being built or published here. Modrinth's own route is its
 Minotaur Gradle plugin instead, which would put the upload inside the build rather than beside it.
 
+The changelog a Modrinth version gets is the list of commit subjects since the previous tag, not the
+release notes: those describe the mod, and a changelog should describe the release.
+
 ## Testing on a dedicated server
 
 Half of this mod only ever runs on a server — the log, the databases, the effect the tool hands to

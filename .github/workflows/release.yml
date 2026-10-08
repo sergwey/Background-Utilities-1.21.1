@@ -78,6 +78,23 @@ jobs:
             gh release create "${tag}" --title "${title}" --notes-file .github/release-notes.md build/libs/*.jar
           fi
 
+      # What changed in this version, for Modrinth's changelog: the commit subjects since the previous
+      # tag, which is what a changelog is. The release notes are deliberately not used for this — they
+      # describe the mod, not the release — and commit subjects here are written to be read as entries.
+      - name: Changelog for this version
+        id: changelog
+        run: |
+          previous="$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
+          {
+            echo 'changelog<<CHANGELOG'
+            if [ -n "${previous}" ]; then
+              git log --no-merges --pretty='- %s' "${previous}..${GITHUB_REF_NAME}"
+            else
+              echo 'First release.'
+            fi
+            echo 'CHANGELOG'
+          } >> "${GITHUB_OUTPUT}"
+
       # The same release, on Modrinth, once the repository is told where to put it:
       #
       #   a variable  MODRINTH_ID     the project's id or slug
@@ -100,7 +117,7 @@ jobs:
           modrinth-name: Background Utilities ${{ github.ref_name }}
           modrinth-version: ${{ steps.version.outputs.version }}
           modrinth-version-type: release
-          modrinth-changelog-file: .github/release-notes.md
+          modrinth-changelog: ${{ steps.changelog.outputs.changelog }}
           modrinth-loaders: neoforge
           modrinth-game-versions: ${{ steps.version.outputs.minecraft }}
           modrinth-fail-mode: warn

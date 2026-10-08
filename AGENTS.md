@@ -74,7 +74,9 @@ git push origin v0.2.0
 `.github/workflows/release.yml` builds the mod with the same build the development workflow runs and
 publishes a GitHub release with the jar attached, using the repository's own token — no third-party
 action and no contributor is added. The release notes are `.github/release-notes.md`, so what a
-release says is reviewable in the repository rather than typed into a form.
+release says is reviewable in the repository rather than typed into a form. A Modrinth version, when
+one is published, gets its changelog from the commit subjects between the previous tag and this one,
+so commit subjects are written to be read as changelog entries.
 
 ## Licence
 
