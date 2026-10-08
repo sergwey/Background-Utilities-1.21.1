@@ -9,6 +9,7 @@ import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
+import net.xlebupaksa.backutils.BackUtils;
 import net.xlebupaksa.backutils.network.EffectToolConfigPayload.Where;
 
 /**
@@ -52,13 +53,34 @@ public final class EffectToolSlot {
 
         Slot own = inventorySlot(player, hovered);
         if (own != null) {
-            return new Address(Where.PLAYER, player.inventoryMenu.containerId, own.index);
+            Address address = new Address(Where.PLAYER, player.inventoryMenu.containerId, own.index);
+            reportIfEmpty(player, hovered, address);
+            return address;
         }
 
         // Anything else can only be named through the menu the player has open, and the creative
         // screen's list is the one place that menu is not the server's.
         if (minecraft.screen instanceof CreativeModeInventoryScreen) return null;
-        return new Address(Where.OPEN_MENU, player.containerMenu.containerId, hovered.index);
+        Address address = new Address(Where.OPEN_MENU, player.containerMenu.containerId, hovered.index);
+        reportIfEmpty(player, hovered, address);
+        return address;
+    }
+
+    /**
+     * Says what an address was made of, when the stack it names is not the tool that was hovered.
+     *
+     * <p>A wrong address has no other symptom on this side: the screen opens with nothing in it, and
+     * the server can only report that the slot it was given holds something else. Between them they do
+     * not say whether the hovered slot was read wrongly, whether the two menus disagree about which
+     * index means which slot, or whether the stack simply moved. These numbers do.
+     */
+    private static void reportIfEmpty(Player player, Slot hovered, Address address) {
+        if (!stackAt(player, address).isEmpty()) return;
+        BackUtils.LOGGER.info("[effecttool] addressed an empty slot: hovered container={} containerSlot={} menuIndex={} "
+                        + "holding={}, resolved to where={} container={} slot={}, which holds={}",
+                hovered.container.getClass().getSimpleName(), hovered.getContainerSlot(), hovered.index,
+                hovered.getItem().getItem(), address.where(), address.containerId(), address.slot(),
+                stackAt(player, address).getItem());
     }
 
     /** {@return the stack an address names on this client}, or empty when it names none */

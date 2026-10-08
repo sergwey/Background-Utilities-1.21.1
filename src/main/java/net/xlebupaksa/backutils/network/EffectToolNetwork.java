@@ -179,6 +179,16 @@ public final class EffectToolNetwork {
 
         Slot slot = addressedSlot(player, payload);
         if (slot == null || !(slot.getItem().getItem() instanceof EffectToolItem)) {
+            // The numbers are worth logging: this refusal is the only symptom of a wrong address, and the
+            // client's screen can say no more than that the server refused. A menu the client had and the
+            // server no longer has, an index left over from that menu, and a slot that has since been
+            // emptied all arrive here looking identical.
+            BackUtils.LOGGER.info("[effecttool] slot check failed for {}: payload said where={} container={} slot={}, "
+                            + "the server has containerMenu={} inventoryMenu={}, addressed={}, which holds={}",
+                    player.getGameProfile().getName(), payload.where(), payload.containerId(), payload.slot(),
+                    player.containerMenu.containerId, player.inventoryMenu.containerId,
+                    slot == null ? "nothing" : slot.index,
+                    slot == null ? "nothing" : slot.getItem().getItem());
             answer(player, EffectToolFeedbackPayload.Reason.SLOT_CHANGED);
             return;
         }
