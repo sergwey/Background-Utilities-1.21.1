@@ -73,13 +73,18 @@ public final class EffectToolSlot {
      * the server can only report that the slot it was given holds something else. Between them they do
      * not say whether the hovered slot was read wrongly, whether the two menus disagree about which
      * index means which slot, or whether the stack simply moved. These numbers do.
+     *
+     * <p>The hovered slot's own class is the first number for a reason: a screen that wraps the
+     * player's inventory in slots of its own is the one case where an index means something different
+     * on each side, and a wrapper's name says so at a glance — see {@link #inventorySlot}.
      */
     private static void reportIfEmpty(Player player, Slot hovered, Address address) {
         if (!stackAt(player, address).isEmpty()) return;
-        BackUtils.LOGGER.info("[effecttool] addressed an empty slot: hovered container={} containerSlot={} menuIndex={} "
-                        + "holding={}, resolved to where={} container={} slot={}, which holds={}",
-                hovered.container.getClass().getSimpleName(), hovered.getContainerSlot(), hovered.index,
-                hovered.getItem().getItem(), address.where(), address.containerId(), address.slot(),
+        BackUtils.LOGGER.info("[effecttool] addressed an empty slot: hovered {} container={} containerSlot={} "
+                        + "menuIndex={} holding={}, resolved to where={} container={} slot={}, which holds={}",
+                hovered.getClass().getSimpleName(), hovered.container.getClass().getSimpleName(),
+                hovered.getContainerSlot(), hovered.index, hovered.getItem().getItem(),
+                address.where(), address.containerId(), address.slot(),
                 stackAt(player, address).getItem());
     }
 
@@ -99,18 +104,40 @@ public final class EffectToolSlot {
     /**
      * {@return the slot of the player's own inventory menu that wraps the same stack}, or null
      *
-     * <p>Found by what a slot holds rather than by where it sits: the creative screen's columns wrap
-     * the player's inventory in slots of its own, at indices of its own, so the one thing the two
-     * menus agree on is the container and the place in it. Those two together name one stack.
+     * <p><b>Found by the stack, not by where it sits.</b> A screen that wraps the player's inventory
+     * in slots of its own is the case this exists for, and the place in the container is not a number
+     * the two menus agree on: the creative screen's inventory tab builds each of its wrappers as
+     * {@code new SlotWrapper(inventoryMenu.slots.get(k), k, x, y)}, so what the wrapper answers for
+     * {@code getContainerSlot()} is the index it was handed — a <em>menu</em> index — while the slot
+     * it wraps answers with the place inside the inventory. Comparing those two numbers is what named
+     * the wrong slot: the wrapper for a hotbar entry (menu indices 36..44) matched the armour and
+     * offhand slots (container places 36..40), so a tool hovered in the creative inventory's hotbar
+     * row was addressed as the leggings or the helmet slot and every edit of it was refused.
+     *
+     * <p>What the two menus cannot disagree about is the stack: an {@code ItemStack} is in one slot at
+     * a time, and a wrapper answers {@code getItem()} from the slot it wraps, so the slot holding that
+     * very object is the slot that was hovered. The place inside the container is kept as the second
+     * test, because every empty stack is the same object — an empty slot has nothing to be recognised
+     * by, and there the number is all there is. That case only ever decides what a screen says about a
+     * slot with no tool in it, which the server refuses either way.
      */
     private static Slot inventorySlot(Player player, Slot hovered) {
         if (!(hovered.container instanceof Inventory)) return null;
+
+        Slot byPlace = null;
         for (Slot candidate : player.inventoryMenu.slots) {
-            if (candidate.container == hovered.container
-                    && candidate.getContainerSlot() == hovered.getContainerSlot()) {
+            // The ordinary case: the menu the player has open is the inventory menu itself, and the
+            // slot under the mouse is one of its own.
+            if (candidate == hovered) return candidate;
+            if (candidate.container != hovered.container) continue;
+
+            if (!hovered.getItem().isEmpty() && candidate.getItem() == hovered.getItem()) {
                 return candidate;
             }
+            if (byPlace == null && candidate.getContainerSlot() == hovered.getContainerSlot()) {
+                byPlace = candidate;
+            }
         }
-        return null;
+        return byPlace;
     }
 }
