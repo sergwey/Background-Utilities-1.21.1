@@ -70,11 +70,6 @@ public record PlacedEffect(
         return EffectToolConfig.fromStoredText(configNbt);
     }
 
-    /** {@return true when this effect was placed by the given account} */
-    public boolean ownedBy(String uuid) {
-        return uuid != null && uuid.equals(ownerUuid);
-    }
-
     /**
      * {@return true when this effect sits in the same block as the given one}
      *

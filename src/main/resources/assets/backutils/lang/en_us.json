@@ -58,7 +58,7 @@
   "backutils.config.unit.chars.per.second": "chars/s",
   "backutils.config.unsaved.change": "%s unsaved change",
   "backutils.config.unsaved.changes": "%s unsaved changes",
-  "backutils.delete_tool.tooltip.alt": "Alt-click to remove every effect you placed.",
+  "backutils.delete_tool.tooltip.alt": "Alt-click to remove the effects attached to you.",
   "backutils.delete_tool.tooltip.hint": "Click a placed effect to remove everything in that place.",
   "backutils.editor.button.cancel": "Cancel",
   "backutils.editor.button.none": "None",

@@ -377,10 +377,10 @@ public final class EffectToolPreviewRenderer {
         for (PlacedEffects.Entry entry : PlacedEffects.places()) {
             Cube cube = EffectPick.boxOf(entry, partialTick);
             boolean hovered = entry == scene.hit();
-            // The block the cube is in, read from the cube rather than from the row: an accurate
-            // effect's cube follows the display it hangs off, and the flash is keyed by the block the
-            // click named, which is the block the cube was in when it was made.
-            boolean deleted = flashing.contains(EffectPick.blockOf(cube.centre()).asLong());
+            // The block the effect is in, by the rule a click names it by, so that the cube a click
+            // removes is the cube the flash is drawn around: an accurate effect follows the display it
+            // hangs off, and a block-side cube is drawn outside the block it belongs to.
+            boolean deleted = flashing.contains(EffectPick.blockOf(entry, partialTick).asLong());
             if (deleted && !lit) continue;
             drawCube(poses, buffers, cube, level, camera, hovered || deleted ? RED : PINK);
         }
@@ -429,20 +429,20 @@ public final class EffectToolPreviewRenderer {
     }
 
     /**
-     * {@return true when this client is drawing an effect's cube in a block}
+     * {@return true when this client is drawing an effect in a block}
      *
-     * <p>Asked of the cubes this frame is drawing rather than of the rows, because the two are the
-     * same question only while nothing moves: an accurate effect's cube is centred on the display it
-     * hangs off, and a display can be picked up and carried. The flash is keyed by the block a click
-     * named, so what has to be known here is whether a cube is already being drawn there — a second
-     * cube at the middle of the block beside it would be the same deletion said twice.
+     * <p>Asked of the effects this frame is drawing rather than of the rows, because the two are the
+     * same question only while nothing moves: an accurate effect follows the display it hangs off, and
+     * a display can be picked up and carried. The flash is keyed by the block a click names — by the
+     * rule {@link EffectPick#blockOf(PlacedEffects.Entry, float)} gives — so what has to be known here
+     * is whether an effect is already drawn in that block: a second cube at the middle of the block
+     * beside it would be the same deletion said twice.
      */
     private static boolean anchoring(ClientLevel level, BlockPos pos, float partialTick) {
         String dimension = level.dimension().location().toString();
         for (PlacedEffects.Entry entry : PlacedEffects.places()) {
             if (!entry.placement().dimension().equals(dimension)) continue;
-            Cube cube = EffectPick.boxOf(entry, partialTick);
-            if (EffectPick.blockOf(cube.centre()).equals(pos)) return true;
+            if (EffectPick.blockOf(entry, partialTick).equals(pos)) return true;
         }
         return false;
     }

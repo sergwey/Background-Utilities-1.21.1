@@ -342,15 +342,15 @@ public final class EffectToolNetwork {
                 ServerLevel level = player.serverLevel();
                 forgetWhere(server, store, effect -> inPlace(level, effect, where));
             }
-            case MINE -> forgetWhere(server, store,
-                    effect -> effect.ownedBy(player.getUUID().toString()));
             case EFFECTS -> {
                 // Named by row, because a row records where an entity stood and not which entity it
                 // was: the client's own registry is the only thing that knows an effect hangs off an
                 // entity, so the rows it is drawing are the only ones it can name. Only rows of the
                 // level the sender is standing in are removed — that is the level the tool draws,
                 // and therefore the only one a click can be about — and an id that names nothing is
-                // ignored rather than refused, since an effect already gone is gone.
+                // ignored rather than refused, since an effect already gone is gone. This is also what
+                // alt-click sends: the effects attached to the sender, named by the client like any
+                // other set of rows.
                 String dimension = player.level().dimension().location().toString();
                 for (PlacedEffect effect : store.all()) {
                     if (effect.placement().dimension().equals(dimension)
@@ -360,7 +360,9 @@ public final class EffectToolNetwork {
                 }
             }
             default -> {
-                // Nothing was named, which is what a kind this build does not know reads as.
+                // Nothing was named. A kind this build does not know reads as this, and so does the
+                // retired one that emptied every effect its sender had placed: nothing sends it, and a
+                // payload that did would be asking to remove rows it has not named.
             }
         }
     }

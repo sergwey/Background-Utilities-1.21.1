@@ -58,7 +58,7 @@
   "backutils.config.unit.chars.per.second": "симв/с",
   "backutils.config.unsaved.change": "%s несохранённое изменение",
   "backutils.config.unsaved.changes": "%s несохранённых изменений",
-  "backutils.delete_tool.tooltip.alt": "Alt + нажатие удаляет все размещённые вами эффекты.",
+  "backutils.delete_tool.tooltip.alt": "Alt + нажатие удаляет эффекты, привязанные к вам.",
   "backutils.delete_tool.tooltip.hint": "Нажмите на размещённый эффект, чтобы удалить всё в этом месте.",
   "backutils.editor.button.cancel": "Отмена",
   "backutils.editor.button.none": "Нет",

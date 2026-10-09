@@ -16,6 +16,7 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.event.level.LevelEvent;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -43,9 +44,10 @@ import java.util.List;
  * <p>What a click names, in the order the two targets are asked about:
  *
  * <ul>
- *   <li><b>Alt</b> — everything the clicking player placed, wherever it is. It comes first because it
- *       is a statement about the whole world rather than about the crosshair, and a player holding
- *       alt is not aiming at anything in particular.
+ *   <li><b>Alt</b> — the effects attached to the clicking player, which is the one target a crosshair
+ *       cannot name: a self effect is drawn as nothing, and the player wearing it is not something they
+ *       can aim at. It comes first because it is a statement about the player rather than about the
+ *       crosshair, and a player holding alt is not aiming at anything in particular.
  *   <li><b>Whatever {@link EffectPick} answers</b>, which is the one decision the renderer takes as
  *       well: a placed effect the crosshair is on, or an entity an effect hangs off when that entity
  *       is what the ray meets first. It is asked once, here, rather than worked out again from the
@@ -128,14 +130,30 @@ public final class DeleteToolClick {
         ToolShot.deleteTool();
 
         if (Screen.hasAltDown()) {
-            // Both readings of "all effects from self" are answered here. What the player *placed* is
-            // in the table, so the server removes it. What is attached *to* them was never written
-            // down — a self effect ends when the player does, so a row would outlive it — and the
-            // client that made it is the only side that can take it away.
+            // The effects attached to this player, which is the one target the crosshair cannot name: a
+            // self effect is drawn as nothing and hangs off the holder, so "the effects from self" is
+            // what alt-click is for.
+            //
+            // A self effect was never written down — a row would outlive the thing it described — so its
+            // id is one this client invented and the server has nothing to remove: it is taken away
+            // here. An effect on this player that *was* written down, which is one an entity-mode tool
+            // attached to them, is named to the server by its rows, exactly as a click on the mob
+            // carrying one would be.
+            //
+            // Nothing here removes an effect placed somewhere else, which an earlier reading of the same
+            // words did: alt-click used to take away every effect the clicking player had ever placed, so
+            // one stray key removed a whole build's worth of them.
+            List<Long> stored = new ArrayList<>();
             for (long id : PlacedEffects.anchoredTo(player.getId())) {
-                PlacedEffects.remove(id);
+                if (id > 0L) {
+                    stored.add(id);
+                } else {
+                    PlacedEffects.remove(id);
+                }
             }
-            EffectToolNetwork.sendDeletion(EffectDeletePayload.mine());
+            if (!stored.isEmpty()) {
+                EffectToolNetwork.sendDeletion(EffectDeletePayload.effects(stored));
+            }
             return;
         }
 

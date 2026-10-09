@@ -266,9 +266,9 @@ final class EffectPick {
         Entity entity = met == null ? null : Minecraft.getInstance().crosshairPickEntity;
         if (entity != null) {
             double entityAt = pick(ray, boxOf(entity, partialTick), range);
-            if (entityAt < nearestAt) return new Scene(null, null, entity, ray);
+            if (entityAt < nearestAt) return new Scene(null, null, entity, ray, partialTick);
         }
-        return new Scene(near, nearBox, null, ray);
+        return new Scene(near, nearBox, null, ray, partialTick);
     }
 
     /**
@@ -375,6 +375,22 @@ final class EffectPick {
     }
 
     /**
+     * {@return the block an effect is in}, which is the block a click on its cube empties
+     *
+     * <p>The effect's own anchor rather than the cube it is drawn as, and the difference is one mode: a
+     * block-side cube is deliberately nudged clear of the surface it hangs on, so the block its centre
+     * falls in is the block <em>in front of</em> the one the effect belongs to. The nudge is a drawing
+     * decision — a cube half-buried in a wall — and naming it as the place to empty made every
+     * block-side effect unremovable, because the server has no effect in the block in front.
+     *
+     * <p>The anchor is read as it is now, which is what an accurate effect needs: its anchor is a
+     * display the world holds, and a display that has been moved takes its effect with it.
+     */
+    static BlockPos blockOf(PlacedEffects.Entry entry, float partialTick) {
+        return blockOf(entry.anchor(partialTick));
+    }
+
+    /**
      * One look at what is placed, as whichever of the two targets the crosshair is on.
      *
      * <p>Exactly one of the two is ever answered: {@link #entity} for an entity an effect hangs off,
@@ -386,8 +402,11 @@ final class EffectPick {
      * @param entity the entity an effect hangs off that the ray met first, or null
      * @param ray the eye and the unit direction, as {@link EffectPick#pick} takes them: kept so a
      *            caller can rebuild the same look, which is what the hand-to-point line needs
+     * @param partialTick the moment this look was taken at, which is what the box was built for: the
+     *                    block a click names is the anchor's block at that same moment, so a display
+     *                    that is moving cannot be drawn in one block and removed in another
      */
-    record Scene(PlacedEffects.Entry hit, Cube box, Entity entity, Point[] ray) {
+    record Scene(PlacedEffects.Entry hit, Cube box, Entity entity, Point[] ray, float partialTick) {
 
         /** {@return true when the crosshair is on an entity an effect hangs off} */
         boolean onEntity() {
@@ -407,14 +426,12 @@ final class EffectPick {
         /**
          * {@return the block a click on this place empties}
          *
-         * <p>Read from the box the ray was tested against rather than from the effect's anchor a
-         * second time: what a click removes is what the crosshair was on, and this box is what it was
-         * on. That is what makes it right for an accurate effect, whose cube is centred on the display
-         * it hangs off — a display anything may move — since the block named is then the block the
-         * cube was drawn in, for this frame, rather than the block the row was written at.
+         * <p>See {@link EffectPick#blockOf(PlacedEffects.Entry, float)}: the anchor's own block, read
+         * once for the look rather than from the box, because the box has been nudged to keep it out of
+         * the wall it hangs on and the place to empty has not.
          */
         BlockPos placeBlock() {
-            return hit == null || box == null ? null : blockOf(box.centre());
+            return hit == null ? null : blockOf(hit, partialTick);
         }
     }
 }

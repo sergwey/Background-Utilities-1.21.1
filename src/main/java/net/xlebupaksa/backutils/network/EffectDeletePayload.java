@@ -10,8 +10,7 @@ import net.xlebupaksa.backutils.BackUtils;
 import java.util.List;
 
 /**
- * One deletion the delete tool asks for: a place to empty, everything the clicking player placed, or
- * a set of effects the client is drawing.
+ * One deletion the delete tool asks for: a place to empty or a set of effects the client is drawing.
  *
  * <p>Sent to the server rather than acted on where the click was made, for the reason a placement is:
  * the server is the side that owns the table, and the display an effect hung off is an entity in the
@@ -19,22 +18,24 @@ import java.util.List;
  * effect, would leave the row and the display behind, and would have every other client still
  * drawing it.
  *
- * <p>The three kinds are the three things a click can name, and each is a claim the server checks
- * rather than a command it obeys:
+ * <p>The kinds are the things a click can name, and each is a claim the server checks rather than a
+ * command it obeys:
  *
  * <ul>
  *   <li><b>{@link Kind#BLOCK}</b> — the place under the crosshair, as the block's low corner. The
  *       spec calls it "all the placed effects in this place": a block is what the pink cube is
  *       drawn around, so a block is what a click on one asks to empty.
- *   <li><b>{@link Kind#MINE}</b> — everything the clicking player placed, wherever it is, which is
- *       the alt-click. It carries no data at all: the sender is read from the connection, so the
- *       account whose effects go is the one that asked, and a payload cannot name somebody else's.
  *   <li><b>{@link Kind#EFFECTS}</b> — the rows of effects attached to an entity, which the client is
  *       the only side that can name. A row records where an entity stood and not which entity it was,
  *       so "the effects on this entity" is not a question the server can be asked; the client's own
  *       registry is what knows an effect hangs off one, and it sends the rows it holds. An id the
  *       server does not know is not an error — a client that has stopped drawing an effect already
- *       has nothing to stop.
+ *       has nothing to stop. This is also what alt-click sends, for the effects attached to the
+ *       clicking player: the same question about themselves.
+ *   <li><b>{@link Kind#MINE}</b> — retired, and deliberately still here: it emptied every effect the
+ *       clicking player had ever placed, which one stray alt-click could do to a whole build, so
+ *       nothing sends it and the server acts on nothing for it. It is kept as a value because the
+ *       kinds are written by ordinal, and removing it would renumber the one after it.
  * </ul>
  *
  * @param x the block's low corner, for {@link Kind#BLOCK} and meaningless otherwise
@@ -64,7 +65,13 @@ public record EffectDeletePayload(Kind kind, double x, double y, double z, List<
         /** Everything in one block. */
         BLOCK,
 
-        /** Everything the clicking player placed. */
+        /**
+         * Retired: everything the clicking player had placed.
+         *
+         * <p>Nothing sends it and the server acts on nothing for it — see the class comment for why it
+         * was retired and why the value itself is still here. It is the one kind that names no target at
+         * all, so a build that did send it would empty a whole footprint with one click.
+         */
         MINE,
 
         /** The given rows, which are the effects a client is drawing on one entity. */
@@ -108,11 +115,6 @@ public record EffectDeletePayload(Kind kind, double x, double y, double z, List<
     /** {@return a claim that one block be emptied} */
     public static EffectDeletePayload atBlock(double x, double y, double z) {
         return new EffectDeletePayload(Kind.BLOCK, x, y, z, List.of());
-    }
-
-    /** {@return a claim that everything the clicking player placed be removed} */
-    public static EffectDeletePayload mine() {
-        return new EffectDeletePayload(Kind.MINE, 0.0D, 0.0D, 0.0D, List.of());
     }
 
     /** {@return a claim that the given rows be removed} */

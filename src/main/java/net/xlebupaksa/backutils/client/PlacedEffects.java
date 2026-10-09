@@ -343,8 +343,10 @@ public final class PlacedEffects {
      * which ones they are — one walk of the list serves both.
      *
      * <p>A self effect answers here as well, with the row the server never wrote: its anchor is the
-     * player who placed it. That is the honest answer, and the deletion of such a row is the
-     * server's own business to refuse.
+     * player who placed it, and a client that is drawing one is the only side that can take it away.
+     * An answer is therefore a set of rows of two kinds — the row ids a place or an entity effect was
+     * stored under, and the ids this client invented for the self effects it is drawing — and the
+     * caller tells them apart by sign, because an id of zero or less is one no row can have.
      */
     public static List<Long> anchoredTo(int entityId) {
         List<Long> found = new ArrayList<>();
