@@ -140,6 +140,10 @@ public class EffectReplay {
     @SuppressWarnings("unused") // called by the event bus
     public void onServerStopping(ServerStoppingEvent event) {
         waiting.clear();
+        // Where the anchors were last seen is this session's knowledge, and a session that is over has
+        // none: see EffectAnchor.ensure, which would otherwise look where a display of a world that is
+        // no longer loaded stood.
+        EffectAnchor.clear();
     }
 
     /** Puts a player in the queue, or moves them back to the end of it when they are already in. */
@@ -152,6 +156,13 @@ public class EffectReplay {
      *
      * <p>No delay here, unlike arriving: the player is already in the level and the client being told
      * is the one that just asked for this chunk, so there is a level to draw into.
+     *
+     * <p><b>A row this cannot send is not a row that is lost.</b> A chunk is sent to a player as soon
+     * as it is loaded, and its entities join the level a tick or more later, so an accurate effect
+     * whose ground has only just arrived has no display to attach to yet — and {@link EffectAnchor#ensure}
+     * answers nothing rather than making one (see there for what making one cost). The effect is sent
+     * the moment its display exists, which is what {@link #onStartTracking} is for: a display that has
+     * been added to the level is tracked, and being tracked is what brings its effect out.
      */
     private static void sendIn(ServerPlayer player, ServerLevel level, ChunkPos chunk) {
         if (player == null || level == null || BackUtils.data() == null) return;

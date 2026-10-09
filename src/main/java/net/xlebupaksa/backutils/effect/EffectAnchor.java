@@ -6,6 +6,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Display;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import net.xlebupaksa.backutils.data.EffectPlacement;
@@ -13,6 +14,8 @@ import net.xlebupaksa.backutils.data.PlacedEffect;
 import net.xlebupaksa.backutils.item.EffectAttachment;
 import net.xlebupaksa.backutils.item.EffectToolPlacement;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -52,6 +55,22 @@ public final class EffectAnchor {
      */
     private static final String ANCHOR_TAG = "backutils_effect_anchor";
 
+    /**
+     * Where each display was last seen, by identity.
+     *
+     * <p>What this is for: a display is not nailed to the place its row was written at. It is an
+     * entity, anything that moves entities can move it, and the operator who placed the effect is the
+     * one most likely to — so "where is this display" is a question whose answer changes, and the
+     * row's own coordinates are only the answer it had at the start. Looking where it was last seen is
+     * what stops a moved display growing a second one beside it every time its ground is reloaded.
+     *
+     * <p>Kept in memory rather than written down, which is a deliberate limit: it is this session's
+     * knowledge, and a restart begins again from the row — where a replacement is made only if the
+     * display really is gone. Held by identity, dropped when a display is taken away, and cleared when
+     * the server stops.
+     */
+    private static final Map<String, Vec3> SEEN = new HashMap<>();
+
     private EffectAnchor() {}
 
     /**
@@ -80,30 +99,42 @@ public final class EffectAnchor {
         return display.getUUID();
     }
 
-    /** {@return the display a stored effect hangs off}, or null when it is not there any more */
+    /**
+     * {@return the display a stored effect hangs off}, or null when this level has not got it
+     *
+     * <p>Looking is also what remembers: a display that has been found is one whose position is worth
+     * knowing, and every caller that can see one is a caller that can say where it is — see
+     * {@link #ensure}, which is the one that has to look in the right place.
+     */
     public static Entity find(ServerLevel level, String uuid) {
         UUID id = parse(uuid);
-        return id == null ? null : level.getEntity(id);
+        if (id == null) return null;
+        Entity found = level.getEntity(id);
+        if (found != null) SEEN.put(id.toString(), found.position());
+        return found;
     }
 
     /**
      * {@return the display a stored effect hangs off, loading the ground it stands on to be sure}
      *
      * <p><b>A lookup by identity only answers for what is loaded.</b> An entity in a chunk nobody has
-     * loaded is not in the level's entity list at all, so asking for it answers nothing — and the two
-     * things this is used for both turn that nothing into damage. Removing an expired effect would
-     * leave its display standing in the world for the chunk to bring back, and putting a stored one
-     * back would make a <em>second</em> display beside the one that is merely out of sight.
+     * loaded is not in the level's entity list at all, so asking for it answers nothing — and taking a
+     * display away turns that nothing into damage: an expired effect whose display cannot be reached
+     * leaves the display standing in the world for the chunk to bring back.
      *
-     * <p>So the chunk is loaded before the answer is believed. It is the one cost this class has, and
-     * it is paid only when a display is actually wanted: an effect ends or comes back into view once,
-     * rather than on any path that runs per tick or per player.
+     * <p>So ground is loaded before the answer is believed, and it is the ground the display was last
+     * seen on rather than the row's own coordinates: a display that has been moved is where it was
+     * moved to, and loading the place it used to be would answer nothing about it. It is the one cost
+     * this class has, paid only when a display is actually taken away.
      */
     public static Entity reach(ServerLevel level, String uuid, double x, double y, double z) {
         Entity found = find(level, uuid);
         if (found != null) return found;
 
-        level.getChunkAt(BlockPos.containing(x, y, z));
+        Vec3 seen = lastSeen(uuid);
+        level.getChunkAt(seen != null
+                ? BlockPos.containing(seen.x, seen.y, seen.z)
+                : BlockPos.containing(x, y, z));
         return find(level, uuid);
     }
 
@@ -118,34 +149,85 @@ public final class EffectAnchor {
     public static void remove(ServerLevel level, String uuid, double x, double y, double z) {
         Entity display = reach(level, uuid, x, y, z);
         if (display != null) display.discard();
+        // What was remembered about it is worthless once it is gone, and keeping it would answer a
+        // later question about this identity with a position nothing stands at.
+        forget(uuid);
     }
 
     /**
      * {@return the display an effect hangs off, putting a new one there when the old one has gone}
      *
      * <p>A display is an entity, so it is gone after a restart and can be removed by anything that
-     * removes entities — and an accurate effect with no display has nothing to be attached to. This
-     * is how a stored effect is put back after a restart: the same display when it is still there,
-     * and a new one standing where the effect is when it is not.
+     * removes entities — and an accurate effect with no display has nothing to be attached to. This is
+     * how a stored effect is put back after a restart: the same display when it is still there, and a
+     * new one standing where the effect is when it is not.
      *
-     * <p>The new identity is written back to the row by the caller, which is the side that has one:
-     * an anchor nobody wrote down is an anchor the next restart looks for again, and every restart
-     * would leave another display standing in the world.
+     * <p><b>A lookup that finds nothing is not the same as a display that has gone</b>, and believing
+     * otherwise cost two bugs of one kind. The first: a chunk's entities are added to the level a tick
+     * or more <em>after</em> the chunk itself is loaded — read out of
+     * {@code PersistentEntitySectionManager}, which queues the entities of a chunk that has become
+     * visible and adds them in the next {@code processPendingLoads} — so a lookup running while the
+     * ground is arriving answers nothing about a display that is on its way, and a display made there
+     * was a second one inside the first, once per unload and load. The second: a display can be
+     * <em>moved</em>, and the row still holds where the effect was aimed, so a display an operator has
+     * taken elsewhere is neither at the coordinates a lookup uses nor at the ones a replacement would
+     * be made at.
      *
-     * @param level  the level the effect is in, which is the one its row names
-     * @param uuid   the identity the row remembers, which may name nothing
-     * @param x      where the effect is, for a display that has to be made again
-     * @return the entity to attach to, or null when the level could not make one
+     * <p>Two things are therefore asked before one is made. The ground it should be standing on has to
+     * have its entities in the level — {@code areEntitiesLoaded}, which is the game's own answer to
+     * exactly that question — and the place looked in is where the display was <b>last seen</b> rather
+     * than where the row was written, because a display that has been moved is where it was moved to.
+     * What is left after both is a display whose own ground is populated and which is not in it: that
+     * is one that has gone, and its replacement stands where it did.
+     *
+     * <p>A move made while this server is running is followed, and one made before it is not: after a
+     * restart the row's own coordinates are all there is, and a replacement is made there. Nothing is
+     * lost by that — a row naming a display that is really gone is exactly the case this is for.
+     *
+     * <p>The new identity is written back to the row by the caller, which is the side that has one: an
+     * anchor nobody wrote down is an anchor the next restart looks for again, and every restart would
+     * leave another display standing in the world.
+     *
+     * @param level the level the effect is in, which is the one its row names
+     * @param uuid  the identity the row remembers, which may name nothing
+     * @param x     where the effect is, for a display that has to be made again
+     * @return the entity to attach to, or null when there is nothing to attach to yet
      */
     public static Entity ensure(ServerLevel level, String uuid, double x, double y, double z) {
-        // Reached for rather than merely looked for: a display whose chunk is not loaded is not a
-        // display that has gone, and making a second one beside it would leave two standing where the
-        // effect is — one of them with nothing pointing at it.
-        Entity existing = reach(level, uuid, x, y, z);
+        Entity existing = find(level, uuid);
         if (existing != null) return existing;
 
-        UUID placed = place(level, x, y, z);
+        Vec3 want = lastSeen(uuid);
+        if (want == null) want = new Vec3(x, y, z);
+
+        // Asked of the ground the display should be standing on, before anything is concluded from not
+        // finding it: a chunk whose entities are not in the level yet answers nothing, and nothing is
+        // what is returned. The effect is not lost by that — it arrives with the display, which is
+        // tracked the moment it exists and re-sent then.
+        if (!level.areEntitiesLoaded(new ChunkPos(BlockPos.containing(want.x, want.y, want.z))
+                .toLong())) {
+            return null;
+        }
+
+        UUID placed = place(level, want.x, want.y, want.z);
         return placed == null ? null : find(level, placed.toString());
+    }
+
+    /** {@return where a display was last seen}, or null when this session has not seen it */
+    private static Vec3 lastSeen(String uuid) {
+        UUID id = parse(uuid);
+        return id == null ? null : SEEN.get(id.toString());
+    }
+
+    /** Drops what is remembered about one display, which taking it away makes worthless. */
+    private static void forget(String uuid) {
+        UUID id = parse(uuid);
+        if (id != null) SEEN.remove(id.toString());
+    }
+
+    /** Drops everything remembered, which a server that is stopping requires. */
+    public static void clear() {
+        SEEN.clear();
     }
 
     /**
