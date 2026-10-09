@@ -10,6 +10,7 @@ import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
+import net.xlebupaksa.backutils.data.EffectPlacement;
 import net.xlebupaksa.backutils.item.EffectAttachment;
 import net.xlebupaksa.backutils.item.EffectToolConfig;
 import net.xlebupaksa.backutils.item.EffectToolPlacement;
@@ -375,19 +376,37 @@ final class EffectPick {
     }
 
     /**
+     * {@return the block a click on a placed effect names}
+     *
+     * <p>Two answers, and the mode is what decides which. An effect placed <b>in a block</b> is named
+     * by the block its row holds, because the anchor such an effect is drawn at is not a point inside
+     * it: a block-side effect hangs off the middle of a face, which is the boundary between two
+     * blocks, and flooring a boundary point gives whichever block lies on the far side of it — the
+     * block <em>above</em> an up-face effect, the one beyond an east or a south face. Naming that is a
+     * click that removes nothing, which is what happened on those three faces; the cube's own nudge
+     * clear of the surface is the same kind of drawing decision and must not decide this either.
+     *
+     * <p>An effect <b>in open air</b> is the other answer: it is off the grid on purpose and hangs off
+     * a display the world holds, so the block named is the one its anchor is in now — a display that
+     * has been moved takes the place it empties with it.
+     *
+     * <p>Pinned in the harness, face by face, because the trap is invisible: see
+     * {@code EffectPickTest.namedBlockTest}.
+     */
+    static BlockPos namedBlock(EffectPlacement where, Point anchor) {
+        if (where == null) return null;
+        if (where.onGrid()) return new BlockPos(where.blockX(), where.blockY(), where.blockZ());
+        return anchor == null ? null : blockOf(anchor);
+    }
+
+    /**
      * {@return the block an effect is in}, which is the block a click on its cube empties
      *
-     * <p>The effect's own anchor rather than the cube it is drawn as, and the difference is one mode: a
-     * block-side cube is deliberately nudged clear of the surface it hangs on, so the block its centre
-     * falls in is the block <em>in front of</em> the one the effect belongs to. The nudge is a drawing
-     * decision — a cube half-buried in a wall — and naming it as the place to empty made every
-     * block-side effect unremovable, because the server has no effect in the block in front.
-     *
-     * <p>The anchor is read as it is now, which is what an accurate effect needs: its anchor is a
-     * display the world holds, and a display that has been moved takes its effect with it.
+     * <p>See {@link #namedBlock}, which is where the answer is decided: this is the same question asked
+     * of an entry, with the anchor read as it is now so that an accurate effect follows its display.
      */
     static BlockPos blockOf(PlacedEffects.Entry entry, float partialTick) {
-        return blockOf(entry.anchor(partialTick));
+        return namedBlock(entry.placement(), entry.anchor(partialTick));
     }
 
     /**
