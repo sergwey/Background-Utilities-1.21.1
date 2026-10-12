@@ -53,11 +53,13 @@ public final class RoleplayLogHudLayer {
     private static void renderHud(GuiGraphics graphics, DeltaTracker deltaTracker) {
         if (Minecraft.getInstance().player == null) return;
         if (Minecraft.getInstance().level == null) return;
+        if (hudHidden()) return;
 
         // Any open screen wins over the log, and the chat screen is served by the overlay handler.
         if (Minecraft.getInstance().screen == null) {
             // No screen is open, so there is no cursor to hover with.
             RoleplayLogOverlay.instance().render(graphics, 0, 0, false);
+            HudBanner.instance().render(graphics);
             AdminCorner.renderIcon(graphics);
         }
     }
@@ -66,7 +68,27 @@ public final class RoleplayLogHudLayer {
     public static void renderOverChatScreen(GuiGraphics graphics, int mouseX, int mouseY,
                                             float partialTick) {
         if (Minecraft.getInstance().player == null) return;
+        if (hudHidden()) return;
         RoleplayLogOverlay.instance().render(graphics, mouseX, mouseY, true);
+        // With the log, rather than instead of it: the banner hangs off the button, which is drawn
+        // in both places, so leaving it out here would make it flicker as chat opens.
+        HudBanner.instance().render(graphics);
+    }
+
+    /**
+     * {@return true when the player has hidden the HUD}, which is what {@code F1} toggles
+     *
+     * <p>Everything this mod draws in the world, and over the chat screen, is a HUD element - the log,
+     * the banner and the two corner buttons - so all of it follows vanilla's own answer to that key.
+     * Vanilla's layers already do, but these are registered as layers of this mod's own, which are
+     * drawn whether or not the vanilla ones are, and a banner that stayed on screen with the rest of
+     * the HUD hidden would be the one thing a screenshot could not get rid of.
+     *
+     * <p>The profile pickers on the chat screen are not part of this: they belong to that screen, the
+     * way its input box does, and vanilla draws those with the HUD hidden.
+     */
+    public static boolean hudHidden() {
+        return Minecraft.getInstance().options != null && Minecraft.getInstance().options.hideGui;
     }
 
     /** Drops per-connection state so a new server starts with a clean slate. */

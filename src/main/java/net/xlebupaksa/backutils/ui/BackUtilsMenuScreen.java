@@ -352,9 +352,9 @@ public final class BackUtilsMenuScreen extends Screen {
         scroll.addScrollViewChild(sliderRow(built, "backutils.menu.setting.log_button_margin", 0f, 200f,
                 BackUtilsClientConfig.getButtonMargin(), " px", true,
                 v -> BackUtilsClientConfig.setButtonMargin(Math.round(v))));
-        scroll.addScrollViewChild(sliderRow(built, "backutils.menu.setting.admin_button_size", 8f, 128f,
-                BackUtilsClientConfig.getAdminButtonSize(), " px", true,
-                v -> BackUtilsClientConfig.setAdminButtonSize(Math.round(v))));
+        // The administrator corner's button, its alert icon and that icon's fade are not here: they
+        // are server settings, changed from the administrator menu, because the corner is drawn for
+        // operators alone. What is left below is the alert this client chooses to hear.
         scroll.addScrollViewChild(sliderRow(built, "backutils.menu.setting.backdrop_opacity", 0f, 1f,
                 (float) BackUtilsClientConfig.getMenuBackgroundOpacity(), "", false,
                 v -> BackUtilsClientConfig.setMenuBackgroundOpacity(v)));
@@ -390,12 +390,6 @@ public final class BackUtilsMenuScreen extends Screen {
         scroll.addScrollViewChild(toggleRow(built, "backutils.menu.alerts.icon",
                 BackUtilsClientConfig.isAdminAlertMarkerEnabled(),
                 BackUtilsClientConfig::setAdminAlertMarker));
-        scroll.addScrollViewChild(sliderRow(built, "backutils.menu.alerts.icon_size", 4f, 64f,
-                BackUtilsClientConfig.getAdminAlertIconSize(), " px", true,
-                v -> BackUtilsClientConfig.setAdminAlertIconSize(Math.round(v))));
-        scroll.addScrollViewChild(sliderRow(built, "backutils.menu.alerts.icon_fade", 0f, 10f,
-                (float) BackUtilsClientConfig.getAdminAlertPulseSeconds(), " s", false,
-                v -> BackUtilsClientConfig.setAdminAlertPulseSeconds(v)));
     }
 
     /**

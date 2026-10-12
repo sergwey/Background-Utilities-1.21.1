@@ -210,6 +210,38 @@ public final class BackUtilsConfig {
                     "player's own music slider still applies.")
             .defineInRange("menuMusicVolume", 1.0D, 0.0D, 2.0D);
 
+    /**
+     * The operator corner in the bottom-right of the screen: the button that opens the administrator
+     * menu, and the alert icon above it.
+     *
+     * <p>These live in the server's config rather than each client's because the corner is drawn for
+     * operators alone - {@code Operators.isOperator()} decides that, and the alert icon needs an
+     * unread alert as well. Who may change it and who sees it are therefore the same people, and a
+     * corner whose size each client decided for itself would be the wrong size on every client that
+     * had never opened this menu.
+     */
+    public static final ModConfigSpec.IntValue ADMIN_BUTTON_SIZE = BUILDER
+            .comment("Size of the administrator button in pixels. The alert icon above it is",
+                    "centred on the button whatever size either of them is.")
+            .defineInRange("adminButtonSize", 20, 8, 128);
+
+    public static final ModConfigSpec.IntValue ADMIN_ALERT_ICON_SIZE = BUILDER
+            .comment("Size of the alert icon above that button, in pixels. Keep it smaller than",
+                    "the button it is centred on.")
+            .defineInRange("adminAlertIconSize", 14, 4, 64);
+
+    /**
+     * The fade the alert icon is drawn with, which is not the same thing as a fade drawn into the
+     * sprite's frames: the sprite shader discards anything under alpha 0.1 before the colour
+     * modulator, so a fade carried by the frames is cut off rather than reaching zero. Zero here
+     * leaves the icon exactly as its frames have it.
+     */
+    public static final ModConfigSpec.DoubleValue ADMIN_ALERT_PULSE_SECONDS = BUILDER
+            .comment("How long the alert icon takes to fade down and back up, in seconds.",
+                    "It never fades out completely. Set 0 to draw it still instead, which",
+                    "leaves a multi-frame sprite to fade however its own frames do.")
+            .defineInRange("adminAlertPulseSeconds", 1.5D, 0.0D, 10.0D);
+
     // ------------------------------------------------------------------
     // Typewriter effect for log entries
     // ------------------------------------------------------------------
@@ -592,6 +624,49 @@ public final class BackUtilsConfig {
     public static void setMenuMusicVolume(double value) {
         MENU_MUSIC_VOLUME.set(value);
         MENU_MUSIC_VOLUME.save();
+    }
+
+    // ------------------------------------------------------------------
+    // The operator corner
+    // ------------------------------------------------------------------
+
+    public static int getAdminButtonSize() {
+        try {
+            return ADMIN_BUTTON_SIZE.get();
+        } catch (Exception e) {
+            return 20;
+        }
+    }
+
+    public static void setAdminButtonSize(int value) {
+        ADMIN_BUTTON_SIZE.set(value);
+        ADMIN_BUTTON_SIZE.save();
+    }
+
+    public static int getAdminAlertIconSize() {
+        try {
+            return ADMIN_ALERT_ICON_SIZE.get();
+        } catch (Exception e) {
+            return 14;
+        }
+    }
+
+    public static void setAdminAlertIconSize(int value) {
+        ADMIN_ALERT_ICON_SIZE.set(value);
+        ADMIN_ALERT_ICON_SIZE.save();
+    }
+
+    public static double getAdminAlertPulseSeconds() {
+        try {
+            return ADMIN_ALERT_PULSE_SECONDS.get();
+        } catch (Exception e) {
+            return 1.5D;
+        }
+    }
+
+    public static void setAdminAlertPulseSeconds(double value) {
+        ADMIN_ALERT_PULSE_SECONDS.set(value);
+        ADMIN_ALERT_PULSE_SECONDS.save();
     }
 
     // ------------------------------------------------------------------

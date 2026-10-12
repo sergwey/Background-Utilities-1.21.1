@@ -1,8 +1,9 @@
 # Working in this repository
 
 Background Utilities is a NeoForge mod for roleplay servers: a witness-based action log, dice, chat
-and display-name profiles, two chat channels, an operator item editor, and two tools that place and
-remove visual effects. Minecraft 1.21.1, NeoForge 21.1.250, Java 21, ldlib2 and Ember's Text API.
+and display-name profiles, two chat channels, an operator item editor, a banner text that stays beside
+the log, and two tools that place and remove visual effects. Minecraft 1.21.1, NeoForge 21.1.250,
+Java 21, ldlib2 and Ember's Text API.
 
 This file is for whoever — or whatever — works on it next, and says the things that are not visible
 from the code and are expensive to learn by breaking them.
@@ -16,11 +17,13 @@ from the code and are expensive to learn by breaking them.
 ./gradlew runSymbolChat # the client with Sinytra Connector and Symbol Chat, game directory run-symbolchat/
 ./gradlew runCitResewn # the client with Connector, CIT Resewn, its NeoForge patcher and RP Renames, in
                        # run-citresewn/: the arrangement in which RP Renames' creative tab goes missing
+./gradlew runInline    # the client with Inline and Cloth Config, game directory run-inline/: the
+                       # arrangement in which [item:diamond] is drawn in line with the text
 ```
 
-`run/`, `run-server/`, `run-symbolchat/` and `run-citresewn/` are separate game directories on
-purpose; the README explains the test server, including the address to connect to, and the CIT Resewn
-run, including which creative tab it exists to reproduce.
+`run/`, `run-server/`, `run-symbolchat/`, `run-citresewn/` and `run-inline/` are separate game
+directories on purpose; the README explains the test server, including the address to connect to, and
+the CIT Resewn and Inline runs, including what each of them exists to reproduce.
 
 ## What "it works" has to mean
 
@@ -63,7 +66,11 @@ run, including which creative tab it exists to reproduce.
 ## Versions and releases
 
 `mod_version` in `gradle.properties` is the version of the jar and of the release. A release is made
-by pushing a tag whose name matches it:
+by pushing a tag whose name matches it, and `./gradlew releaseVersion` is the whole of that — it bumps
+the patch (`-PnewVersion=0.2.0` for a version chosen by hand), commits it as `Release X`, tags `vX` and
+pushes both. It refuses a dirty working tree, because the release commit is meant to be the version
+alone, and it builds before it writes anything, so a tag is never placed on a tree that does not
+compile. The release workflow verifies the tag against the file and fails if they disagree.
 
 ```
 # set mod_version=0.2.0, commit, then:
@@ -101,6 +108,7 @@ licence notice belongs with its own files, not here.
 
 The maintainer keeps a throwaway harness under `build/tmp/` — a compile check, a lint pass, a
 metadata check and a set of `main()` suites covering the markup, the profile storage, the effect
-tool, the item editor and the tool sounds. It is not committed, because it is regenerated as the
-work needs it, so a fresh clone will not have it. If `build/tmp/` is present, run what is there
-before claiming a change is done; if it is not, build, run the game, and say what was run.
+tool, the item editor, the tool sounds and the HUD banner's text and placement. It is not committed,
+because it is regenerated as the work needs it, so a fresh clone will not have it. If `build/tmp/` is
+present, run what is there before claiming a change is done; if it is not, build, run the game, and
+say what was run.

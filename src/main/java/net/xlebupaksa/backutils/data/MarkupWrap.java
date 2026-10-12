@@ -22,9 +22,12 @@ import java.util.function.ToIntFunction;
  *   <li>tags are invisible, so they must not count towards the width, and must never be cut in
  *       half - a broken tag is rendered as literal text;</li>
  *   <li><b>each line is parsed on its own</b>, so a tag opened on one line and closed on the next
- *       leaves the first line unbalanced and the second starting with a dangling closing tag, and
- *       a line with no matchable formatting makes Ember draw the raw text. Tags are therefore
- *       closed at the end of every line and reopened at the start of the next.</li>
+ *       leaves the second starting with a dangling closing tag, and a line with no matchable
+ *       formatting makes Ember draw the raw text. Tags still open at the end of a line are therefore
+ *       <em>reopened</em> at the start of the next one, so one colour survives a wrap.
+ *       They are not <em>closed</em>: writing a closing tag the text never had puts a tag on screen
+ *       that the player did not type, which a one-shot effect with no closing form of its own - Ember's
+ *       typewriter is one - draws as literal text.</li>
  * </ul>
  */
 public final class MarkupWrap {
@@ -112,7 +115,11 @@ public final class MarkupWrap {
             }
         }
 
-        closeTags(row, open);
+        // The last row is left exactly as it was typed, without the closing tags every earlier row
+        // gets. Closing it would protect nothing - there is no next row for a tag to leak into - and
+        // the closer would be a tag the player never wrote: a one-shot effect with no closing form of
+        // its own, Ember's typewriter among them, then draws that closer as literal text at the end of
+        // the line.
         rows.add(row.toString());
         return rows;
     }
@@ -147,19 +154,20 @@ public final class MarkupWrap {
         return 0;
     }
 
-    /** Ends the current line, closing any open tags, and reopens them on the next. */
+    /**
+     * Ends the current line and reopens its still-open tags on the next.
+     *
+     * <p>The line is not closed. A closing tag written here is one the text never had, and whether the
+     * renderer knows that closing form is not something this class can know: a one-shot effect such as
+     * Ember's typewriter has none, so the tag this would add is drawn as literal text at the end of the
+     * line. Nothing needs it either - each line is parsed on its own, so a tag left open simply runs to
+     * the end of the line it is on, which is where the text it was opened in ends - while the reopened
+     * tags on the next line are what keeps one colour across a wrap.
+     */
     private static void flush(List<String> rows, StringBuilder row, Deque<String> open) {
-        closeTags(row, open);
         rows.add(row.toString());
         row.setLength(0);
         reopenTags(row, open);
-    }
-
-    /** Appends a closing tag for each open tag, innermost first. */
-    private static void closeTags(StringBuilder row, Deque<String> open) {
-        for (String tag : open) {
-            row.append("</").append(tagName(tag)).append('>');
-        }
     }
 
     /** Re-opens the tags in their original nesting order, outermost first. */
@@ -168,15 +176,6 @@ public final class MarkupWrap {
         for (int i = tags.size() - 1; i >= 0; i--) {
             row.append(tags.get(i));
         }
-    }
-
-    /** {@return the bare name of a tag, without brackets, slash or attributes} */
-    private static String tagName(String raw) {
-        String inner = raw.substring(1, raw.length() - 1).trim();
-        if (inner.startsWith("/")) inner = inner.substring(1).trim();
-        if (inner.endsWith("/")) inner = inner.substring(0, inner.length() - 1).trim();
-        int space = inner.indexOf(' ');
-        return space < 0 ? inner : inner.substring(0, space);
     }
 
     private static List<Token> tokenise(String text) {

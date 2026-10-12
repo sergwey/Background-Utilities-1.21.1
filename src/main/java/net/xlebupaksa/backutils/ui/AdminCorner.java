@@ -9,6 +9,7 @@ import net.xlebupaksa.backutils.BackUtils;
 import net.xlebupaksa.backutils.client.AdminAlerts;
 import net.xlebupaksa.backutils.client.BackUtilsClientConfig;
 import net.xlebupaksa.backutils.client.Operators;
+import net.xlebupaksa.backutils.network.AdminConfigCache;
 
 /**
  * The bottom-right corner: the operator alert icon, and under it the button that opens the
@@ -50,13 +51,20 @@ public final class AdminCorner {
     /** How dim the alert icon is allowed to fade: never out, since an alert has to stay visible. */
     private static final float PULSE_FLOOR = 0.35F;
 
+    /**
+     * The corner's settings as the server's config starts them, for the frames before the server's
+     * copy of them reaches this client. They are only ever seen on a client that has just joined.
+     */
+    private static final int DEFAULT_BUTTON_SIZE = 20;
+    private static final int DEFAULT_ICON_SIZE = 14;
+    private static final double DEFAULT_PULSE_SECONDS = 1.5D;
+
     /** Draws the alert icon, wherever an operator has an alert they have not looked at yet. */
     public static void renderIcon(GuiGraphics graphics) {
         if (!iconVisible()) return;
 
         int size = iconSize();
-        float alpha = IconPulse.alpha(System.nanoTime(),
-                BackUtilsClientConfig.getAdminAlertPulseSeconds(), PULSE_FLOOR);
+        float alpha = IconPulse.alpha(System.nanoTime(), pulseSeconds(), PULSE_FLOOR);
 
         // The fade is a colour on the quad itself rather than a shader colour: the sprite shader
         // multiplies each fragment by its own vertex colour, so this cannot land on a different
@@ -109,11 +117,33 @@ public final class AdminCorner {
     // ------------------------------------------------------------------
 
     private static int buttonSize() {
-        return BackUtilsClientConfig.getAdminButtonSize();
+        return serverNumber("adminButtonSize", DEFAULT_BUTTON_SIZE).intValue();
     }
 
     private static int iconSize() {
-        return BackUtilsClientConfig.getAdminAlertIconSize();
+        return serverNumber("adminAlertIconSize", DEFAULT_ICON_SIZE).intValue();
+    }
+
+    private static double pulseSeconds() {
+        return serverNumber("adminAlertPulseSeconds", DEFAULT_PULSE_SECONDS);
+    }
+
+    /**
+     * {@return the server's value for one of this corner's settings, or the server's own default}
+     *
+     * <p>Read from the copy of the server's settings this client was sent, which is what makes the
+     * corner the operator's rather than each client's. Operators are sent it as they join, so these
+     * defaults are only ever used for the frames before that copy arrives - and they are the numbers
+     * the server's config starts with, so the corner does not move when it does.
+     */
+    private static Double serverNumber(String key, double fallback) {
+        String value = AdminConfigCache.value(key);
+        if (value == null || value.isEmpty()) return fallback;
+        try {
+            return Double.parseDouble(value);
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
     }
 
     /** {@return the left edge of the buttons, against the config's right margin} */

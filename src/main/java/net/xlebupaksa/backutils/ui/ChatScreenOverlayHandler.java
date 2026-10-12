@@ -68,8 +68,10 @@ public class ChatScreenOverlayHandler {
         if (!(event.getScreen() instanceof ChatScreen screen)) return;
         if (isTypingCommand(screen)) return;
 
-        // The corner button first: it opens the menu and swallows the press if it was hit.
-        if (RoleplayLogButton.clicked(event.getMouseX(), event.getMouseY(), event.getButton())) {
+        // The corner button first: it opens the menu and swallows the press if it was hit. Not while
+        // the HUD is hidden, since the button is not drawn then either.
+        if (!RoleplayLogHudLayer.hudHidden()
+                && RoleplayLogButton.clicked(event.getMouseX(), event.getMouseY(), event.getButton())) {
             event.setCanceled(true);
             return;
         }

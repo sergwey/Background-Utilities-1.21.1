@@ -63,6 +63,13 @@ def compatRunDir = file('run-symbolchat')
 // run where this mod is tested on its own.
 def citRunDir = file('run-citresewn')
 
+// Inline, in a fourth game directory. It patches the game's text renderer, which every text this mod
+// draws goes through, so it belongs beside this mod rather than in the ordinary run: what the banner
+// and the log look like with it loaded is the one thing about them that cannot be checked here. It is
+// a NeoForge mod on 1.21.1, so no Connector is involved; Cloth Config, which it requires, is
+// installed with it.
+def inlineRunDir = file('run-inline')
+
 // Connector will not start in a dev run until it is told where the *clean* Minecraft jar is. In
 // production it works that path out for itself, from the launcher's libraries; on a dev classpath
 // there is nothing for it to work out, and it gives up with "Could not determine clean minecraft
@@ -157,6 +164,15 @@ neoForge {
             }
         }
 
+        // Inline, in a fourth game directory, for the text this mod draws: Inline patches the game's
+        // text renderer to draw [item:...], [entity:...] and the like in line with the text, so the
+        // banner and the log are the two things it can change here. Its jar, and the Cloth Config it
+        // requires, are put in place by installInlineMods, which this run depends on.
+        inline {
+            client()
+            gameDirectory = inlineRunDir
+        }
+
         // applies to all the run configs above
         configureEach {
             // Recommended logging data for a userdev environment
@@ -205,6 +221,14 @@ configurations {
     // bundled; they are installed into the citResewn run alone. Connector and the Forgified Fabric
     // API come from compatMods, which that run installs as well.
     citMods {
+        canBeConsumed = false
+        canBeResolved = true
+    }
+
+    // Inline and the Cloth Config it requires, for the inline run alone. Neither is compiled against
+    // or bundled - this is the arrangement that keeps a text-rendering mod a thing to test beside
+    // this one rather than a thing this one needs.
+    inlineMods {
         canBeConsumed = false
         canBeResolved = true
     }
@@ -262,6 +286,12 @@ dependencies {
     citMods "maven.modrinth:rp-renames:${rprenames_version}"
     citMods "maven.modrinth:cit-resewn:${citresewn_version}"
     citMods "maven.modrinth:cit-resewn-neopatcher:${citresewn_neopatcher_version}"
+
+    // What the inline run installs: the text-rendering mod, and the config library it declares as a
+    // requirement. Both are 1.21.1 NeoForge builds, so nothing here goes through Connector the way
+    // the two stacks above do. Versions live in gradle.properties for the usual reason.
+    inlineMods "maven.modrinth:inline:${inline_version}"
+    inlineMods "maven.modrinth:cloth-config:${cloth_config_version}"
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.
@@ -336,14 +366,141 @@ tasks.register('cleanCitMods', Delete) {
     delete new File(citRunDir, 'mods')
 }
 
+// And again for Inline: Copy rather than Sync, so a jar dropped in by hand survives a build, with
+// emptying the folder left to cleanInlineMods.
+var installInlineMods = tasks.register('installInlineMods', Copy) {
+    group = 'backutils'
+    description = 'Downloads Inline and Cloth Config into the inline run.'
+    from configurations.inlineMods
+    into new File(inlineRunDir, 'mods')
+}
+
+tasks.register('cleanInlineMods', Delete) {
+    group = 'backutils'
+    description = 'Removes the downloaded Inline run stack.'
+    delete new File(inlineRunDir, 'mods')
+}
+
 // configureEach rather than named, so that nothing here depends on when the run's task is registered.
 tasks.configureEach {
     if (name == 'runSymbolChat') dependsOn installCompatMods
     if (name == 'runCitResewn') dependsOn installCitMods
+    if (name == 'runInline') dependsOn installInlineMods
 }
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8' // Use the UTF-8 charset for Java compilation
+}
+
+// ------------------------------------------------------------------
+// Releasing
+// ------------------------------------------------------------------
+
+/**
+ * Releases the mod: the version, the commit, the tag and the push.
+ *
+ * <p>Pushing the tag is what releases. The release workflow checks the tag against mod_version, builds
+ * the jar, publishes the GitHub release and uploads that same jar to Modrinth. Nothing is published
+ * from here, deliberately: a build that cannot reach Modrinth is a build that still produces a jar, and
+ * a release must not depend on a network service being up.
+ *
+ * <pre>
+ * ./gradlew releaseVersion                    the next patch after the current mod_version
+ * ./gradlew releaseVersion -PnewVersion=0.2.0 a version chosen by hand
+ * ./gradlew releaseVersion -PdryRun=true      say what would happen, change nothing
+ * ./gradlew releaseVersion -Ppush=false       commit and tag, and push it yourself
+ * </pre>
+ */
+tasks.register('releaseVersion') {
+    group = 'backutils'
+    description = 'Bumps mod_version, commits and tags it, and pushes - which is what releases the mod.'
+
+    // Read at configuration time: a task action that reaches back into the project is a task the
+    // configuration cache cannot store, and this build has that cache turned on.
+    def dryRun = providers.gradleProperty('dryRun').map { it == 'true' }.getOrElse(false)
+    def pushIt = providers.gradleProperty('push').map { it != 'false' }.getOrElse(true)
+    def chosen = providers.gradleProperty('newVersion').orNull
+    def repo = project.rootDir
+    def propertiesFile = new File(repo, 'gradle.properties')
+
+    // The build runs before anything is written, so a version is never tagged on a tree that does not
+    // compile. It is skipped only for a dry run, which is there to be instant.
+    if (!dryRun) dependsOn 'build'
+
+    doLast {
+        // Git, reached the way a build can: no credential prompt, ever. This runs from a build, where a
+        // prompt is a build that hangs with nothing on screen saying why, so a push that would have
+        // asked for a password fails and says so instead.
+        def git = { String... args ->
+            def builder = new ProcessBuilder(['git'] + args.toList())
+            // Set on the builder, which is where a process's environment is set from Java; the started
+            // process cannot be given one afterwards.
+            builder.environment().put('GIT_TERMINAL_PROMPT', '0')
+            def process = builder.directory(repo).redirectErrorStream(true).start()
+            def output = process.inputStream.getText('UTF-8')
+            def status = process.waitFor()
+            if (status != 0) {
+                throw new GradleException("git ${args.join(' ')} failed (${status}):\n${output.trim()}")
+            }
+            return output.trim()
+        }
+
+        def properties = propertiesFile.getText('UTF-8')
+        def matcher = properties =~ /(?m)^mod_version=(.*)$/
+        if (!matcher.find()) throw new GradleException('no mod_version in gradle.properties')
+        def current = matcher.group(1).trim()
+
+        def target = chosen
+        if (target == null) {
+            def parts = current.tokenize('.')
+            if (parts.size() != 3 || !parts.every { it ==~ /\d+/ }) {
+                throw new GradleException("mod_version is ${current}, which is not a plain x.y.z " +
+                        'version: pass the version to release with -PnewVersion=…')
+            }
+            target = "${parts[0]}.${parts[1]}.${(parts[2] as int) + 1}"
+        }
+        if (!(target ==~ /\d+\.\d+\.\d+([-+][0-9A-Za-z.+-]+)?/)) {
+            throw new GradleException("${target} is not a version this project can release")
+        }
+        def tag = "v${target}"
+
+        // A release commit holds the version and nothing else. Without this, a tag placed over
+        // half-finished work would claim to be the state of the mod at that version, which it is not.
+        // A dry run only reports it: the point of a dry run is to be readable before that commit.
+        def dirty = git('status', '--porcelain')
+        if (!dirty.isEmpty()) {
+            if (!dryRun) {
+                throw new GradleException("the working tree has uncommitted changes:\n${dirty}\n" +
+                        'commit them first - the release commit is meant to be the version alone')
+            }
+            logger.lifecycle("note: the working tree is not clean, so a real release would stop here:\n${dirty}")
+        }
+        def existing = git('tag', '--list', tag)
+        if (!existing.isEmpty()) {
+            throw new GradleException("the tag ${tag} already exists, and releases are not overwritten")
+        }
+
+        logger.lifecycle("releasing ${current} as ${target} (${tag})" +
+                (pushIt ? ', pushing it' : ', leaving the push to you'))
+        if (dryRun) {
+            logger.lifecycle('dry run: nothing was written, committed, tagged or pushed')
+            return
+        }
+
+        propertiesFile.setText(properties.replaceFirst(/(?m)^mod_version=.*$/, "mod_version=${target}"),
+                'UTF-8')
+        git('add', 'gradle.properties')
+        git('commit', '-m', "Release ${target}")
+        git('tag', tag)
+        if (!pushIt) {
+            logger.lifecycle("committed and tagged ${tag}; push it with: git push && git push origin ${tag}")
+            return
+        }
+        git('push')
+        git('push', 'origin', tag)
+        logger.lifecycle("pushed ${tag}: the release workflow builds it, publishes it here and uploads " +
+                'the same jar to Modrinth')
+    }
 }
 
 // IDEA no longer automatically downloads sources/javadoc jars for dependencies, so we need to explicitly enable the behavior.

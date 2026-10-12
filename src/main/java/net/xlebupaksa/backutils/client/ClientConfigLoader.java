@@ -4,6 +4,7 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.event.config.ModConfigEvent;
 import net.xlebupaksa.backutils.BackUtils;
+import net.xlebupaksa.backutils.ui.HudBanner;
 import net.xlebupaksa.backutils.ui.RoleplayLogOverlay;
 
 /**
@@ -34,5 +35,8 @@ public final class ClientConfigLoader {
         if (event.getConfig() == null) return;
         if (!BackUtils.MOD_ID.equals(event.getConfig().getModId())) return;
         RoleplayLogOverlay.instance().onConfigChanged();
+        // A file edited by hand arrives here rather than through the setters, so the banner is told
+        // about it too: its text and its components are only rebuilt when something says so.
+        HudBanner.instance().onConfigChanged();
     }
 }

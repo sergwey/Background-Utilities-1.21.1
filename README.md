@@ -1,14 +1,22 @@
 # Background Utilities
 
 A NeoForge mod for roleplay servers: a witness-based action log, two chat channels, chat and
-display-name profiles written in markup, an operator item editor, and a pair of tools for placing and
-removing visual effects.
+display-name profiles written in markup, an operator item editor, a banner line that stays beside the
+log, and a pair of tools for placing and removing visual effects.
 
 ## What it adds
 
 - **Action log.** `/me` and `*asterisk*` lines — `^caret^` for silent ones — are recorded with every
   player who was within the witness radius, and shown to them in an on-screen log. Staff review,
   hide or delete entries from the administrator menu, and each action raises an alert for operators.
+- **Banner.** One line of text stays on screen to the left of the log's menu button, and so above the
+  log itself, for as long as the game is in a world. It is off until a text is set, and the text is
+  all there is to it: it is written in the same markup as chat — colours, gradients, animations,
+  sounds — and drawn with the game's own font, so another mod's inline text works in it too. With
+  [Inline] installed, `[item:diamond_sword]`, `[entity:pig]` and the like are drawn as what they name,
+  in line with the text; the text is handed to Inline when it is there and drawn as plain markup when
+  it is not. `\n` starts a second line, and a text too long for the room it has is wrapped, so it
+  never runs under the button.
 - **Dice.** `/roll` and `/hroll` leave a line in the action log, and nothing in chat, for the players
   around whoever is being rolled for: an optional selector, an optional maximum and a free-text
   reason, all with configurable defaults. A roll that names nobody is worded as a line of its own,
@@ -68,9 +76,10 @@ Optional, each one switching a feature off rather than breaking anything:
 
 Server settings live in `config/backutils-server.toml` and can also be changed from the
 administrator menu's Config tab; client display settings — including the operator alert's sound,
-volume, pitch and icon — are in `config/backutils-client.toml`. The mod's databases are SQLite files
-under `serverconfig/backutils/` in the directory a server runs in: the game directory for a client's
-integrated server, and the dedicated server's own directory for a real one.
+volume, pitch and icon, and the banner's text — are in `config/backutils-client.toml`. The mod's
+databases are SQLite files under `serverconfig/backutils/` in the directory a server runs in: the
+game directory for a client's integrated server, and the dedicated server's own directory for a real
+one.
 
 ## Commands
 
@@ -86,6 +95,15 @@ Everything is permission level 2:
 
 The two effect tools are not commands: they are in the mod's own creative tab.
 
+One command is answered by your own client rather than the server, because it changes only what your
+game draws and has to work on a server without this mod. It needs no permission, is answered in your
+chat, and is the only `/backutils` path the client takes for itself — every other one is sent to the
+server as before:
+
+- `/backutils banner` — the text it currently draws, shown as it was typed
+- `/backutils banner set <text>` — set it, in chat's own markup; `\n` starts a new line
+- `/backutils banner clear` — draw nothing
+
 ## Building
 
 ```
@@ -97,13 +115,27 @@ The workflow in `.github/workflows/build.yml` does the same.
 ## Releases
 
 Built jars are attached to the releases on this repository's Releases page. A release is made by
-pushing a tag that matches `mod_version` in `gradle.properties`:
+pushing a tag that matches `mod_version` in `gradle.properties`, and one command does all of it:
 
 ```
-# set mod_version=0.2.0, commit, then:
-git tag v0.2.0
-git push origin v0.2.0
+./gradlew releaseVersion                    # 0.1.9 becomes 0.1.10, committed, tagged and pushed
+./gradlew releaseVersion -PnewVersion=0.2.0 # or a version chosen by hand
+./gradlew releaseVersion -PdryRun=true      # say what would happen, change nothing
+./gradlew releaseVersion -Ppush=false       # commit and tag, and push it yourself
 ```
+
+In IntelliJ the same two are run configurations — **Release (next patch)** and **Release (chosen
+version)**, whose version is edited in the configuration's *Script parameters* — so a release is the
+green run button. The task stops if anything is uncommitted: the release commit holds the version and
+nothing else, so commit your work first. It also stops if the version's tag already exists, and it
+builds before it writes anything, so a tag is never placed on a tree that does not compile.
+
+In PowerShell a version has to be quoted, or the shell hands Gradle `0.1.8` as a task name:
+`./gradlew releaseVersion "-PnewVersion=0.2.0"`. The IntelliJ configurations are not affected, since
+the IDE passes the parameters to Gradle itself.
+
+`mod_version` is the version of everything: the jar's name, the Modrinth version number and the tag
+the release is published under. `build.yml` and `release.yml` both refuse a tag that disagrees with it.
 
 `.github/workflows/release.yml` then builds the mod exactly as the development workflow does, and
 publishes a release with the jar attached, using the repository's own token — for that part no
@@ -194,6 +226,36 @@ from outside, for the build that has no such fix: it offers that tab the item RP
 own icon, and asks it to refill the list behind it, so the tab appears with its renames in it. The tab
 is on the second page of the creative menu, behind the `>` button — NeoForge fits ten tabs to a page
 and vanilla's come first.
+
+## Testing with Inline
+
+[Inline] draws items, entities, player heads and mod icons in line with text — `[item:diamond_sword]`,
+`[entity:pig]`, `[face:notch]`, `[mod:inline]` — by patching the game's own text renderer. That is the
+renderer the banner and the log are drawn with, which is why it belongs beside this mod:
+
+- Inline parses a plain `String` as the game decomposes it. A `Component` never goes that way, so the
+  banner asks Inline to parse its text and draws what comes back, through
+  [InlineSupport](src/main/java/net/xlebupaksa/backutils/client/InlineSupport.java). It is a
+  reflective call, the kind this mod uses for every optional mod, so a text with no inline syntax in
+  it is drawn exactly as it is without Inline.
+
+It goes into a fourth game directory of its own:
+
+```
+./gradlew runInline
+```
+
+`installInlineMods` downloads Inline and the Cloth Config it requires into `run-inline/mods` the first
+time the run is used, and `cleanInlineMods` removes them again. The versions are properties in
+`gradle.properties`. Unlike the other two compatibility runs this one needs no Sinytra Connector,
+because Inline publishes a NeoForge build for 1.21.1. Nothing here is compiled against, bundled or
+required: Inline is a mod to test beside this one.
+
+What is worth checking there: that `[item:...]`, `[entity:...]`, `[mod:...]` and `[face:...]` are
+drawn where the banner puts them, that the lines still end against the button when a symbol is in the
+text, and that a banner with none of that syntax in it looks exactly as it does in `runClient`.
+
+[Inline]: https://modrinth.com/mod/inline
 
 ## Licence
 

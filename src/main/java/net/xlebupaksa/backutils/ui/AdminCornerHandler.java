@@ -27,6 +27,9 @@ public class AdminCornerHandler {
     @SubscribeEvent
     public static void onRender(ScreenEvent.Render.Post event) {
         if (!(event.getScreen() instanceof ChatScreen)) return;
+        // F1 hides the HUD, and this corner is part of it: the icon and the button are the two things
+        // the rest of the mod's HUD already follows that key for.
+        if (RoleplayLogHudLayer.hudHidden()) return;
 
         GuiGraphics graphics = event.getGuiGraphics();
         AdminCorner.renderIcon(graphics);
@@ -36,6 +39,9 @@ public class AdminCornerHandler {
     @SubscribeEvent
     public static void onMouseDown(ScreenEvent.MouseButtonPressed.Pre event) {
         if (!(event.getScreen() instanceof ChatScreen)) return;
+        // Not while it is hidden: a button nobody can see must not swallow a press aimed at the chat
+        // line behind it.
+        if (RoleplayLogHudLayer.hudHidden()) return;
         if (AdminCorner.buttonClicked(event.getMouseX(), event.getMouseY(), event.getButton())) {
             // Swallowed, so the press does not also reach the chat box or a line of chat under it.
             event.setCanceled(true);

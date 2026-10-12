@@ -134,6 +134,18 @@ public final class BackUtilsSettings {
                     BackUtilsConfig.MENU_MUSIC_VOLUME, BackUtilsConfig::getMenuMusicVolume,
                     BackUtilsConfig::setMenuMusicVolume),
 
+            // The operator corner: read as numbers and written back as the integers two of them are,
+            // the way the roll's own maximum is.
+            number("adminButtonSize", "Admin button size", Group.MENU,
+                    BackUtilsConfig.ADMIN_BUTTON_SIZE, () -> (double) BackUtilsConfig.getAdminButtonSize(),
+                    value -> BackUtilsConfig.setAdminButtonSize((int) Math.round(value))),
+            number("adminAlertIconSize", "Admin alert icon size", Group.MENU,
+                    BackUtilsConfig.ADMIN_ALERT_ICON_SIZE, () -> (double) BackUtilsConfig.getAdminAlertIconSize(),
+                    value -> BackUtilsConfig.setAdminAlertIconSize((int) Math.round(value))),
+            number("adminAlertPulseSeconds", "Admin alert icon fade", Group.MENU,
+                    BackUtilsConfig.ADMIN_ALERT_PULSE_SECONDS, BackUtilsConfig::getAdminAlertPulseSeconds,
+                    BackUtilsConfig::setAdminAlertPulseSeconds),
+
             number("rollMax", "Default maximum", Group.ROLLS,
                     BackUtilsConfig.ROLL_MAX, () -> (double) BackUtilsConfig.getRollMax(),
                     value -> BackUtilsConfig.setRollMax((int) Math.round(value))),

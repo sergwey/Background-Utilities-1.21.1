@@ -133,10 +133,23 @@ public final class RoleplayLogOverlay {
      * bold rows, which vanilla draws one pixel wider than their advance.
      */
     private static int drawnWidth(String row) {
+        return Math.round(rowWidth(row) * scale());
+    }
+
+    /**
+     * {@return the width a row of markup is drawn at, in pixels, at font scale 1}
+     *
+     * <p>The rows are measured with their markup stripped, which is right for the log and wrong for
+     * anything right-aligned against something else: the log's rows grow rightwards into the screen,
+     * where a row measured a little narrow simply runs a little further, while the banner's rows end
+     * against the button and must not reach it. {@link HudBanner} therefore measures the component it
+     * is about to draw instead of the stripped text, and this stays the log's own rule.
+     */
+    static int rowWidth(String row) {
         String visible = MarkupUtil.strip(row);
         int width = Minecraft.getInstance().font.width(visible);
         if (isBold(row)) width += visible.length();
-        return Math.round(width * scale());
+        return width;
     }
 
     /** {@return true when this row carries the bold style, in either of Ember's spellings} */
