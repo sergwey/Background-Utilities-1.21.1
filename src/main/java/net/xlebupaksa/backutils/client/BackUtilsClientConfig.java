@@ -1,7 +1,6 @@
 package net.xlebupaksa.backutils.client;
 
 import net.neoforged.neoforge.common.ModConfigSpec;
-import net.xlebupaksa.backutils.ui.HudBanner;
 import net.xlebupaksa.backutils.ui.RoleplayLogOverlay;
 
 /**
@@ -59,27 +58,9 @@ public final class BackUtilsClientConfig {
             .comment("Gap between the menu button and the top-right corner, in pixels.")
             .defineInRange("buttonMargin", 0, 0, 200);
 
-    // The administrator corner's size, the alert icon's size and its fade are server settings, not
-    // client ones: the corner is drawn for operators alone, so the people who may change it are the
-    // people who see it. See BackUtilsConfig.
-
-    // ------------------------------------------------------------------
-    // The banner: text that stays on screen beside the log's menu button
-    // ------------------------------------------------------------------
-
-    /**
-     * One string, and nothing else: how it looks is Ember's business, exactly as it is for chat and
-     * for the log. Colour, weight, gradients, animations and sounds are all tags inside the text,
-     * so a setting for any of them here would be a second way to say what the string already says.
-     */
-    public static final ModConfigSpec.ConfigValue<String> BANNER_TEXT = BUILDER
-            .comment("Text drawn permanently to the left of the log's menu button, and so above",
-                    "the log itself. Empty draws nothing. Written in the same markup as chat, so",
-                    "colours, gradients, animations and sounds are tags in the text, and another",
-                    "mod's inline text - Inline's [item:diamond] and the like - is drawn as what",
-                    "it names, because this goes to the game's font exactly as chat does.",
-                    "A backslash followed by n starts a new line.")
-            .define("bannerText", "");
+    // The administrator corner's button, its alert icon and that icon's fade are in the alerts section
+    // below, beside the alert sound and marker they belong with: they are client settings like these,
+    // and the menu shows them to an operator alone because the corner only exists for an operator.
 
     // ------------------------------------------------------------------
     // Menu
@@ -105,9 +86,30 @@ public final class BackUtilsClientConfig {
                     "has been opened.")
             .define("adminAlertMarker", true);
 
-    // The icon's own size and fade, and the button's size, are server settings: the corner is drawn
-    // for operators alone, so who may change it and who sees it are the same people. See
-    // BackUtilsConfig.
+    // The administrator corner belongs to the operator looking at it, not to the server: this file is
+    // where its size, its icon and that icon's fade live, and the menu shows those rows to an operator
+    // alone, the way it shows the alert rows.
+    public static final ModConfigSpec.IntValue ADMIN_BUTTON_SIZE = BUILDER
+            .comment("Size of the administrator menu button in the bottom-right corner, in",
+                    "pixels. The alert icon above it is centred on it.")
+            .defineInRange("adminButtonSize", 20, 8, 128);
+
+    public static final ModConfigSpec.IntValue ADMIN_ALERT_ICON_SIZE = BUILDER
+            .comment("Size of that alert icon, in pixels. It is drawn centred on the",
+                    "administrator menu button, and smaller than the button by default.")
+            .defineInRange("adminAlertIconSize", 14, 4, 64);
+
+    /**
+     * The fade the icon is drawn with, which is not the same thing as a fade drawn into the
+     * sprite's frames: the sprite shader discards anything under alpha 0.1 before the colour
+     * modulator, so a fade carried by the frames is cut off rather than reaching zero. Zero here
+     * leaves the icon exactly as its frames have it.
+     */
+    public static final ModConfigSpec.DoubleValue ADMIN_ALERT_PULSE = BUILDER
+            .comment("How long the alert icon takes to fade down and back up, in seconds.",
+                    "It never fades out completely. Set 0 to draw it still instead, which",
+                    "leaves a multi-frame sprite to fade however its own frames do.")
+            .defineInRange("adminAlertPulseSeconds", 1.5D, 0.0D, 10.0D);
 
     public static final ModConfigSpec.ConfigValue<String> ADMIN_ALERT_SOUND = BUILDER
             .comment("The alert sound. Any sound id works, including one from a resourcepack.")
@@ -208,25 +210,19 @@ public final class BackUtilsClientConfig {
         }
     }
 
+    public static int getAdminButtonSize() {
+        try {
+            return ADMIN_BUTTON_SIZE.get();
+        } catch (Exception e) {
+            return 20;
+        }
+    }
+
     public static double getMenuBackgroundOpacity() {
         try {
             return MENU_BACKGROUND_OPACITY.get();
         } catch (Exception e) {
             return 0.5D;
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // Banner read and write
-    // ------------------------------------------------------------------
-
-    /** {@return the banner's text, never null}, so a caller may test it for blankness */
-    public static String getBannerText() {
-        try {
-            String value = BANNER_TEXT.get();
-            return value == null ? "" : value;
-        } catch (Exception e) {
-            return "";
         }
     }
 
@@ -274,16 +270,20 @@ public final class BackUtilsClientConfig {
         apply(BUTTON_MARGIN, value);
     }
 
-    public static void setMenuBackgroundOpacity(double value) {
-        apply(MENU_BACKGROUND_OPACITY, value);
+    public static void setAdminButtonSize(int value) {
+        apply(ADMIN_BUTTON_SIZE, value);
     }
 
-    // ------------------------------------------------------------------
-    // Banner write
-    // ------------------------------------------------------------------
+    public static void setAdminAlertIconSize(int value) {
+        apply(ADMIN_ALERT_ICON_SIZE, value);
+    }
 
-    public static void setBannerText(String value) {
-        apply(BANNER_TEXT, value == null ? "" : value);
+    public static void setAdminAlertPulseSeconds(double value) {
+        apply(ADMIN_ALERT_PULSE, value);
+    }
+
+    public static void setMenuBackgroundOpacity(double value) {
+        apply(MENU_BACKGROUND_OPACITY, value);
     }
 
     // ------------------------------------------------------------------
@@ -303,6 +303,22 @@ public final class BackUtilsClientConfig {
             return ADMIN_ALERT_MARKER.get();
         } catch (Exception e) {
             return true;
+        }
+    }
+
+    public static int getAdminAlertIconSize() {
+        try {
+            return ADMIN_ALERT_ICON_SIZE.get();
+        } catch (Exception e) {
+            return 14;
+        }
+    }
+
+    public static double getAdminAlertPulseSeconds() {
+        try {
+            return ADMIN_ALERT_PULSE.get();
+        } catch (Exception e) {
+            return 1.5D;
         }
     }
 
@@ -363,8 +379,5 @@ public final class BackUtilsClientConfig {
             return;
         }
         RoleplayLogOverlay.instance().onConfigChanged();
-        // The banner keeps the components it draws, because the text effects other mods hang off
-        // them have to survive from one frame to the next: a change means those are rebuilt.
-        HudBanner.instance().onConfigChanged();
     }
 }

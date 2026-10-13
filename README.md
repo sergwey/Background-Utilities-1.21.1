@@ -75,19 +75,23 @@ Optional, each one switching a feature off rather than breaking anything:
 ## Configuration
 
 Server settings live in `config/backutils-server.toml` and can also be changed from the
-administrator menu's Config tab; client display settings — including the operator alert's sound,
-volume, pitch and icon, and the banner's text — are in `config/backutils-client.toml`. The mod's
-databases are SQLite files under `serverconfig/backutils/` in the directory a server runs in: the
-game directory for a client's integrated server, and the dedicated server's own directory for a real
-one.
+administrator menu's Config tab — the banner's text among them, since it is the server's text that
+every player's client draws; the purely client display settings, including the operator alert's
+sound, volume, pitch and icon, are in `config/backutils-client.toml`. The mod's databases are SQLite
+files under `serverconfig/backutils/` in the directory a server runs in: the game directory for a
+client's integrated server, and the dedicated server's own directory for a real one.
 
 ## Commands
 
 Everything is permission level 2:
 
 - `/me <action>`, `/sme <action>` — an action line; the silent one is shown to the actor alone
-- `/backutils menu`, `radius`, `actions`, `typing`, `freeze`, `unfreeze`,
-  `profiles sound add|remove|list`
+- `/backutils menu`, `actions`, `typing_sounds`, `sounds add|remove|list` — `sounds` is the palette a
+  chat profile may name: `add <name> <sound id>` stores `name=soundid` in the server's config, a bare
+  name in that list stays what Ember's own preset table resolves, and `list` shows what each name plays
+- `/freeze`, `/unfreeze` — hold a player still, or let them go; naming nobody is yourself
+- `/backutils banner` — the text every player draws beside the log, shown as it was typed;
+  `set <text>` sets it in chat's own markup (`\n` starts a new line) and `clear` draws nothing
 - `/chat radius`, `global`, `local`, `separator local|global`, `silence`
 - `/profile chat|name create|edit|delete|use`, `reload`
 - `/roll`, `/hroll` — `[players] [maximum] [reason]`, each part optional; `/hroll` hides the result
@@ -95,14 +99,8 @@ Everything is permission level 2:
 
 The two effect tools are not commands: they are in the mod's own creative tab.
 
-One command is answered by your own client rather than the server, because it changes only what your
-game draws and has to work on a server without this mod. It needs no permission, is answered in your
-chat, and is the only `/backutils` path the client takes for itself — every other one is sent to the
-server as before:
-
-- `/backutils banner` — the text it currently draws, shown as it was typed
-- `/backutils banner set <text>` — set it, in chat's own markup; `\n` starts a new line
-- `/backutils banner clear` — draw nothing
+The banner is a server setting rather than a client one: an operator sets it once and every player is
+sent it, and a client without this mod draws none.
 
 ## Building
 

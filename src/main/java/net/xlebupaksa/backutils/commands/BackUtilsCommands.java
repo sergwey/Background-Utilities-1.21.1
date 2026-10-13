@@ -7,26 +7,28 @@ import com.mojang.brigadier.context.CommandContext;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.arguments.EntityArgument;
-import net.minecraft.commands.arguments.ResourceLocationArgument;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.xlebupaksa.backutils.BackUtilsConfig;
+import net.xlebupaksa.backutils.data.MarkupUtil;
 import net.xlebupaksa.backutils.freeze.FreezeState;
 import net.xlebupaksa.backutils.network.AdminAlerts;
 import net.xlebupaksa.backutils.network.AdminNetwork;
+import net.xlebupaksa.backutils.network.BannerTextNetwork;
 import net.xlebupaksa.backutils.profile.ProfileLoader;
 import net.xlebupaksa.backutils.profile.ProfileSound;
 
 import java.util.List;
 
 /**
- * {@code /backutils} — the server configuration root: how far the log reaches, whether actions are
- * recorded at all, and what the typing effect sounds like. Running it bare reports the current
- * settings. The chat separators live under {@code /chat}.
+ * {@code /backutils} — the server configuration root: whether actions are recorded at all, what the
+ * typing effect sounds like, the banner text drawn beside the log's button, and the palette of sounds
+ * a chat profile may name. Running it bare reports the current settings. The chat separators live
+ * under {@code /chat}; {@code /freeze} and {@code /unfreeze} are roots of their own, registered
+ * beside this one.
  */
 public class BackUtilsCommands {
 
@@ -39,6 +41,22 @@ public class BackUtilsCommands {
     public void onRegisterCommands(RegisterCommandsEvent event) {
         CommandDispatcher<CommandSourceStack> d = event.getDispatcher();
 
+        // /freeze [player] and /unfreeze [player] - holding a player still, and letting them go. No
+        // player named is the sender, which is how an operator checks what being held is like before
+        // doing it to somebody else. Roots of their own rather than nodes under /backutils: these are
+        // reached for while something is going wrong, so the name that has to be got right is the
+        // short one.
+        d.register(Commands.literal("freeze")
+                .requires(s -> s.hasPermission(ProfileLoader.PROFILE_PERMISSION_LEVEL))
+                .executes(this::freezeSelf)
+                .then(Commands.argument("player", EntityArgument.player())
+                        .executes(this::freezeTarget)));
+        d.register(Commands.literal("unfreeze")
+                .requires(s -> s.hasPermission(ProfileLoader.PROFILE_PERMISSION_LEVEL))
+                .executes(this::unfreezeSelf)
+                .then(Commands.argument("player", EntityArgument.player())
+                        .executes(this::unfreezeTarget)));
+
         d.register(Commands.literal("backutils")
                 .requires(s -> s.hasPermission(ProfileLoader.PROFILE_PERMISSION_LEVEL))
 
@@ -47,30 +65,13 @@ public class BackUtilsCommands {
                 // /backutils menu - opens the administrator menu on the sender's client.
                 .then(Commands.literal("menu").executes(this::openMenu))
 
-                // /backutils freeze [player] and /backutils unfreeze [player] - holding a player
-                // still, and letting them go. No player named is the sender, which is how an operator
-                // checks what being held is like before doing it to somebody else.
-                .then(Commands.literal("freeze")
-                        .executes(this::freezeSelf)
-                        .then(Commands.argument("player", EntityArgument.player())
-                                .executes(this::freezeTarget)))
-                .then(Commands.literal("unfreeze")
-                        .executes(this::unfreezeSelf)
-                        .then(Commands.argument("player", EntityArgument.player())
-                                .executes(this::unfreezeTarget)))
-
-                .then(Commands.literal("radius")
-                        .executes(this::radiusGet)
-                        .then(Commands.argument("blocks", DoubleArgumentType.doubleArg(0.0D, 512.0D))
-                                .executes(this::radiusSet)))
-
                 .then(Commands.literal("actions")
                         .then(Commands.literal("true").executes(ctx -> setActions(ctx, true)))
                         .then(Commands.literal("false").executes(ctx -> setActions(ctx, false))))
 
-                // /backutils typing on | off
-                // /backutils typing minecraft:block.note_block.snare 0.3 1.5
-                .then(Commands.literal("typing")
+                // /backutils typing_sounds on | off
+                // /backutils typing_sounds minecraft:block.note_block.snare 0.3 1.5
+                .then(Commands.literal("typing_sounds")
                         .executes(this::typingGet)
                         .then(Commands.literal("on").executes(ctx -> setTyping(ctx, true)))
                         .then(Commands.literal("off").executes(ctx -> setTyping(ctx, false)))
@@ -83,25 +84,42 @@ public class BackUtilsCommands {
                                         .then(Commands.argument("pitch", DoubleArgumentType.doubleArg(0.5D, 2.0D))
                                                 .executes(this::typingSet)))))
 
-                // /backutils profiles sound add <sound>
-                // /backutils profiles sound remove <sound>
+                // /backutils banner set <text>
+                // /backutils banner clear
+                // /backutils banner          - what it says now
                 //
-                // The palette a player's chat profile may choose from. It lives here rather than in
-                // the client menu because it is a server decision: Ember plays any sound id, and
-                // this list is what limits the choice.
-                .then(Commands.literal("profiles")
-                        .executes(this::profileSoundList)
-                        .then(Commands.literal("sound")
-                                .executes(this::profileSoundList)
-                                .then(Commands.literal("list").executes(this::profileSoundList))
-                                .then(Commands.literal("add")
-                                        .then(Commands.argument("sound", ResourceLocationArgument.id())
+                // The text drawn beside the log's menu button, and a server setting rather than a
+                // client one: an operator sets it once and every client is sent it, where a
+                // client-side text would be seen by whoever typed the command and by nobody else.
+                // This tree is the only one holding `banner` - the client tree that used to answer
+                // it is gone - so nothing on the client can shadow this path or keep the server
+                // from ever seeing it.
+                .then(Commands.literal("banner")
+                        .executes(this::bannerGet)
+                        .then(Commands.literal("set")
+                                .then(Commands.argument("text", StringArgumentType.greedyString())
+                                        .executes(this::bannerSet)))
+                        .then(Commands.literal("clear").executes(this::bannerClear)))
+
+                // /backutils sounds add <name> <sound id>
+                // /backutils sounds list
+                // /backutils sounds remove <name>
+                //
+                // The palette a player's chat profile may name. It lives here rather than in the
+                // client menu because it is a server decision: a profile stores the name, Ember
+                // cannot know that name, and this list is what decides the id it plays.
+                .then(Commands.literal("sounds")
+                        .executes(this::soundList)
+                        .then(Commands.literal("list").executes(this::soundList))
+                        .then(Commands.literal("add")
+                                .then(Commands.argument("name", StringArgumentType.string())
+                                        .then(Commands.argument("sound", StringArgumentType.string())
                                                 .suggests(ProfileSoundSuggestions.AVAILABLE)
-                                                .executes(this::profileSoundAdd)))
-                                .then(Commands.literal("remove")
-                                        .then(Commands.argument("sound", ResourceLocationArgument.id())
-                                                .suggests(ProfileSoundSuggestions.PALETTE)
-                                                .executes(this::profileSoundRemove)))))
+                                                .executes(this::soundAdd))))
+                        .then(Commands.literal("remove")
+                                .then(Commands.argument("name", StringArgumentType.string())
+                                        .suggests(ProfileSoundSuggestions.PALETTE)
+                                        .executes(this::soundRemove))))
         );
     }
 
@@ -196,33 +214,14 @@ public class BackUtilsCommands {
         ctx.getSource().sendSuccess(() -> Component.literal(
                 "Background Utils - radius " + BackUtilsConfig.getLogRadius()
                         + ", actions " + (BackUtilsConfig.isActionLoggingEnabled() ? "on" : "off")
-                        + ", typing " + (BackUtilsConfig.isTypingEnabled() ? "on" : "off")
+                        + ", typing_sounds " + (BackUtilsConfig.isTypingEnabled() ? "on" : "off")
                         + ".\nChat settings, including the separators, are under /chat."), false);
         return 1;
     }
 
     // ------------------------------------------------------------------
-    // Witness radius and action recording
+    // Action recording
     // ------------------------------------------------------------------
-
-    private int radiusGet(CommandContext<CommandSourceStack> ctx) {
-        ctx.getSource().sendSuccess(() -> Component.literal(
-                "Action log radius: " + BackUtilsConfig.getLogRadius() + " blocks."), false);
-        return 1;
-    }
-
-    private int radiusSet(CommandContext<CommandSourceStack> ctx) {
-        try {
-            double blocks = DoubleArgumentType.getDouble(ctx, "blocks");
-            BackUtilsConfig.setLogRadius(blocks);
-            ctx.getSource().sendSuccess(() -> Component.literal(
-                    "Action log radius set to " + blocks + " blocks."), false);
-            return 1;
-        } catch (Exception e) {
-            ctx.getSource().sendFailure(Component.literal("Error: " + e.getMessage()));
-            return 0;
-        }
-    }
 
     private int setActions(CommandContext<CommandSourceStack> ctx, boolean enabled) {
         try {
@@ -318,39 +317,109 @@ public class BackUtilsCommands {
     }
 
     // ------------------------------------------------------------------
+    // The banner
+    // ------------------------------------------------------------------
+
+    /** Reports the text, drawn as it was typed so its markup is readable rather than applied. */
+    private int bannerGet(CommandContext<CommandSourceStack> ctx) {
+        String text = BackUtilsConfig.getBannerText();
+        if (text.isBlank()) {
+            ctx.getSource().sendSuccess(() -> Component.literal(
+                    "No banner text. Set one with /backutils banner set <text>; \\n starts a new"
+                            + " line."), false);
+            return 1;
+        }
+        ctx.getSource().sendSuccess(() -> Component.literal("Banner: ")
+                .append(MarkupUtil.asLiteral(text)), false);
+        return 1;
+    }
+
+    private int bannerSet(CommandContext<CommandSourceStack> ctx) {
+        try {
+            String text = StringArgumentType.getString(ctx, "text");
+            setBanner(text);
+            ctx.getSource().sendSuccess(() -> Component.literal("Banner set: ")
+                    .append(MarkupUtil.asLiteral(text)), false);
+            return 1;
+        } catch (Exception e) {
+            ctx.getSource().sendFailure(Component.literal("Error: " + e.getMessage()));
+            return 0;
+        }
+    }
+
+    private int bannerClear(CommandContext<CommandSourceStack> ctx) {
+        try {
+            setBanner("");
+            ctx.getSource().sendSuccess(() -> Component.literal("Banner text cleared."), false);
+            return 1;
+        } catch (Exception e) {
+            ctx.getSource().sendFailure(Component.literal("Error: " + e.getMessage()));
+            return 0;
+        }
+    }
+
+    /**
+     * Writes the text and tells every client, in that order.
+     *
+     * <p>None of them reads this file itself, so a text that is stored but not sent would be stored
+     * for nobody.
+     */
+    private static void setBanner(String text) {
+        BackUtilsConfig.setBannerText(text);
+        BannerTextNetwork.broadcast();
+    }
+
+    // ------------------------------------------------------------------
     // The profile sound palette
     // ------------------------------------------------------------------
 
-    private int profileSoundList(CommandContext<CommandSourceStack> ctx) {
+    private int soundList(CommandContext<CommandSourceStack> ctx) {
         List<String> sounds = BackUtilsConfig.getProfileSounds();
         if (sounds.isEmpty()) {
             ctx.getSource().sendSuccess(() -> Component.literal(
-                    "No profile sounds set up. Add one with /backutils profiles sound add <sound>."),
+                    "No profile sounds set up. Add one with /backutils sounds add <name> <sound id>."),
                     false);
             return 1;
         }
         ctx.getSource().sendSuccess(() -> Component.literal(
                 "Profile sounds (" + sounds.size() + "), played at volume "
-                        + ProfileSound.VOLUME + ": " + String.join(", ", sounds)), false);
+                        + ProfileSound.VOLUME + ":"), false);
+        // One line each, and each say what Ember is handed: an alias is its id, a bare entry is
+        // whatever it is, which is how an operator sees what a profile's name will actually play.
+        for (String entry : sounds) {
+            ctx.getSource().sendSuccess(() -> Component.literal("  " + ProfileSound.describe(entry)),
+                    false);
+        }
         return 1;
     }
 
-    private int profileSoundAdd(CommandContext<CommandSourceStack> ctx) {
+    private int soundAdd(CommandContext<CommandSourceStack> ctx) {
         try {
-            String sound = profileSoundName(ctx);
-            if (sound == null) {
-                ctx.getSource().sendFailure(Component.literal(
-                        "Unknown sound. Pick one from the list, or use an id such as "
-                                + "minecraft:block.note_block.bell."));
+            String name = unquote(StringArgumentType.getString(ctx, "name")).trim();
+            String sound = unquote(StringArgumentType.getString(ctx, "sound")).trim();
+            List<String> palette = BackUtilsConfig.getProfileSounds();
+
+            // The name is the part a profile stores, so it is checked against the palette as it is;
+            // the id only has to be shaped like one, because the pack that holds it belongs to the
+            // client that hears it and this server has never seen it.
+            String nameProblem = ProfileSound.checkName(name, palette);
+            if (nameProblem != null) {
+                ctx.getSource().sendFailure(Component.literal(nameProblem));
                 return 0;
             }
-            if (!BackUtilsConfig.addProfileSound(sound)) {
+            String idProblem = ProfileSound.checkId(sound);
+            if (idProblem != null) {
+                ctx.getSource().sendFailure(Component.literal(idProblem));
+                return 0;
+            }
+
+            if (!BackUtilsConfig.addProfileSound(ProfileSound.alias(name, sound))) {
                 ctx.getSource().sendFailure(Component.literal(
-                        "'" + sound + "' is already one of the profile sounds."));
+                        "'" + name + "' is already one of the profile sounds."));
                 return 0;
             }
             ctx.getSource().sendSuccess(() -> Component.literal(
-                    "Added " + sound + " to the profile sounds."), false);
+                    "Added " + name + " -> " + sound + " to the profile sounds."), false);
             return 1;
         } catch (Exception e) {
             ctx.getSource().sendFailure(Component.literal("Error: " + e.getMessage()));
@@ -358,36 +427,21 @@ public class BackUtilsCommands {
         }
     }
 
-    private int profileSoundRemove(CommandContext<CommandSourceStack> ctx) {
+    private int soundRemove(CommandContext<CommandSourceStack> ctx) {
         try {
-            String sound = profileSoundName(ctx);
-            if (sound == null) {
-                ctx.getSource().sendFailure(Component.literal("Unknown sound."));
-                return 0;
-            }
-            if (!BackUtilsConfig.removeProfileSound(sound)) {
+            String name = unquote(StringArgumentType.getString(ctx, "name")).trim();
+            if (!BackUtilsConfig.removeProfileSound(name)) {
                 ctx.getSource().sendFailure(Component.literal(
-                        "'" + sound + "' is not one of the profile sounds."));
+                        "'" + name + "' is not one of the profile sounds."));
                 return 0;
             }
             // Profiles already using it fall silent rather than being deleted.
             ctx.getSource().sendSuccess(() -> Component.literal(
-                    "Removed " + sound + ". Profiles using it go silent."), false);
+                    "Removed " + name + ". Profiles using it go silent."), false);
             return 1;
         } catch (Exception e) {
             ctx.getSource().sendFailure(Component.literal("Error: " + e.getMessage()));
             return 0;
         }
-    }
-
-    /** {@return the sound to store, or null when it is neither registered nor one of Ember's presets};
-     * a bare preset arrives as {@code minecraft:click} and is mapped back to the bare word. */
-    private static String profileSoundName(CommandContext<CommandSourceStack> ctx) {
-        ResourceLocation id = ResourceLocationArgument.getId(ctx, "sound");
-        if (BuiltInRegistries.SOUND_EVENT.containsKey(id)) return id.toString();
-        if ("minecraft".equals(id.getNamespace()) && ProfileSound.isPreset(id.getPath())) {
-            return id.getPath();
-        }
-        return null;
     }
 }

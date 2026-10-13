@@ -302,8 +302,10 @@ public final class ProfileNetwork {
                     activeId > 0L && profile.id() == activeId));
         }
 
+        // The names, not the entries: a player picks a name, and the id behind it is not the client's
+        // business — the server is the only side that resolves one, and only when the line is built.
         PacketDistributor.sendToPlayer(player,
-                new ProfileListPayload(rows, BackUtilsConfig.getProfileSounds()));
+                new ProfileListPayload(rows, ProfileSound.names(BackUtilsConfig.getProfileSounds())));
     }
 
     /** Answers the change: to the server log, and to the window that asked, never to chat. */

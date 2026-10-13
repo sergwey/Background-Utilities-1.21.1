@@ -376,8 +376,9 @@ public final class AdminProfileNetwork {
             }
         }
 
+        // The names rather than the entries, for the reason ProfileNetwork.sendList gives.
         PacketDistributor.sendToPlayer(admin, new AdminProfileListPayload(names, player, rows,
-                BackUtilsConfig.getProfileSounds()));
+                ProfileSound.names(BackUtilsConfig.getProfileSounds())));
     }
 
     // Helpers

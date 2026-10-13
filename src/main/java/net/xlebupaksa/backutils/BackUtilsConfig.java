@@ -211,37 +211,32 @@ public final class BackUtilsConfig {
                     "player's own music slider still applies.")
             .defineInRange("menuMusicVolume", 1.0D, 0.0D, 2.0D);
 
+    // The operator corner in the bottom-right of the screen: the button that opens the administrator
+    // menu, and the alert icon above it. Its size, its icon and that icon's fade are client settings,
+    // in BackUtilsClientConfig: the corner is drawn for operators alone, so the rows that change it
+    // are shown to an operator alone - but on the client that is looking at it, since they are about
+    // that player's own screen rather than about the server.
+
+    // ------------------------------------------------------------------
+    // The banner beside the log's button
+    // ------------------------------------------------------------------
+
     /**
-     * The operator corner in the bottom-right of the screen: the button that opens the administrator
-     * menu, and the alert icon above it.
+     * Text that stays on screen beside the log's menu button. A server setting, like the menu music
+     * and for the same reason: what the server says is what every player sees, where a client-side
+     * text would be seen by whoever set it and by nobody else.
      *
-     * <p>These live in the server's config rather than each client's because the corner is drawn for
-     * operators alone - {@code Operators.isOperator()} decides that, and the alert icon needs an
-     * unread alert as well. Who may change it and who sees it are therefore the same people, and a
-     * corner whose size each client decided for itself would be the wrong size on every client that
-     * had never opened this menu.
+     * <p>Empty is the feature switched off, which is what a fresh server holds, so an install that
+     * does nothing with it draws nothing new.
      */
-    public static final ModConfigSpec.IntValue ADMIN_BUTTON_SIZE = BUILDER
-            .comment("Size of the administrator button in pixels. The alert icon above it is",
-                    "centred on the button whatever size either of them is.")
-            .defineInRange("adminButtonSize", 20, 8, 128);
-
-    public static final ModConfigSpec.IntValue ADMIN_ALERT_ICON_SIZE = BUILDER
-            .comment("Size of the alert icon above that button, in pixels. Keep it smaller than",
-                    "the button it is centred on.")
-            .defineInRange("adminAlertIconSize", 14, 4, 64);
-
-    /**
-     * The fade the alert icon is drawn with, which is not the same thing as a fade drawn into the
-     * sprite's frames: the sprite shader discards anything under alpha 0.1 before the colour
-     * modulator, so a fade carried by the frames is cut off rather than reaching zero. Zero here
-     * leaves the icon exactly as its frames have it.
-     */
-    public static final ModConfigSpec.DoubleValue ADMIN_ALERT_PULSE_SECONDS = BUILDER
-            .comment("How long the alert icon takes to fade down and back up, in seconds.",
-                    "It never fades out completely. Set 0 to draw it still instead, which",
-                    "leaves a multi-frame sprite to fade however its own frames do.")
-            .defineInRange("adminAlertPulseSeconds", 1.5D, 0.0D, 10.0D);
+    public static final ModConfigSpec.ConfigValue<String> BANNER_TEXT = BUILDER
+            .comment("Text drawn permanently beside the log's menu button, and so above the log",
+                    "itself. Empty draws nothing. Written in the same markup as chat, so",
+                    "colours, gradients, animations and sounds are tags in the text, and another",
+                    "mod's inline text - Inline's [item:diamond_sword] and the like - is drawn as",
+                    "what it names, because this goes to the game's font exactly as chat does.",
+                    "A backslash followed by n starts a new line. See /backutils banner.")
+            .define("bannerText", "");
 
     // ------------------------------------------------------------------
     // Typewriter effect for log entries
@@ -295,17 +290,26 @@ public final class BackUtilsConfig {
     // ------------------------------------------------------------------
 
     /**
-     * The sounds a profile may play as its text types out, and the only ones it may use: either
-     * Ember's preset names (click, whoosh, static, magic, tick, pop, thud, shatter) or a full sound
-     * id such as {@code minecraft:block.note_block.bell}. An operator adds to it with
-     * {@code /backutils profiles sound add <sound>}.
+     * The palette of sounds a profile may name: what its text sounds like as it types itself out.
+     *
+     * <p>Each entry is either a bare Ember preset name (click, whoosh, static, magic, tick, pop, thud,
+     * shatter), which Ember resolves itself, or a name of the operator's own and the sound id it plays,
+     * written {@code name=soundid}. A profile stores the name, so the operator can change what a name
+     * sounds like without touching a profile. An operator edits the palette with
+     * {@code /backutils sounds add <name> <sound id>}, {@code remove <name>} and {@code list}.
      */
     public static final ModConfigSpec.ConfigValue<List<? extends String>> PROFILE_SOUNDS = BUILDER
-            .comment("Sounds a chat profile may be set to play as its text types out. Players",
-                    "choose from this list in the profile editor; anything not on it is",
-                    "refused by the server. Both Ember presets (click, pop, tick, ...) and full",
-                    "sound ids (minecraft:block.note_block.bell) are allowed. The volume is",
-                    "fixed at 0.1 for every profile.")
+            .comment("Sounds a chat profile may be set to play as its text types out. Each entry is",
+                    "either a bare Ember preset name (click, whoosh, static, magic, tick, pop, thud,",
+                    "shatter), which Ember resolves itself, or a name of your own and the sound id it",
+                    "should play, written name=soundid, as in bell=minecraft:block.note_block.bell.",
+                    "Players choose from the names in the profile editor; anything not on this list",
+                    "is refused by the server. A profile stores the name, so changing what a name",
+                    "sounds like changes every profile that uses it. The id is resolved on each",
+                    "client, so an id only a resourcepack adds works here as well as a vanilla one,",
+                    "and only the shape of an id is checked on this side. The volume is fixed at 0.1",
+                    "for every profile. Edit it with /backutils sounds add <name> <sound id>,",
+                    "/backutils sounds remove <name> and /backutils sounds list.")
             .defineListAllowEmpty("profileSounds", ProfileSound.PRESETS, () -> "click",
                     sound -> sound instanceof String);
 
@@ -628,46 +632,23 @@ public final class BackUtilsConfig {
     }
 
     // ------------------------------------------------------------------
-    // The operator corner
+    // The banner
     // ------------------------------------------------------------------
 
-    public static int getAdminButtonSize() {
+    /** {@return the banner's text, never null}, so a caller may test it for blankness */
+    public static String getBannerText() {
         try {
-            return ADMIN_BUTTON_SIZE.get();
+            // Empty is a real answer here - the banner switched off - so the fallback is empty too,
+            // and a config that has not loaded yet reads as no banner rather than as none at all.
+            return text(BANNER_TEXT, "");
         } catch (Exception e) {
-            return 20;
+            return "";
         }
     }
 
-    public static void setAdminButtonSize(int value) {
-        ADMIN_BUTTON_SIZE.set(value);
-        ADMIN_BUTTON_SIZE.save();
-    }
-
-    public static int getAdminAlertIconSize() {
-        try {
-            return ADMIN_ALERT_ICON_SIZE.get();
-        } catch (Exception e) {
-            return 14;
-        }
-    }
-
-    public static void setAdminAlertIconSize(int value) {
-        ADMIN_ALERT_ICON_SIZE.set(value);
-        ADMIN_ALERT_ICON_SIZE.save();
-    }
-
-    public static double getAdminAlertPulseSeconds() {
-        try {
-            return ADMIN_ALERT_PULSE_SECONDS.get();
-        } catch (Exception e) {
-            return 1.5D;
-        }
-    }
-
-    public static void setAdminAlertPulseSeconds(double value) {
-        ADMIN_ALERT_PULSE_SECONDS.set(value);
-        ADMIN_ALERT_PULSE_SECONDS.save();
+    public static void setBannerText(String value) {
+        BANNER_TEXT.set(value == null ? "" : value);
+        BANNER_TEXT.save();
     }
 
     // ------------------------------------------------------------------
@@ -782,8 +763,12 @@ public final class BackUtilsConfig {
     // ------------------------------------------------------------------
 
     /**
-     * {@return the sounds a profile may use, cleaned of blanks and duplicates and in the order the
-     * editor should offer them}
+     * {@return the palette's entries, cleaned of blanks and duplicates and in the order the editor
+     * should offer them}
+     *
+     * <p>An entry is a bare name or a {@code name=soundid} alias, exactly as the config file holds it:
+     * what a player chooses and stores is {@link ProfileSound#nameOf} an entry, and what Ember plays is
+     * {@link ProfileSound#resolve}.
      */
     public static List<String> getProfileSounds() {
         try {
@@ -803,23 +788,31 @@ public final class BackUtilsConfig {
         }
     }
 
-    /** {@return false when the sound is already in the palette} */
-    public static boolean addProfileSound(String sound) {
-        if (sound == null || sound.isBlank()) return false;
+    /**
+     * {@return false when an entry already answers to this entry's name}
+     *
+     * <p>The entry is stored as it arrives: the command has already checked the name is free and shaped
+     * like a name and the id like an id, and a bare entry — what the palette has always held — needs no
+     * checking at all. The name is compared ignoring case, the way the profile editor matches one.
+     */
+    public static boolean addProfileSound(String entry) {
+        if (entry == null || entry.isBlank()) return false;
 
         List<String> sounds = new ArrayList<>(getProfileSounds());
-        if (sounds.contains(sound)) return false;
+        if (ProfileSound.taken(ProfileSound.nameOf(entry), sounds)) return false;
 
-        sounds.add(sound);
+        sounds.add(entry);
         PROFILE_SOUNDS.set(List.copyOf(sounds));
         PROFILE_SOUNDS.save();
         return true;
     }
 
-    /** {@return false when the sound was not in the palette} */
-    public static boolean removeProfileSound(String sound) {
+    /** {@return false when no entry in the palette answers to this name} */
+    public static boolean removeProfileSound(String name) {
+        if (name == null || name.isBlank()) return false;
+
         List<String> sounds = new ArrayList<>(getProfileSounds());
-        if (!sounds.remove(sound)) return false;
+        if (!sounds.removeIf(entry -> ProfileSound.nameOf(entry).equalsIgnoreCase(name))) return false;
 
         PROFILE_SOUNDS.set(List.copyOf(sounds));
         PROFILE_SOUNDS.save();

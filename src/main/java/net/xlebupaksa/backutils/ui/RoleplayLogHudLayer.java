@@ -16,6 +16,7 @@ import net.xlebupaksa.backutils.network.AdminConfigCache;
 import net.xlebupaksa.backutils.network.AdminConfigFeedbackCache;
 import net.xlebupaksa.backutils.network.AdminProfileCache;
 import net.xlebupaksa.backutils.network.AdminProfileFeedbackCache;
+import net.xlebupaksa.backutils.network.BannerTextCache;
 import net.xlebupaksa.backutils.network.ProfileFeedbackCache;
 import net.xlebupaksa.backutils.network.ProfileListCache;
 
@@ -103,5 +104,8 @@ public final class RoleplayLogHudLayer {
         AdminProfileFeedbackCache.clear();
         AdminConfigCache.clear();
         AdminConfigFeedbackCache.clear();
+        // The banner is the server's text as much as the settings are, so the next server's own
+        // text is what is drawn from here on rather than the one just left behind.
+        BannerTextCache.clear();
     }
 }

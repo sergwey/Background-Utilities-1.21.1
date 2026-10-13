@@ -74,20 +74,6 @@ public final class AdminConfigNetwork {
 
     // The server's side
 
-    /**
-     * Sends the settings to an operator as they join.
-     *
-     * <p>The administrator corner is drawn from this copy of the settings and is drawn before anyone
-     * has opened the menu, so without this an operator would see the server's defaults until they did.
-     * It goes only to those who may administer: everyone else has nothing to do with these values.
-     */
-    @SubscribeEvent
-    public static void onLoggedIn(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedInEvent event) {
-        if (!(event.getEntity() instanceof ServerPlayer player)) return;
-        if (!AdminNetwork.mayAdminister(player)) return;
-        sendSettings(player);
-    }
-
     private static void onRequest(AdminConfigRequestPayload payload, IPayloadContext context) {
         if (!(context.player() instanceof ServerPlayer player)) return;
         if (!AdminNetwork.mayAdminister(player)) return;
@@ -123,6 +109,11 @@ public final class AdminConfigNetwork {
             for (Map.Entry<String, String> entry : checked.entrySet()) {
                 BackUtilsSettings.apply(entry.getKey(), entry.getValue());
             }
+
+            // A batch may have moved the banner, which every client draws from the server's own
+            // text: the window that asked is answered the way it always was, and everybody else is
+            // told as well, or the one operator who edited it would be the only one who saw it.
+            BannerTextNetwork.broadcast();
 
             feedback(player, true, saved(checked));
             sendSettings(player);

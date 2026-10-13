@@ -36,9 +36,6 @@ public final class ClientSetup {
         // Space over an item in an inventory, which opens the item editor on it.
         NeoForge.EVENT_BUS.register(ItemEditorGesture.class);
         ClientConfigLoader.register(modEventBus);
-        // The banner beside the log's button, and the client command that configures it. Both are
-        // this client's own settings, so neither is registered on the server's command tree.
-        NeoForge.EVENT_BUS.register(HudBannerCommands.class);
         ChatScreenOverlayHandler.register();
         AdminCornerHandler.register();
     }

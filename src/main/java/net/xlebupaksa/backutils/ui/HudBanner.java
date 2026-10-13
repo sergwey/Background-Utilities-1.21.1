@@ -6,9 +6,9 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
-import net.xlebupaksa.backutils.client.BackUtilsClientConfig;
 import net.xlebupaksa.backutils.client.InlineSupport;
 import net.xlebupaksa.backutils.data.MarkupWrap;
+import net.xlebupaksa.backutils.network.BannerTextCache;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -22,6 +22,10 @@ import java.util.Objects;
  * Ember parses the markup inside it; a mod such as Inline, whose matches ride on styles, is asked to
  * parse it first - see {@link InlineSupport} for why that has to be asked for rather than simply
  * drawn. Neither is depended on: the string is drawn as it was typed.
+ *
+ * <p>The string is the server's, sent to this client when it joins and again whenever an operator
+ * changes it, so every player reads the same banner; {@link BannerTextCache} holds what arrived, and
+ * nothing this client set for itself is drawn here.
  *
  * <p>It is drawn white and shadowed, which is chat's own treatment - the log's, too - rather than
  * settings of its own. A colour a player wants is a {@code <color>} tag in the text, and the drop
@@ -71,7 +75,7 @@ public final class HudBanner {
 
     /** {@return true when there is text to draw}, an empty one being the feature switched off */
     public boolean visible() {
-        return !BackUtilsClientConfig.getBannerText().isBlank();
+        return !BannerTextCache.text().isBlank();
     }
 
     /** Rebuilds what is drawn on the next frame; called when the text changes. */
@@ -113,7 +117,7 @@ public final class HudBanner {
      * is the same work over the same string, and a row that is rebuilt is a row that is re-measured.
      */
     private void rebuildIfStale(int guiWidth) {
-        String text = BackUtilsClientConfig.getBannerText();
+        String text = BannerTextCache.text();
         int available = available(guiWidth);
         if (!stale && Objects.equals(text, builtFrom) && available == builtFor) return;
 

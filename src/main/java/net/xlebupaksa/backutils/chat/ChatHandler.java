@@ -238,14 +238,18 @@ public class ChatHandler {
      *
      * <p>Ember gives every character of a literal containing a typewriter span a place in the reveal, so the name and
      * separator sit in a markup-free literal of their own and the effect and its sound stay confined to the message; the
-     * tag and the text it wraps stay one literal, which Ember needs to apply it at all.
+     * tag and the text it wraps stay one literal, which Ember needs to apply it at all. The sound the profile stored is a
+     * name in the server's palette rather than an id Ember would know, so the palette goes with it and
+     * {@link ProfileSound#wrap} does the looking up.
      */
     public static Component composeMessage(String displayedName, String separator, String format,
                                            String playerName, String message, String sound,
                                            boolean typing, double speed, double pitch) {
         String body = chatFormat(format, playerName, message);
         // Gated on the same switch as the log's typing effect, and the volume is ProfileSound's, not the profile's.
-        if (typing) body = ProfileSound.wrap(body, sound, speed, pitch);
+        if (typing) {
+            body = ProfileSound.wrap(body, sound, speed, pitch, BackUtilsConfig.getProfileSounds());
+        }
         return Component.literal(displayedName + separator).append(Component.literal(body));
     }
 

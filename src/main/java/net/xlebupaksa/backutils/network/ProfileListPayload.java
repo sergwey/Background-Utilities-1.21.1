@@ -10,10 +10,12 @@ import net.xlebupaksa.backutils.BackUtils;
 import java.util.List;
 
 /**
- * The player's chat profiles, and the sounds they may choose from.
+ * The player's chat profiles, and the names of the sounds they may choose from.
  *
  * <p>Sent on request, and again after every change, so the list on screen is the list in the
- * database. The palette travels with it because the editor's sound dropdown is the server's.
+ * database. The palette travels with it because the editor's sound dropdown is the server's — the
+ * names only, since a player picks a name and the id behind it is looked up on the server, where the
+ * line that carries it is built.
  */
 public record ProfileListPayload(List<Row> rows, List<String> sounds) implements CustomPacketPayload {
 

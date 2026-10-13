@@ -633,7 +633,11 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         if (player == null) return false;
         net.xlebupaksa.backutils.data.ProfileOptions options =
                 player.getData(net.xlebupaksa.backutils.data.ModAttachments.OPTIONS.get());
-        return options != null && options.canManageNames();
+        // An operator counts, for the reason the menu's own copy of this gives: they can already rename
+        // anyone through the administrator menu, so refusing them a name profile of their own is a rule
+        // that only looks like one.
+        return net.xlebupaksa.backutils.client.Operators.isOperator()
+                || (options != null && options.canManageNames());
     }
 
     private static List<String> instructionLinesFor(boolean admin, boolean names) {

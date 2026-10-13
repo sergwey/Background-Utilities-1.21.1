@@ -352,9 +352,10 @@ public final class BackUtilsMenuScreen extends Screen {
         scroll.addScrollViewChild(sliderRow(built, "backutils.menu.setting.log_button_margin", 0f, 200f,
                 BackUtilsClientConfig.getButtonMargin(), " px", true,
                 v -> BackUtilsClientConfig.setButtonMargin(Math.round(v))));
-        // The administrator corner's button, its alert icon and that icon's fade are not here: they
-        // are server settings, changed from the administrator menu, because the corner is drawn for
-        // operators alone. What is left below is the alert this client chooses to hear.
+        // The administrator corner's own button, its alert icon and that icon's fade are client
+        // settings like the rest of this tab, but they are built with the alert rows below rather than
+        // here: the corner exists for operators alone, and a player who will never see it has no
+        // business being told it can be sized.
         scroll.addScrollViewChild(sliderRow(built, "backutils.menu.setting.backdrop_opacity", 0f, 1f,
                 (float) BackUtilsClientConfig.getMenuBackgroundOpacity(), "", false,
                 v -> BackUtilsClientConfig.setMenuBackgroundOpacity(v)));
@@ -390,6 +391,18 @@ public final class BackUtilsMenuScreen extends Screen {
         scroll.addScrollViewChild(toggleRow(built, "backutils.menu.alerts.icon",
                 BackUtilsClientConfig.isAdminAlertMarkerEnabled(),
                 BackUtilsClientConfig::setAdminAlertMarker));
+        // The corner itself, which only ever exists for an operator: its button, the icon above it and
+        // the fade that icon pulses with. Client settings all three, since they are about this player's
+        // own screen - which is why they are here rather than in the server's settings.
+        scroll.addScrollViewChild(sliderRow(built, "backutils.menu.setting.admin_button_size", 8f, 128f,
+                BackUtilsClientConfig.getAdminButtonSize(), " px", true,
+                v -> BackUtilsClientConfig.setAdminButtonSize(Math.round(v))));
+        scroll.addScrollViewChild(sliderRow(built, "backutils.menu.alerts.icon_size", 4f, 64f,
+                BackUtilsClientConfig.getAdminAlertIconSize(), " px", true,
+                v -> BackUtilsClientConfig.setAdminAlertIconSize(Math.round(v))));
+        scroll.addScrollViewChild(sliderRow(built, "backutils.menu.alerts.icon_fade", 0f, 10f,
+                (float) BackUtilsClientConfig.getAdminAlertPulseSeconds(), " s", false,
+                v -> BackUtilsClientConfig.setAdminAlertPulseSeconds(v)));
     }
 
     /**
@@ -531,14 +544,19 @@ public final class BackUtilsMenuScreen extends Screen {
     /**
      * {@return true when this client may manage name profiles}
      *
-     * <p>The server's own answer, synced with the rest of the profile options.
+     * <p>The server's own answer, synced with the rest of the profile options - and an operator counts,
+     * because the corner and the administrator menu are already theirs: an operator who can rename
+     * anyone through the menu but cannot make a name profile for themselves is a rule that only looks
+     * like a rule. The permission stays the gate for everybody else, which is what keeps names - the
+     * thing everyone else reads a player by - out of reach of a player who has not been trusted with
+     * them.
      */
     private static boolean canManageNames() {
         net.minecraft.client.player.LocalPlayer player = Minecraft.getInstance().player;
         if (player == null) return false;
         ProfileOptions options =
                 player.getData(net.xlebupaksa.backutils.data.ModAttachments.OPTIONS.get());
-        return options != null && options.canManageNames();
+        return Operators.isOperator() || (options != null && options.canManageNames());
     }
 
     private void onProfileKindChanged(Tab tab) {

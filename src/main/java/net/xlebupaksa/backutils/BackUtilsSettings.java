@@ -133,17 +133,11 @@ public final class BackUtilsSettings {
                     BackUtilsConfig.MENU_MUSIC_VOLUME, BackUtilsConfig::getMenuMusicVolume,
                     BackUtilsConfig::setMenuMusicVolume),
 
-            // The operator corner: read as numbers and written back as the integers two of them are,
-            // the way the roll's own maximum is.
-            number("adminButtonSize", "Admin button size", Group.MENU,
-                    BackUtilsConfig.ADMIN_BUTTON_SIZE, () -> (double) BackUtilsConfig.getAdminButtonSize(),
-                    value -> BackUtilsConfig.setAdminButtonSize((int) Math.round(value))),
-            number("adminAlertIconSize", "Admin alert icon size", Group.MENU,
-                    BackUtilsConfig.ADMIN_ALERT_ICON_SIZE, () -> (double) BackUtilsConfig.getAdminAlertIconSize(),
-                    value -> BackUtilsConfig.setAdminAlertIconSize((int) Math.round(value))),
-            number("adminAlertPulseSeconds", "Admin alert icon fade", Group.MENU,
-                    BackUtilsConfig.ADMIN_ALERT_PULSE_SECONDS, BackUtilsConfig::getAdminAlertPulseSeconds,
-                    BackUtilsConfig::setAdminAlertPulseSeconds),
+            // The banner hangs off the log's menu button, which is why it is a menu setting even
+            // though what it belongs to is the log.
+            text("bannerText", "Banner text", Group.MENU,
+                    BackUtilsConfig.BANNER_TEXT, BackUtilsConfig::getBannerText,
+                    BackUtilsConfig::setBannerText, BackUtilsSettings::trimmed),
 
             number("rollMax", "Default maximum", Group.ROLLS,
                     BackUtilsConfig.ROLL_MAX, () -> (double) BackUtilsConfig.getRollMax(),
@@ -189,7 +183,7 @@ public final class BackUtilsSettings {
                     BackUtilsConfig.ROLL_SOUND_PITCH, BackUtilsConfig::getRollSoundPitch,
                     BackUtilsConfig::setRollSoundPitch),
 
-            list("profileSounds", "Profile sounds", Group.PROFILES,
+            list("profileSounds", "Profile sounds (name=soundid or preset)", Group.PROFILES,
                     BackUtilsConfig.PROFILE_SOUNDS,
                     () -> String.join(", ", BackUtilsConfig.getProfileSounds()))
     );
@@ -330,7 +324,7 @@ public final class BackUtilsSettings {
                 return value == null ? "" : value;
             }
             case LIST -> throw new IllegalArgumentException(
-                    "Not changed here — use /backutils profiles sound add or remove.");
+                    "Not changed here — use /backutils sounds add, remove or list.");
         }
         throw new IllegalArgumentException("Unknown kind for '" + key + "'.");
     }
@@ -362,6 +356,18 @@ public final class BackUtilsSettings {
     }
 
     /**
+     * {@return the banner's text, with only the whitespace a text field gathers at its edges dropped}
+     *
+     * <p>Deliberately not {@link MarkupUtil#balance}: a closer the operator never typed is drawn as
+     * the literal tag it is, which is the bug that put a visible {@code </typewriter>} at the end of
+     * a banner whose own tag was simply never closed. Empty is allowed, and is the banner switched
+     * off, so nothing here refuses a value.
+     */
+    private static String trimmed(String text) {
+        return text == null ? "" : text.trim();
+    }
+
+    /**
      * {@return the sound id to store for a setting this mod plays itself}
      *
      * <p>Only the shape is checked, never the sound registry. The id is resolved where it is heard: on
@@ -379,7 +385,9 @@ public final class BackUtilsSettings {
     private static String checkSoundId(String text) {
         String value = text == null ? "" : text.trim();
         if (value.isEmpty()) return "";
-        if (ResourceLocation.tryParse(value) == null) {
+        // The shape rule itself is ProfileSound's, where the profile palette is checked by it too, so
+        // the two cannot drift apart into one place that consults the registry and one that does not.
+        if (!ProfileSound.isSoundId(value)) {
             throw new IllegalArgumentException("'" + value
                     + "' is not a sound id. Give one such as minecraft:block.note_block.hat,"
                     + " or leave it empty for silence.");
