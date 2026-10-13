@@ -1,6 +1,5 @@
 package net.xlebupaksa.backutils;
 
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.common.ModConfigSpec;
 import net.xlebupaksa.backutils.data.MarkupUtil;
@@ -365,47 +364,45 @@ public final class BackUtilsSettings {
     /**
      * {@return the sound id to store for a setting this mod plays itself}
      *
-     * <p>Stricter than the typing sound, which Ember itself resolves: a roll sound or a menu track is
-     * played by this mod, so a bare preset name would parse as an id in the default namespace and
-     * then quietly play nothing. Empty is always allowed, and means no sound. The registry is only
-     * consulted when it is up, since a headless test has no game.
+     * <p>Only the shape is checked, never the sound registry. The id is resolved where it is heard: on
+     * the client, whose resourcepacks the server has never seen and whose {@code sounds.json} registers
+     * the events those packs add. A registry check on this side would therefore refuse exactly the
+     * sounds an operator put in their own pack, which are the ones this setting is for as much as the
+     * vanilla ones are - the server can only ever know about its own mods.
+     *
+     * <p>What the shape check still catches is a value that could never play at all: a name with a space
+     * or an upper case letter in it is not an id. A typo that is shaped like one plays nothing, which is
+     * heard the moment the menu opens rather than reported.
+     *
+     * <p>Empty is always allowed, and means no sound.
      */
     private static String checkSoundId(String text) {
         String value = text == null ? "" : text.trim();
         if (value.isEmpty()) return "";
-        ResourceLocation id = ResourceLocation.tryParse(value);
-        if (id == null) {
+        if (ResourceLocation.tryParse(value) == null) {
             throw new IllegalArgumentException("'" + value
                     + "' is not a sound id. Give one such as minecraft:block.note_block.hat,"
                     + " or leave it empty for silence.");
         }
-        try {
-            if (!BuiltInRegistries.SOUND_EVENT.containsKey(id)) {
-                throw new IllegalArgumentException("No sound called '" + value
-                        + "'. Give a full sound id, or leave it empty for silence.");
-            }
-        } catch (IllegalArgumentException refused) {
-            throw refused;
-        } catch (Throwable registryUnavailable) {
-            // Nothing to check against; the id's shape was already checked above.
-        }
         return value;
     }
 
-    /** {@return the sound to store for the typing effect}; a namespaced id is checked against the
-     * sound registry, and a bare word is left to Ember's presets. */
+    /**
+     * {@return the sound to store for the typing effect}
+     *
+     * <p>A bare word is left to Ember's presets; a namespaced id only has to be shaped like one, for the
+     * reason {@link #checkSoundId} gives - it is resolved on the client, where a resourcepack's sounds
+     * exist as much as the vanilla ones do.
+     */
     private static String checkSound(String text) {
         String value = text == null ? "" : text.trim();
         if (value.isEmpty()) {
             throw new IllegalArgumentException(
                     "Give a sound id, or one of Ember's presets: " + TYPING_PRESETS + ".");
         }
-        if (value.indexOf(':') >= 0) {
-            ResourceLocation id = ResourceLocation.tryParse(value);
-            if (id == null || !BuiltInRegistries.SOUND_EVENT.containsKey(id)) {
-                throw new IllegalArgumentException("No sound called '" + value
-                        + "'. Give a sound id, or one of Ember's presets: " + TYPING_PRESETS + ".");
-            }
+        if (value.indexOf(':') >= 0 && ResourceLocation.tryParse(value) == null) {
+            throw new IllegalArgumentException("'" + value + "' is not a sound id. Give one such as"
+                    + " minecraft:block.note_block.hat, or one of Ember's presets: " + TYPING_PRESETS + ".");
         }
         return value;
     }

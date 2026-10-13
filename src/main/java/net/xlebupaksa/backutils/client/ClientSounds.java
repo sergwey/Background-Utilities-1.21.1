@@ -9,6 +9,9 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 import net.xlebupaksa.backutils.BackUtils;
 
+import java.util.HashSet;
+import java.util.Set;
+
 /**
  * Plays one named sound for this client.
  *
@@ -19,6 +22,16 @@ import net.xlebupaksa.backutils.BackUtils;
 public final class ClientSounds {
 
     private ClientSounds() {}
+
+    /**
+     * The ids already reported as missing, so a typo is said once rather than every time it is played.
+     *
+     * <p>A sound a client does not have is now an ordinary thing rather than a mistake this end can
+     * refuse at save time: the id is resolved here, so a track an operator added in their resourcepack
+     * exists for the players who have that pack and names nothing for the players who do not. Those
+     * players are told once; a roll that warns on every roll is a log nobody reads.
+     */
+    private static final Set<ResourceLocation> REPORTED = new HashSet<>();
 
     /**
      * Plays a sound from the registry, if it is there.
@@ -37,7 +50,9 @@ public final class ClientSounds {
         SoundEvent event = BuiltInRegistries.SOUND_EVENT.get(location);
         if (event == null) {
             // Warned rather than silent: a sound nobody hears is worse than no sound at all.
-            BackUtils.LOGGER.warn("Sound '{}' does not exist; nothing will be heard.", location);
+            if (REPORTED.add(location)) {
+                BackUtils.LOGGER.warn("Sound '{}' does not exist; nothing will be heard.", location);
+            }
             return;
         }
 

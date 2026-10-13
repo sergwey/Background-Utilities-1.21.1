@@ -286,16 +286,15 @@ public class BackUtilsCommands {
                 return 0;
             }
 
-            // A bare word is passed through to Ember's preset table; a namespaced id is checked
-            // here so a typo is reported instead of failing silently at play time.
-            if (sound.indexOf(':') >= 0) {
-                ResourceLocation id = ResourceLocation.tryParse(sound);
-                if (id == null || !BuiltInRegistries.SOUND_EVENT.containsKey(id)) {
-                    ctx.getSource().sendFailure(Component.literal(
-                            "Unknown sound '" + sound + "'. Give a sound id, or one of Ember's "
-                                    + "presets: " + TYPING_PRESETS + "."));
-                    return 0;
-                }
+            // A bare word is passed through to Ember's preset table; a namespaced id only has to be
+            // shaped like one. It is resolved on the client that hears it, so a resourcepack's sounds
+            // are as valid here as the registry's are, and asking the registry would refuse them.
+            if (sound.indexOf(':') >= 0 && ResourceLocation.tryParse(sound) == null) {
+                ctx.getSource().sendFailure(Component.literal(
+                        "'" + sound + "' is not a sound id. Give one such as "
+                                + "minecraft:block.note_block.hat, or one of Ember's presets: "
+                                + TYPING_PRESETS + "."));
+                return 0;
             }
 
             BackUtilsConfig.setTypingSound(sound, volume, pitch);

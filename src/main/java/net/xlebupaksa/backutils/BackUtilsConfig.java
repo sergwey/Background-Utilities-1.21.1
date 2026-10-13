@@ -202,7 +202,8 @@ public final class BackUtilsConfig {
     public static final ModConfigSpec.ConfigValue<String> MENU_MUSIC = BUILDER
             .comment("Played on a loop for the player who opens the corner menu, and faded out",
                     "when they close it. A full sound id, such as minecraft:music.menu;",
-                    "leave it empty to play nothing.")
+                    "a resourcepack's own sound works too, since the client plays it,",
+                    "and leaving it empty plays nothing.")
             .define("menuMusic", MENU_MUSIC_DEFAULT);
 
     public static final ModConfigSpec.DoubleValue MENU_MUSIC_VOLUME = BUILDER
