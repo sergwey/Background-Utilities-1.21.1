@@ -423,13 +423,12 @@ public final class EffectToolNetwork {
      * The row and the display go together: the display existed to give the effect somewhere to be,
      * and a display left behind would be a prop nobody asked for.
      *
-     * <p><b>Gated at the level every other removal is.</b> Nothing in the message says the sender
-     * has any business with the effect it names — the id is a claim like any other, and a payload
-     * can be sent by a client that has been modified — so without this gate any player could empty
-     * the world of effects one id at a time. The cost is that a world where no operator is watching
-     * keeps a row for an effect that has already played out; that row is replayed once to a player
-     * who arrives later and reported by them in turn, which is a waste rather than a loss, and it is
-     * the better side of the trade by a long way.
+     * <p>The claim is bounded instead of gated: a report is worth acting on only for an effect the
+     * reporter could be watching, so the row has to be in this player's own dimension and near
+     * enough to be on their screen. That is what stops any client emptying the world of effects
+     * one id at a time, without the cost a permission gate had — an operator is not always
+     * watching when an effect finishes, and a row that outlives its effect is replayed to every
+     * player who arrives afterwards, which is an effect that plays again and again for ever.
      */
     private static void onEnded(EffectEndedPayload payload, IPayloadContext context) {
         if (!(context.player() instanceof ServerPlayer player)) return;
@@ -437,12 +436,6 @@ public final class EffectToolNetwork {
         EffectData store = BackUtils.data() == null ? null : BackUtils.data().effects();
         if (store == null) return;
 
-        // The claim is bounded instead of gated: a report is worth acting on only for an effect the
-        // reporter could be watching, so the row has to be in this player's own dimension and near
-        // enough to be on their screen. That is what stops any client emptying the world of effects
-        // one id at a time, without the cost a permission gate had — an operator is not always
-        // watching when an effect finishes, and a row that outlives its effect is replayed to every
-        // player who arrives afterwards, which is an effect that plays again and again for ever.
         for (PlacedEffect effect : store.all()) {
             if (effect.id() != payload.effectId()) continue;
             if (!effect.placement().dimension()

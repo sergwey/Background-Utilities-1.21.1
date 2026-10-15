@@ -9,10 +9,15 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
-/** Base class for the mod's SQLite databases: one file, one table, one worker thread each. */
+/**
+ * Base class for the mod's SQLite databases: one file each, with the table that file holds.
+ *
+ * <p>Every statement runs on the thread that asks for it — the server thread, in every caller this
+ * has — and opens, uses and closes a connection of its own. Nothing is queued and nothing is pooled,
+ * so a manager holds no resource between calls and there is nothing to shut down when the server
+ * stops: the only thing that ends with the session is the reference to it.
+ */
 public abstract class DataManager {
 
     static {
@@ -26,16 +31,10 @@ public abstract class DataManager {
     }
 
     private final String jdbcUrl;
-    protected final ExecutorService dbExecutor;
 
     protected DataManager(Path worldPath, String fileName) {
         Path dbPath = worldPath.resolve("serverconfig").resolve("backutils");
         this.jdbcUrl = "jdbc:sqlite:" + dbPath.resolve(fileName);
-        this.dbExecutor = Executors.newSingleThreadExecutor(r -> {
-            Thread t = new Thread(r, "backutils-db-" + fileName);
-            t.setDaemon(true);
-            return t;
-        });
     }
 
     public abstract void initDb();
@@ -45,8 +44,8 @@ public abstract class DataManager {
         try (Statement pragma = connection.createStatement()) {
             // Every statement opens its own connection, so the pragmas are applied every
             // time. journal_mode is stored in the database file itself; busy_timeout is per
-            // connection. Without them, concurrent writes from the databases and their
-            // worker threads fail with SQLITE_BUSY instead of waiting their turn.
+            // connection. Without them, a statement that meets another connection using the
+            // same file fails with SQLITE_BUSY instead of waiting its turn.
             pragma.execute("PRAGMA journal_mode = WAL");
             pragma.execute("PRAGMA busy_timeout = 5000");
         } catch (SQLException e) {
@@ -96,7 +95,9 @@ public abstract class DataManager {
     /**
      * {@return a count per player, from a query selecting {@code player_name} and {@code total}}
      *
-     * <p>Shared by the two profile tables: one row per player rather than one query per player.
+     * <p>Shared by the two profile tables: one row per player rather than one query per player. A row per
+     * player <i>name</i>, strictly — one account name stored in two spellings is two rows here — so
+     * whoever reads these counts has to add the spellings together rather than take one of them.
      */
     protected Map<String, Integer> counts(String sql) {
         List<Map.Entry<String, Integer>> rows = query(sql, rs ->
@@ -108,10 +109,6 @@ public abstract class DataManager {
 
     private void bind(PreparedStatement ps, Object[] params) throws SQLException {
         for (int i = 0; i < params.length; i++) ps.setObject(i + 1, params[i]);
-    }
-
-    public void close() {
-        dbExecutor.shutdown();
     }
 
     @FunctionalInterface

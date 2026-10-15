@@ -20,14 +20,17 @@ import com.lowdragmc.lowdraglib2.gui.ui.elements.TextElement;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.TextField;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.Toggle;
 import com.lowdragmc.lowdraglib2.gui.ui.event.UIEvents;
+import com.lowdragmc.lowdraglib2.gui.ui.rendering.GUIContext;
 import dev.vfyjxf.taffy.style.AlignItems;
 import dev.vfyjxf.taffy.style.FlexDirection;
 import it.unimi.dsi.fastutil.floats.FloatConsumer;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.FormattedCharSequence;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -53,7 +56,9 @@ import net.xlebupaksa.backutils.profile.ProfileMarkup;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
+import java.util.function.DoubleSupplier;
 
 /**
  * The menu opened by the corner button: full screen and chrome-free, painting its own translucent
@@ -65,6 +70,12 @@ import java.util.function.Consumer;
  *
  * <p>Everything is sized in pixels, in {@link #init}: percentage heights resolve against an
  * unknowable parent, and an unmeasured scrolling list grew past the top of the screen.
+ *
+ * <p>The rows that read the config are seeded again on every {@link #init}, and again when
+ * {@link #render} sees that the config has been reloaded since they were, not only as the tree is
+ * built: the client config is reloaded while the game runs when its file changes on disk, so a
+ * control still holding an older value would show a stale one and write that one back over the new
+ * value on its first drag.
  *
  * <p>Memory rows are plain text: ldlib2 draws with its own font, bypassing Ember's hooks.
  */
@@ -141,6 +152,13 @@ public final class BackUtilsMenuScreen extends Screen {
          * the captions again on every open.
          */
         final List<Caption> captions = new ArrayList<>();
+
+        /**
+         * How to write the value the config holds now back into each control that reads one. The
+         * tree outlives a config reload the way it outlives a language change, so the readers are
+         * kept rather than the values they returned as the rows were built.
+         */
+        final List<Runnable> configControls = new ArrayList<>();
     }
 
     /** One drawn profile: what it says, and the button that removes it. */
@@ -153,6 +171,46 @@ public final class BackUtilsMenuScreen extends Screen {
             this.element = element;
             this.data = data;
             this.deleteButton = deleteButton;
+        }
+    }
+
+    /**
+     * One profile row's preview: the rows the chat line itself is drawn on, drawn the way the chat draws
+     * them.
+     *
+     * <p>A preview built as one literal per row answers differently from the chat line for a row holding
+     * nothing but tags: parsed on its own such a row has no text to format, so Ember gives up on the markup
+     * and draws the characters of the tags, where the chat's parse of the whole line spends them. The rows
+     * here are the ones vanilla's own splitter made of the chat's body — see {@link #previewRows} — and each
+     * is drawn with the call the chat draws a row with, so the two cannot come to disagree about a profile.
+     * The rows are kept, not rebuilt: the sequences drawn this frame are the ones drawn on the next.
+     *
+     * <p>{@link #contentHeight} mirrors {@link MarkupLabel}'s, so the row a preview sits in is as tall as it
+     * was when the literals were drawn: a preview that changed shape would move every row of the list.
+     */
+    private static final class PreviewLabel extends UIElement {
+
+        private final List<FormattedCharSequence> rows;
+
+        PreviewLabel(List<FormattedCharSequence> rows) {
+            this.rows = rows;
+        }
+
+        /** {@return the height needed to show every row}, which the row around it is sized from */
+        int contentHeight() {
+            return Math.max(LINE_STEP, rows.size() * LINE_STEP);
+        }
+
+        @Override
+        public void drawContents(GUIContext guiContext) {
+            Font font = Minecraft.getInstance().font;
+            float x = getPositionX();
+            float y = getPositionY();
+            for (int i = 0; i < rows.size(); i++) {
+                // The call the chat draws each of its own rows with, on the rows the same splitter made.
+                guiContext.graphics.drawString(font, rows.get(i),
+                        Math.round(x), Math.round(y + i * LINE_STEP), PLAIN, true);
+            }
         }
     }
 
@@ -177,6 +235,22 @@ public final class BackUtilsMenuScreen extends Screen {
     private int builtRevision = -1;
     /** How wide the memory list is, recalculated whenever the menu opens. */
     private int listWidth = 200;
+    /**
+     * Whether the name half of the Profiles tab is shown, as the tree currently has it, so
+     * {@link #render} can notice the server's answer changing under an open menu.
+     */
+    private boolean staffApplied;
+    /** Whether the operator alert's rows are in the tree, as the answer had it when they were last applied. */
+    private boolean alertsApplied;
+    /**
+     * The alert rows themselves, built the first time they are wanted and kept until the answer says
+     * no, so a client that is opped again gets the same rows back rather than a second set: building
+     * them registers their captions and their config readers, which only has to happen once.
+     */
+    private final List<UIElement> alertRows = new ArrayList<>();
+    /** The room the Profiles tab was last given, so the scope can be applied again without an open. */
+    private int profileWidth = 200;
+    private int profileHeight = 100;
     private UIElement newestRow;
     /** Set when the list is rebuilt, acted on once the layout is valid. */
     private boolean scrollToEndPending;
@@ -184,6 +258,12 @@ public final class BackUtilsMenuScreen extends Screen {
     private int builtProfileRevision = -1;
     /** The last feedback message shown, so each answer is displayed once. */
     private int builtFeedbackRevision = -1;
+    /**
+     * The config revision the settings rows were last seeded from, so a reload landing on this screen
+     * while it is open is noticed: the tree is not rebuilt by one, and its controls would otherwise
+     * keep the values they were built with.
+     */
+    private int seededConfigRevision = -1;
     private final List<ProfileRow> profileRows = new ArrayList<>();
     /** The row whose Delete button is armed, or "" when none is. */
     private String armedProfile = "";
@@ -256,7 +336,7 @@ public final class BackUtilsMenuScreen extends Screen {
         tabView.addTab(translatedTab(built, "backutils.menu.tab.memory"), wrap(built.memoryList));
         tabView.addTab(translatedTab(built, "backutils.menu.tab.configuration"),
                 wrap(built.configScroll));
-        tabView.addTab(translatedTab(built, "backutils.menu.tab.profiles"), built.profileTabs);
+        tabView.addTab(translatedTab(built, "backutils.menu.tab.profiles"), built.profilePanel);
         buildConfigControls(built);
         built.tabView = tabView;
 
@@ -302,6 +382,60 @@ public final class BackUtilsMenuScreen extends Screen {
         built.nameTab.relabel();
     }
 
+    /**
+     * Writes the value the config holds now into every control that reads one, readout labels
+     * included, and remembers the revision that came from.
+     *
+     * <p>Called on every open, and again from {@link #render} when the config has been reloaded since
+     * - the two moments a control could otherwise be showing a value the config no longer holds. The
+     * client config is reloaded while the game runs, and editing its file by hand is enough: a slider
+     * or a toggle left at an older value would show it, and write it back over the new one, as soon as
+     * it was touched.
+     */
+    private void seedConfigControls() {
+        for (Runnable seed : built.configControls) {
+            seed.run();
+        }
+        seededConfigRevision = BackUtilsClientConfig.revision();
+    }
+
+    /**
+     * Puts the operator alert's rows in the config list, or takes them out again, as the answer has
+     * it, and remembers which answer that was.
+     *
+     * <p>Called on every open and again from {@link #render} whenever the answer moves, for the
+     * reason {@link #applyProfileScope} is: whether this client is an operator is the server's answer
+     * and arrives while the client is running, and the tree here is built once and kept for the life
+     * of the client. The administrator corner asks about it on every frame, so a player who is opped
+     * rather than having been one at login gets the corner at once — and without this they would never
+     * get the rows that configure it, since the build they were left out of happened long ago.
+     *
+     * <p>The rows are built the first time they are wanted rather than built and hidden, because a row
+     * that is built and hidden is one edit away from being built and shown. Taken out rather than
+     * hidden when the answer turns to no, and put back rather than built again when it turns to yes,
+     * because what is registered as they are built — their captions, and the readers that seed them —
+     * has to be registered exactly once.
+     *
+     * <p>A caller that adds rows part-way through a session seeds the controls afterwards: a row built
+     * after the last seeding would show the value its control started at rather than the config's.
+     */
+    private void applyAlertScope() {
+        boolean operator = Operators.isOperator();
+        if (operator == alertsApplied) return;
+        alertsApplied = operator;
+
+        if (!operator) {
+            for (UIElement row : alertRows) {
+                built.configScroll.removeScrollViewChild(row);
+            }
+            return;
+        }
+        if (alertRows.isEmpty()) alertRows.addAll(alertControls(built));
+        for (UIElement row : alertRows) {
+            built.configScroll.addScrollViewChild(row);
+        }
+    }
+
     private static ScrollerView scrollingList() {
         ScrollerView list = new ScrollerView();
         list.scrollerStyle(s -> s
@@ -324,85 +458,89 @@ public final class BackUtilsMenuScreen extends Screen {
     private static void buildConfigControls(Built built) {
         ScrollerView scroll = built.configScroll;
         scroll.addScrollViewChild(toggleRow(built, "backutils.menu.setting.log",
-                BackUtilsClientConfig.isLogEnabled(), BackUtilsClientConfig::setLogEnabled));
+                BackUtilsClientConfig::isLogEnabled, BackUtilsClientConfig::setLogEnabled));
         scroll.addScrollViewChild(sliderRow(built, "backutils.menu.setting.font_size", 4f, 32f,
-                (float) BackUtilsClientConfig.getFontSize(), " px", true,
+                BackUtilsClientConfig::getFontSize, " px", true,
                 BackUtilsClientConfig::setFontSize));
         scroll.addScrollViewChild(sliderRow(built, "backutils.menu.setting.wrap_width", 16f, 240f,
-                BackUtilsClientConfig.getWrapCharacters(), " ch", true,
+                BackUtilsClientConfig::getWrapCharacters, " ch", true,
                 v -> BackUtilsClientConfig.setWrapCharacters(Math.round(v))));
         scroll.addScrollViewChild(sliderRow(built, "backutils.menu.setting.lines_kept", 1f, 32f,
-                BackUtilsClientConfig.getMaxLines(), "", true,
+                BackUtilsClientConfig::getMaxLines, "", true,
                 v -> BackUtilsClientConfig.setMaxLines(Math.round(v))));
         scroll.addScrollViewChild(sliderRow(built, "backutils.menu.setting.line_lifetime", 3f, 300f,
-                BackUtilsClientConfig.getLineLifetimeSeconds(), " s", true,
+                BackUtilsClientConfig::getLineLifetimeSeconds, " s", true,
                 v -> BackUtilsClientConfig.setLineLifetimeSeconds(Math.round(v))));
         scroll.addScrollViewChild(sliderRow(built, "backutils.menu.setting.fade", 1f, 30f,
-                BackUtilsClientConfig.getFadeSeconds(), " s", true,
+                BackUtilsClientConfig::getFadeSeconds, " s", true,
                 v -> BackUtilsClientConfig.setFadeSeconds(Math.round(v))));
         scroll.addScrollViewChild(sliderRow(built, "backutils.menu.setting.right_margin", 0f, 200f,
-                BackUtilsClientConfig.getRightMargin(), " px", true,
+                BackUtilsClientConfig::getRightMargin, " px", true,
                 v -> BackUtilsClientConfig.setRightMargin(Math.round(v))));
         scroll.addScrollViewChild(sliderRow(built, "backutils.menu.setting.top_margin", 0f, 400f,
-                BackUtilsClientConfig.getTopMargin(), " px", true,
+                BackUtilsClientConfig::getTopMargin, " px", true,
                 v -> BackUtilsClientConfig.setTopMargin(Math.round(v))));
         scroll.addScrollViewChild(sliderRow(built, "backutils.menu.setting.log_button_size", 8f, 128f,
-                BackUtilsClientConfig.getButtonSize(), " px", true,
+                BackUtilsClientConfig::getButtonSize, " px", true,
                 v -> BackUtilsClientConfig.setButtonSize(Math.round(v))));
         scroll.addScrollViewChild(sliderRow(built, "backutils.menu.setting.log_button_margin", 0f, 200f,
-                BackUtilsClientConfig.getButtonMargin(), " px", true,
+                BackUtilsClientConfig::getButtonMargin, " px", true,
                 v -> BackUtilsClientConfig.setButtonMargin(Math.round(v))));
         // The administrator corner's own button, its alert icon and that icon's fade are client
         // settings like the rest of this tab, but they are built with the alert rows below rather than
         // here: the corner exists for operators alone, and a player who will never see it has no
         // business being told it can be sized.
         scroll.addScrollViewChild(sliderRow(built, "backutils.menu.setting.backdrop_opacity", 0f, 1f,
-                (float) BackUtilsClientConfig.getMenuBackgroundOpacity(), "", false,
+                BackUtilsClientConfig::getMenuBackgroundOpacity, "", false,
                 v -> BackUtilsClientConfig.setMenuBackgroundOpacity(v)));
 
         // The operator alert is client-side: the sound is played here, and only ever by the player
         // who chose it, so none of this belongs in the server's config.
         //
-        // Shown to an operator and to nobody else. An alert is sent to operators alone, so to
-        // anybody else every row below is a setting for something that cannot happen — and one that
-        // tells them such a thing exists to be configured, which is the operator's business and not
-        // theirs. The rows are built only when they are wanted, rather than hidden, since a row that
-        // is built and hidden is one edit away from being built and shown.
-        if (Operators.isOperator()) {
-            buildAlertControls(built);
-        }
+        // Its rows are not added here, and not at build time at all: they belong to an operator's
+        // menu, and whether this client is one is the server's answer, which can change while the
+        // client is running. applyAlertScope is where they are asked for, on every open and again
+        // whenever that answer moves.
     }
 
-    /** Adds the rows that configure the operator alert, for an operator's own menu. */
-    private static void buildAlertControls(Built built) {
-        ScrollerView scroll = built.configScroll;
+    /**
+     * {@return the rows that configure the operator alert}, for an operator's own menu
+     *
+     * <p>Shown to an operator and to nobody else. An alert is sent to operators alone, so to
+     * anybody else every one of these is a setting for something that cannot happen — and one that
+     * tells them such a thing exists to be configured, which is the operator's business and not
+     * theirs.
+     */
+    private static List<UIElement> alertControls(Built built) {
+        List<UIElement> rows = new ArrayList<>();
 
-        scroll.addScrollViewChild(headingLabel(built, "backutils.menu.alerts.heading"));
-        scroll.addScrollViewChild(toggleRow(built, "backutils.menu.alerts.sound",
-                BackUtilsClientConfig.isAdminAlertEnabled(),
+        rows.add(headingLabel(built, "backutils.menu.alerts.heading"));
+        rows.add(toggleRow(built, "backutils.menu.alerts.sound",
+                BackUtilsClientConfig::isAdminAlertEnabled,
                 BackUtilsClientConfig::setAdminAlertEnabled));
-        scroll.addScrollViewChild(alertSoundRow(built));
-        scroll.addScrollViewChild(sliderRow(built, "backutils.menu.alerts.volume", 0f, 2f,
-                (float) BackUtilsClientConfig.getAdminAlertVolume(), "", false,
+        rows.add(alertSoundRow(built));
+        rows.add(sliderRow(built, "backutils.menu.alerts.volume", 0f, 2f,
+                BackUtilsClientConfig::getAdminAlertVolume, "", false,
                 BackUtilsClientConfig::setAdminAlertVolume));
-        scroll.addScrollViewChild(sliderRow(built, "backutils.menu.alerts.pitch", 0.5f, 2f,
-                (float) BackUtilsClientConfig.getAdminAlertPitch(), "", false,
+        rows.add(sliderRow(built, "backutils.menu.alerts.pitch", 0.5f, 2f,
+                BackUtilsClientConfig::getAdminAlertPitch, "", false,
                 BackUtilsClientConfig::setAdminAlertPitch));
-        scroll.addScrollViewChild(toggleRow(built, "backutils.menu.alerts.icon",
-                BackUtilsClientConfig.isAdminAlertMarkerEnabled(),
+        rows.add(toggleRow(built, "backutils.menu.alerts.icon",
+                BackUtilsClientConfig::isAdminAlertMarkerEnabled,
                 BackUtilsClientConfig::setAdminAlertMarker));
         // The corner itself, which only ever exists for an operator: its button, the icon above it and
         // the fade that icon pulses with. Client settings all three, since they are about this player's
         // own screen - which is why they are here rather than in the server's settings.
-        scroll.addScrollViewChild(sliderRow(built, "backutils.menu.setting.admin_button_size", 8f, 128f,
-                BackUtilsClientConfig.getAdminButtonSize(), " px", true,
+        rows.add(sliderRow(built, "backutils.menu.setting.admin_button_size", 8f, 128f,
+                BackUtilsClientConfig::getAdminButtonSize, " px", true,
                 v -> BackUtilsClientConfig.setAdminButtonSize(Math.round(v))));
-        scroll.addScrollViewChild(sliderRow(built, "backutils.menu.alerts.icon_size", 4f, 64f,
-                BackUtilsClientConfig.getAdminAlertIconSize(), " px", true,
+        rows.add(sliderRow(built, "backutils.menu.alerts.icon_size", 4f, 64f,
+                BackUtilsClientConfig::getAdminAlertIconSize, " px", true,
                 v -> BackUtilsClientConfig.setAdminAlertIconSize(Math.round(v))));
-        scroll.addScrollViewChild(sliderRow(built, "backutils.menu.alerts.icon_fade", 0f, 10f,
-                (float) BackUtilsClientConfig.getAdminAlertPulseSeconds(), " s", false,
+        rows.add(sliderRow(built, "backutils.menu.alerts.icon_fade", 0f, 10f,
+                BackUtilsClientConfig::getAdminAlertPulseSeconds, " s", false,
                 v -> BackUtilsClientConfig.setAdminAlertPulseSeconds(v)));
+        return rows;
     }
 
     /**
@@ -411,7 +549,6 @@ public final class BackUtilsMenuScreen extends Screen {
      */
     private static UIElement alertSoundRow(Built built) {
         TextField field = new TextField();
-        field.setText(BackUtilsClientConfig.getAdminAlertSound(), false);
         field.layout(l -> l.flex(1).height(14));
         field.setTextResponder(BackUtilsClientConfig::setAdminAlertSound);
 
@@ -421,36 +558,66 @@ public final class BackUtilsMenuScreen extends Screen {
         play.layout(l -> l.width(46).height(14));
         play.setOnClick(e -> AdminAlerts.preview());
 
+        // Seeded through the same reader on every open, so a hand-edited sound reaches the field
+        // rather than being written over by the one the tree was built with.
+        Runnable seed = () -> field.setText(BackUtilsClientConfig.getAdminAlertSound(), false);
+        built.configControls.add(seed);
+        seed.run();
+
         return controlRow(built, "backutils.menu.alerts.sound_id", field, play);
     }
 
-    private static UIElement sliderRow(Built built, String key, float min, float max, float initial,
-                                       String suffix, boolean whole, FloatConsumer apply) {
+    /**
+     * {@return the row for one numeric setting}
+     *
+     * @param current reads the setting as the config holds it now, rather than carrying the value the
+     *                tree happened to be built with, so the row can be put back to it on every open
+     */
+    private static UIElement sliderRow(Built built, String key, float min, float max,
+                                       DoubleSupplier current, String suffix, boolean whole,
+                                       FloatConsumer apply) {
         Label value = new Label();
-        value.setText(format(initial, whole) + suffix, false);
         value.textStyle(t -> t.fontSize(9f).textColor(PLAIN).textShadow(false)
                 .textAlignVertical(Vertical.CENTER).adaptiveWidth(true));
         value.layout(l -> l.width(52));
 
         Slider.Horizontal slider = new Slider.Horizontal();
         slider.setRange(min, max);
-        // notify = false: setting the initial value must not fire the callback.
-        slider.setValue(initial, false);
         slider.layout(l -> l.flex(1).height(14));
         slider.setOnValueChanged(v -> {
             value.setText(format(v, whole) + suffix, false);
             apply.accept(v);
         });
 
+        // One reader for both the value it is built with and the value it is put back to on every
+        // open, so the readout cannot disagree with the handle. notify = false throughout: seeding a
+        // control must never write the value it was just given back into the config it came from.
+        Runnable seed = () -> {
+            float now = (float) current.getAsDouble();
+            slider.setValue(now, false);
+            value.setText(format(now, whole) + suffix, false);
+        };
+        built.configControls.add(seed);
+        seed.run();
+
         return controlRow(built, key, slider, value);
     }
 
-    private static UIElement toggleRow(Built built, String key, boolean initial,
+    /**
+     * {@return the row for one switch}
+     *
+     * @param current reads the setting as the config holds it now, for the same reason as
+     *                {@link #sliderRow}'s
+     */
+    private static UIElement toggleRow(Built built, String key, BooleanSupplier current,
                                        Consumer<Boolean> apply) {
         Toggle toggle = new Toggle();
-        toggle.setOn(initial, false);
         toggle.layout(l -> l.width(24).height(12));
         toggle.setOnToggleChanged(apply::accept);
+
+        Runnable seed = () -> toggle.setOn(current.getAsBoolean(), false);
+        built.configControls.add(seed);
+        seed.run();
 
         UIElement spacer = new UIElement();
         spacer.layout(l -> l.flex(1));
@@ -484,8 +651,14 @@ public final class BackUtilsMenuScreen extends Screen {
     // ------------------------------------------------------------------
 
     /**
-     * Builds the Profiles tab: one strip for the list as a whole, then the list. Use, Edit and Delete
-     * sit on the rows, because a shared bar would need a selection to act on.
+     * Builds the Profiles tab: the strip that carries the create button and the server's answer, and
+     * under it the sub-tabs whose lists that button works on.
+     *
+     * <p>The strip sits above the sub-tabs rather than inside one, because there is one create button
+     * and it serves whichever kind is in view: {@link #onProfileKindChanged} relabels it as the sub-tab
+     * changes, and {@link #createProfile} opens the editor for the kind selected. Built into the chat
+     * panel instead, as it was, it left the name profiles with no way to make one at all — the panel
+     * under them is a fixed one, which deliberately hides the create button that its browsing form has.
      */
     private static void buildProfilePanel(Built built) {
         // One button for both kinds, relabelled by the tab strip: wide enough that the Russian of
@@ -503,11 +676,6 @@ public final class BackUtilsMenuScreen extends Screen {
                 .flexDirection(FlexDirection.ROW).alignItems(AlignItems.CENTER).gapAll(INNER_GAP));
         built.profileHeader.addChildren(built.newProfile, built.profileStatus);
 
-        built.profilePanel = new UIElement();
-        built.profilePanel.layout(l -> l.widthPercent(100).heightPercent(100)
-                .flexDirection(FlexDirection.COLUMN).gapAll(INNER_GAP));
-        built.profilePanel.addChildren(built.profileHeader, built.profileList);
-
         // A player's own name profiles: the same panel the background menu opens on a player, with its
         // browsing removed, for an operator.
         built.nameTab = new AdminProfileTab(true);
@@ -518,11 +686,16 @@ public final class BackUtilsMenuScreen extends Screen {
         // The strip stays and the panel border goes: this tab is already inside the menu's tab view.
         built.profileTabs.tabContentContainer(
                 c -> c.style(s -> s.backgroundTexture(IGuiTexture.EMPTY)));
-        built.profileTabs.addTab(built.chatTabHeader, built.profilePanel);
+        built.profileTabs.addTab(built.chatTabHeader, wrap(built.profileList));
         built.profileTabs.addTab(built.namesTabHeader, built.nameTab.root());
         built.profileTabs.setOnTabSelected(tab -> {
             if (instance != null) instance.onProfileKindChanged(tab);
         });
+
+        built.profilePanel = new UIElement();
+        built.profilePanel.layout(l -> l.widthPercent(100).heightPercent(100)
+                .flexDirection(FlexDirection.COLUMN).gapAll(INNER_GAP));
+        built.profilePanel.addChildren(built.profileHeader, built.profileTabs);
     }
 
     private static void createProfile(Built built) {
@@ -559,10 +732,63 @@ public final class BackUtilsMenuScreen extends Screen {
         return Operators.isOperator() || (options != null && options.canManageNames());
     }
 
-    private void onProfileKindChanged(Tab tab) {
-        boolean names = tab == built.namesTabHeader;
-        built.newProfile.setText(names ? Text.of("backutils.menu.profiles.new_name")
+    /**
+     * Writes the create button's label for the kind in view. One button serves both, so its words are
+     * the only thing that says which editor a click opens.
+     */
+    private void labelNewProfile(boolean names) {
+        built.newProfile.setText(names
+                ? Text.of("backutils.menu.profiles.new_name")
                 : Text.of("backutils.menu.profiles.new_chat"), false);
+    }
+
+    private void onProfileKindChanged(Tab tab) {
+        labelNewProfile(tab == built.namesTabHeader);
+    }
+
+    /**
+     * Puts the Profiles tab in step with what this client may do, and sizes what is under the strip.
+     *
+     * <p>Called on every open and again from {@link #render} whenever the answer moves, because the
+     * answer is the server's: the operator level arrives with the join packet and the profile options
+     * as a synced attachment, and the tree here is built once and kept for the life of the client. A
+     * menu whose name half was hidden by an answer that was not in yet would otherwise stay hidden
+     * until it was closed and opened again, which is the staleness the settings rows were given the
+     * config revision for.
+     */
+    private void applyProfileScope(int width, int height) {
+        boolean staff = canManageNames();
+        staffApplied = staff;
+        profileWidth = width;
+        profileHeight = height;
+
+        // The names half exists for an operator and for whoever the server has trusted with names;
+        // hiding it is not what stops a player making one - createProfile asks again - but offering a
+        // panel the server would refuse is a lie about what the player can do.
+        built.namesTabHeader.setDisplay(staff);
+        built.profileTabs.tabHeaderContainer.setDisplay(staff);
+        if (!staff && built.profileTabs.getSelectedTab() != built.chatTabHeader) {
+            built.profileTabs.selectTab(built.chatTabHeader);
+        }
+        labelNewProfile(staff && built.profileTabs.getSelectedTab() == built.namesTabHeader);
+
+        // The sub-tabs take what the strip leaves, and their contents what ldlib2's own five-pixel
+        // padding and the sub-tab strip leave of that. Sized before the name panel is pointed at
+        // anybody: pointing it rebuilds its rows, and those wrap to the width set here.
+        int tabsHeight = Math.max(20, height - PROFILE_HEADER_HEIGHT - INNER_GAP);
+        int contentHeight = Math.max(20,
+                tabsHeight - (staff ? TAB_STRIP_HEIGHT : 0) - TAB_CONTENT_PAD * 2);
+        int contentWidth = Math.max(60, width - TAB_CONTENT_PAD * 2);
+        built.profileTabs.layout(l -> l.width(width).height(tabsHeight));
+        built.profileList.layout(l -> l.width(contentWidth).height(contentHeight));
+        built.nameTab.layout(contentWidth, contentHeight);
+
+        // The name panel manages the account this client is logged in as, so it is told whenever it
+        // becomes reachable: pointed at nobody while the answer was no, it would draw no rows for the
+        // player who has just been told yes. setTarget ignores a target it already holds.
+        if (staff && Minecraft.getInstance().player != null) {
+            built.nameTab.setTarget(Minecraft.getInstance().player.getGameProfile().getName());
+        }
     }
 
     private static Button profileButton(String text, int width, Runnable action) {
@@ -630,22 +856,21 @@ public final class BackUtilsMenuScreen extends Screen {
                 .textShadow(false).adaptiveWidth(true));
         name.layout(l -> l.widthPercent(100).height(LINE_STEP));
 
-        // Through MarkupLabel, so Ember renders the preview exactly as chat will; "{m}" becomes a sample.
-        String preview = isDefault
+        // Drawn the way the chat draws its own line, so Ember renders the format here as it will in
+        // chat; "{m}" becomes a sample. Every row in this list is a chat profile - the name profiles
+        // are the operator's own tab - so a written \n is a break here as it is in the line itself.
+        // See PreviewLabel for why the rows are the chat's own and not one literal per row.
+        PreviewLabel preview = new PreviewLabel(previewRows(isDefault
                 ? PREVIEW_SAMPLE
-                : row.format().replace(ProfileMarkup.MESSAGE, PREVIEW_SAMPLE);
-        List<String> wrapped = MarkupWrap.wrapByWidth(preview, Math.max(40, listWidth - 160),
-                line -> Minecraft.getInstance().font.width(MarkupUtil.strip(line)));
-        if (wrapped.size() > 2) wrapped = wrapped.subList(0, 2);
-        MarkupLabel previewLabel = new MarkupLabel(wrapped, LINE_STEP, PLAIN);
+                : row.format().replace(ProfileMarkup.MESSAGE, PREVIEW_SAMPLE)));
 
         UIElement column = new UIElement();
         column.layout(l -> l.flex(1).flexDirection(FlexDirection.COLUMN));
-        column.addChildren(name, previewLabel);
+        column.addChildren(name, preview);
 
         UIElement element = new UIElement();
         element.layout(l -> l.widthPercent(100)
-                .height(Math.max(LINE_STEP * 2 + 6, LINE_STEP + previewLabel.contentHeight() + 6))
+                .height(Math.max(LINE_STEP * 2 + 6, LINE_STEP + preview.contentHeight() + 6))
                 .paddingAll(2)
                 .flexDirection(FlexDirection.ROW)
                 .gapAll(INNER_GAP));
@@ -663,6 +888,27 @@ public final class BackUtilsMenuScreen extends Screen {
             onProfileRowClicked(row);
         });
         return element;
+    }
+
+    /**
+     * {@return the rows a profile's preview is drawn on}, which are the rows the chat line is drawn on
+     *
+     * <p>The body is the chat's own and is cut the way the chat's display cuts a line. A chat profile's text
+     * breaks where it asks to — the chat line draws vanilla's own rows — so a written {@code \n} is a real
+     * break there, the tags open across it are reopened under it, and a row left holding nothing but tags has
+     * its characters carried to a row that has text, all of which {@link MarkupWrap#withLineBreaks} does; the
+     * splitter then makes the rows of it, and those rows are what is drawn. Two rows are kept, which is the
+     * room this row has.
+     *
+     * <p>Every row in this list is a chat profile: the name profiles are the operator's own tab, and a
+     * displayed name is drawn on one row wherever the game draws it, so a break written in one is not a
+     * break. That is why there is no branch for one here, where the editor and the operator's own tab each
+     * need one.
+     */
+    private List<FormattedCharSequence> previewRows(String text) {
+        List<FormattedCharSequence> rows = Minecraft.getInstance().font.split(
+                Component.literal(MarkupWrap.withLineBreaks(text)), Math.max(40, listWidth - 160));
+        return rows.size() > 2 ? rows.subList(0, 2) : rows;
     }
 
     /** Repaints every profile row: the one in use is tinted, and hovering is handled separately. */
@@ -857,6 +1103,14 @@ public final class BackUtilsMenuScreen extends Screen {
         // The tree is built once and kept, so the captions resolved as it was built are written
         // again here: without that they would hold the language the menu was first opened in.
         applyTexts(built);
+        // The operator alert's rows belong to a menu whose client was an operator when it was last
+        // asked, which is the server's answer and may have moved since: applied before the seeding
+        // below, so rows that arrive now are seeded with it.
+        applyAlertScope();
+        // For the same reason, and because the config can have been reloaded since the last open:
+        // the controls are put back to the values it holds now, so the first drag of this visit
+        // writes what the row shows rather than what the tree was built with.
+        seedConfigControls();
 
         int contentWidth = Math.max(80, this.width - PAD * 2);
         int contentHeight = Math.max(60, this.height - PAD * 2);
@@ -887,28 +1141,11 @@ public final class BackUtilsMenuScreen extends Screen {
         built.memoryList.layout(l -> l.width(rightWidth).height(listHeight));
         built.configScroll.layout(l -> l.width(rightWidth).height(listHeight));
 
-        // The Profiles tab is a tab view of its own, so its content pays the strip and ldlib2's
-        // five-pixel padding; an operator gets the strip, everyone else one panel.
-        boolean staff = canManageNames();
-        built.profileTabs.layout(l -> l.width(rightWidth).height(listHeight));
-        built.namesTabHeader.setDisplay(staff);
-        built.profileTabs.tabHeaderContainer.setDisplay(staff);
-        if (!staff && built.profileTabs.getSelectedTab() != built.chatTabHeader) {
-            built.profileTabs.selectTab(built.chatTabHeader);
-        }
-        built.newProfile.setText(
-                staff && built.profileTabs.getSelectedTab() == built.namesTabHeader
-                        ? Text.of("backutils.menu.profiles.new_name")
-                        : Text.of("backutils.menu.profiles.new_chat"), false);
-
-        int profileBoxHeight = staff
-                ? Math.max(20, listHeight - TAB_STRIP_HEIGHT - TAB_CONTENT_PAD * 2)
-                : listHeight;
-        int profileBoxWidth = staff ? Math.max(60, rightWidth - TAB_CONTENT_PAD * 2) : rightWidth;
-        built.profilePanel.layout(l -> l.width(profileBoxWidth).height(profileBoxHeight));
-        built.profileList.layout(l -> l.width(profileBoxWidth)
-                .height(Math.max(20, profileBoxHeight - PROFILE_HEADER_HEIGHT - INNER_GAP)));
-        built.nameTab.layout(profileBoxWidth, profileBoxHeight);
+        // The Profiles tab is a column of its own: the strip that carries the create button, then the
+        // sub-tabs an operator gets. What is inside them, and which of them is offered at all, is
+        // applyProfileScope's: it is applied on every open and again whenever the answer moves.
+        built.profilePanel.layout(l -> l.width(rightWidth).height(listHeight));
+        applyProfileScope(rightWidth, listHeight);
 
         built.ui.setScreenAndInit(this);
         // setScreenAndInit only lays out; the widget has to be registered to render and take input.
@@ -918,11 +1155,6 @@ public final class BackUtilsMenuScreen extends Screen {
 
         // Memory rows wrap to the list's width, and the width only becomes known here.
         listWidth = rightWidth;
-
-        // The name panel manages the account this client is logged in as, so it is told on every open.
-        if (staff && Minecraft.getInstance().player != null) {
-            built.nameTab.setTarget(Minecraft.getInstance().player.getGameProfile().getName());
-        }
 
         // Rebuilt on every open, not only when the history changes, so the wrapping matches the window.
         rebuildMemoryList();
@@ -950,6 +1182,22 @@ public final class BackUtilsMenuScreen extends Screen {
         // A reply can land while the menu is open, from the history request or from a profile change.
         if (LogHistoryCache.revision() != builtRevision) rebuildMemoryList();
         if (ProfileListCache.revision() != builtProfileRevision) rebuildProfileList();
+        // The config's file can change on disk while the menu is open as well, and that reload is
+        // nobody's answer to this screen: the settings rows are put back to the values it now holds,
+        // but only when the revision actually moved, so a drag in progress is not fought.
+        if (BackUtilsClientConfig.revision() != seededConfigRevision) seedConfigControls();
+        // The operator level and the profile options are both the server's, and either can land while
+        // the menu is open: the name half of the Profiles tab follows the answer now rather than the
+        // one the tree was built with. Compared rather than applied every frame, so the layout is only
+        // redone when there is something to redo.
+        if (canManageNames() != staffApplied) applyProfileScope(profileWidth, profileHeight);
+        // The same answer decides the alert rows, and they are the one part of the tree a change can
+        // add to: seeded here rather than left to the revision check below, which would not see a row
+        // that did not exist when it last ran.
+        if (Operators.isOperator() != alertsApplied) {
+            applyAlertScope();
+            seedConfigControls();
+        }
         // Only the kind in view follows the server: the two tabs read different caches.
         if (built.profileTabs.getSelectedTab() == built.namesTabHeader) built.nameTab.sync();
         syncProfileFeedback();

@@ -97,6 +97,10 @@ public final class ChatScreenOverlay {
 
         modularUI = ModularUI.of(UI.of(root));
         modularUI.setScreenAndInit(screen);
+        // Screens do not tick their UI by default, and a selector wants ticking: it is what closes a
+        // dropdown whose anchor has moved, which is every time the chat screen is resized or the row
+        // it hangs off is rebuilt.
+        modularUI.setTickWhileRending(true);
         return true;
     }
 

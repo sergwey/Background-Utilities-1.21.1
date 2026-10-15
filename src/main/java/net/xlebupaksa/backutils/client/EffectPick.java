@@ -256,7 +256,6 @@ final class EffectPick {
         int at = nearest(ray, boxes, range);
         double nearestAt = at < 0 ? Double.MAX_VALUE : pick(ray, boxes.get(at), range);
         PlacedEffects.Entry near = at < 0 ? null : places.get(at);
-        Cube nearBox = at < 0 ? null : boxes.get(at);
 
         // The entity rule, in one place: an entity is a target only when it is the thing the ray
         // meets first. Its entry point is compared with the place's own, so a mob standing behind a
@@ -267,9 +266,9 @@ final class EffectPick {
         Entity entity = met == null ? null : Minecraft.getInstance().crosshairPickEntity;
         if (entity != null) {
             double entityAt = pick(ray, boxOf(entity, partialTick), range);
-            if (entityAt < nearestAt) return new Scene(null, null, entity, ray, partialTick);
+            if (entityAt < nearestAt) return new Scene(null, entity, partialTick);
         }
-        return new Scene(near, nearBox, null, ray, partialTick);
+        return new Scene(near, null, partialTick);
     }
 
     /**
@@ -417,15 +416,12 @@ final class EffectPick {
      * on nothing this tool can act on — and the caller draws no red and sends nothing for it.
      *
      * @param hit the placed effect the ray met first, or null when it met none in range
-     * @param box the box that effect is drawn as, which is the box the ray was tested against
      * @param entity the entity an effect hangs off that the ray met first, or null
-     * @param ray the eye and the unit direction, as {@link EffectPick#pick} takes them: kept so a
-     *            caller can rebuild the same look, which is what the hand-to-point line needs
      * @param partialTick the moment this look was taken at, which is what the box was built for: the
      *                    block a click names is the anchor's block at that same moment, so a display
      *                    that is moving cannot be drawn in one block and removed in another
      */
-    record Scene(PlacedEffects.Entry hit, Cube box, Entity entity, Point[] ray, float partialTick) {
+    record Scene(PlacedEffects.Entry hit, Entity entity, float partialTick) {
 
         /** {@return true when the crosshair is on an entity an effect hangs off} */
         boolean onEntity() {

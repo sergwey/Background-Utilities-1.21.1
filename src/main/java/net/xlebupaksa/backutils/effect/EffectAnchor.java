@@ -7,7 +7,6 @@ import net.minecraft.world.entity.Display;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.level.ChunkPos;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import net.xlebupaksa.backutils.data.EffectPlacement;
 import net.xlebupaksa.backutils.data.PlacedEffect;
@@ -16,7 +15,6 @@ import net.xlebupaksa.backutils.item.EffectToolPlacement;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -43,17 +41,6 @@ import java.util.UUID;
  * for its UUID.
  */
 public final class EffectAnchor {
-
-    /**
-     * The tag every anchor carries, so one can be found by something that knows to look.
-     *
-     * <p>The row that names a display is the ordinary way back to it, and it is not a reliable one:
-     * a row written by an older build names nothing, a row can be deleted while its display is in a
-     * chunk nobody has loaded, and the two writes are not one transaction. A display that can say
-     * what it is survives all of that — it can be found, and taken away, by anything sweeping for
-     * the leftovers, which is the only way an orphan is ever cleaned up.
-     */
-    private static final String ANCHOR_TAG = "backutils_effect_anchor";
 
     /**
      * Where each display was last seen, by identity.
@@ -94,7 +81,6 @@ public final class EffectAnchor {
         // that drifted would take every effect attached to it along with it.
         display.setNoGravity(true);
         display.setInvulnerable(true);
-        display.addTag(ANCHOR_TAG);
         level.addFreshEntity(display);
         return display.getUUID();
     }
@@ -231,51 +217,6 @@ public final class EffectAnchor {
     }
 
     /**
-     * Takes away every anchor that nothing points at any more.
-     *
-     * <p>What this is for: a display whose effect has gone but which is still standing there. The
-     * ordinary path removes one when its effect ends, and the cases it cannot cover are the ones that
-     * leave litter — a row from a build that recorded no anchor, a row deleted while its display was
-     * in a chunk nobody had loaded, and a crash between the two writes. None of those can be found by
-     * looking at the rows, because the rows are exactly what has gone.
-     *
-     * <p>The tag is what makes it findable, and <b>only tagged displays are touched</b>. The tag is
-     * written in exactly one place — {@link #place}, where an anchor is made — so an entity carrying
-     * it is one this mod created; an operator's own display, whatever it holds and wherever it stands,
-     * was made by something else and is not marked. The tag is also asked for sparingly and in two
-     * places only, so the invariant is one a reader can check.
-     *
-     * <p>Loaded entities only, which is the honest limit of the question: an entity in a chunk nobody
-     * has loaded cannot be listed, and sweeping would mean loading the world a chunk at a time. Run it
-     * again after walking about, or from the region an effect was placed in.
-     *
-     * @param named   the anchors some row still names, which are the ones to leave standing
-     * @param confirm false to count what would go and change nothing, which is what a destructive
-     *                command should ask for first
-     * @return how many were found, and how many were taken away when asked to
-     */
-    public static int sweepOrphans(MinecraftServer server, Set<String> named, boolean confirm) {
-        if (server == null) return 0;
-        int found = 0;
-        for (ServerLevel level : server.getAllLevels()) {
-            for (Entity entity : level.getAllEntities()) {
-                // Three tests, and every one of them has to hold. The tag is this mod's own mark and
-                // is written in exactly one place — where an anchor is made — so an entity carrying it
-                // is one this mod created; nothing an operator or another mod puts in the world
-                // carries it, which is what makes this safe to run at all. The type is asked as well,
-                // so that a mark that somehow reached an ordinary entity still could not take one
-                // away. And a row that still names it is a row that still wants it.
-                if (!entity.getTags().contains(ANCHOR_TAG)) continue;
-                if (entity.getType() != EntityType.ITEM_DISPLAY) continue;
-                if (named.contains(entity.getUUID().toString())) continue;
-                found++;
-                if (confirm) entity.discard();
-            }
-        }
-        return found;
-    }
-
-    /**
      * {@return the level a stored effect's anchor should be in}, or null when it is not loaded
      *
      * <p>An effect is stored with the dimension it was placed in, and a dimension that is not loaded
@@ -283,21 +224,11 @@ public final class EffectAnchor {
      * that dimension and one whose chunks are not loaded yet, and either way there is nothing to do
      * rather than something to get wrong.
      */
-    public static ServerLevel levelOf(net.minecraft.server.MinecraftServer server, String dimension) {
+    public static ServerLevel levelOf(MinecraftServer server, String dimension) {
         for (ServerLevel level : server.getAllLevels()) {
             if (level.dimension().location().toString().equals(dimension)) return level;
         }
         return null;
-    }
-
-    /**
-     * {@return the level a display was placed in by its own record}
-     *
-     * <p>Used where a caller has a display and needs the level it belongs to rather than the level a
-     * player happens to be standing in.
-     */
-    public static Level levelOf(Entity display) {
-        return display.level();
     }
 
     /**
@@ -340,8 +271,15 @@ public final class EffectAnchor {
         return EffectAttachment.of(effect.config(), where).at(eye.x, eye.y, eye.z);
     }
 
-    /** {@return the identity a stored string names}, or null when it names none */
-    private static UUID parse(String uuid) {
+    /**
+     * {@return the identity a stored string names}, or null when it names none
+     *
+     * <p>Deliberately the one reading of a stored identity, and deliberately forgiving: the text comes
+     * back from a database that outlives any one build of this mod, so a row it cannot read is a row to
+     * skip rather than one to fail on. The replay reads rows by identity too and asks here, so that a
+     * malformed one is left behind on its own instead of ending the pass over the rows around it.
+     */
+    static UUID parse(String uuid) {
         if (uuid == null || uuid.isBlank()) return null;
         try {
             return UUID.fromString(uuid.trim());

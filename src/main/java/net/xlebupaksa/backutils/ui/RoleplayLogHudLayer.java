@@ -11,6 +11,7 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 import net.xlebupaksa.backutils.BackUtils;
+import net.xlebupaksa.backutils.client.AdminMenuCache;
 import net.xlebupaksa.backutils.network.LogHistoryCache;
 import net.xlebupaksa.backutils.network.AdminConfigCache;
 import net.xlebupaksa.backutils.network.AdminConfigFeedbackCache;
@@ -92,11 +93,26 @@ public final class RoleplayLogHudLayer {
         return Minecraft.getInstance().options != null && Minecraft.getInstance().options.hideGui;
     }
 
-    /** Drops per-connection state so a new server starts with a clean slate. */
+    /**
+     * Drops per-connection state so a new server starts with a clean slate.
+     *
+     * <p><b>Every cache holding something a server sent belongs in this list.</b> It is written out by
+     * hand because there is no registry to walk, and what a cache left out costs is not unbounded growth
+     * — each one is small and bounded — but the server just left being read while the next one is
+     * played: an operator's notes on somebody else's log, a banner, a palette of sounds. Most arrive
+     * again on their own, on join or on the first request, and until then they are the wrong server's.
+     * So a cache added to this mod is added here in the same commit that adds it, beside the reason it
+     * holds per-connection state at all.
+     */
     @SubscribeEvent
     public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
         RoleplayLogOverlay.instance().clear();
         LogHistoryCache.clear();
+        // The menu's log belongs to the server just left as much as the HUD's does, and each of its
+        // rows carries the entry's note, which a player is never sent: without this an operator who
+        // is an operator on two servers reads the first server's notes on the second until that
+        // server's own answer arrives.
+        AdminMenuCache.clear();
         // The profiles and the palette belong to the server just left, as do its settings.
         ProfileListCache.clear();
         ProfileFeedbackCache.clear();

@@ -176,6 +176,9 @@ public final class EffectToolScreen extends Screen {
         EffectToolScreen screen = screen();
         screen.source = address;
         screen.opened = tool == null ? ItemStack.EMPTY : tool;
+        // A wait belongs to the edit that started it, and this is a different opening: an answer that
+        // never arrived last time would otherwise be reported against an edit this one never sent.
+        screen.waitingForAnswer = false;
         Minecraft.getInstance().setScreen(screen);
     }
 

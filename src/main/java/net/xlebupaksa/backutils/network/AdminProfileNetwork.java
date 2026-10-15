@@ -120,7 +120,7 @@ public final class AdminProfileNetwork {
         String target = resolveTarget(admin, data, payload.player());
         if (target == null) {
             feedback(admin, false, payload.names(), payload.player(),
-                    "No player called '" + payload.player() + "' here вЂ— online, or with a profile.");
+                    "No player called '" + payload.player() + "' here — online, or with a profile.");
             return;
         }
         sendProfiles(admin, data, payload.names(), target);
@@ -139,7 +139,7 @@ public final class AdminProfileNetwork {
         BackUtilsData data = BackUtils.data();
         if (data == null) {
             feedback(admin, false, payload.names(), payload.player(),
-                    "Profile storage is unavailable вЂ— see the server log.");
+                    "Profile storage is unavailable — see the server log.");
             return;
         }
 
@@ -147,7 +147,7 @@ public final class AdminProfileNetwork {
             String target = resolveTarget(admin, data, payload.player());
             if (target == null) {
                 feedback(admin, false, payload.names(), payload.player(),
-                        "No player called '" + payload.player() + "' here вЂ— online, or with a "
+                        "No player called '" + payload.player() + "' here — online, or with a "
                                 + "profile.");
                 return;
             }
@@ -415,6 +415,10 @@ public final class AdminProfileNetwork {
      * {@return the name to write under, or null when there is no such player; an online player's own
      * name wins, then a name already stored with a profile, then the server's cache of players it has
      * seen, so an arbitrary string cannot become a player}
+     *
+     * <p>Each branch answers with the server's own spelling of the account rather than the typed one:
+     * a profile is found again by an exact match on its owner, so a row stored under a differently
+     * cased name would be invisible to the player it was made for.
      */
     private static String resolveTarget(ServerPlayer admin, BackUtilsData data, String raw) {
         String wanted = trim(raw);
@@ -431,8 +435,13 @@ public final class AdminProfileNetwork {
             if (stored.equalsIgnoreCase(wanted)) return stored;
         }
 
-        return admin.getServer() != null
-                && admin.getServer().getProfileCache().get(wanted).isPresent() ? wanted : null;
+        // The cache holds a profile, not merely a yes: its name is the account's own spelling, which
+        // is what the typed string has to be replaced with before it can own a profile.
+        return admin.getServer() == null ? null
+                : admin.getServer().getProfileCache()
+                        .get(wanted)
+                        .map(com.mojang.authlib.GameProfile::getName)
+                        .orElse(null);
     }
 
     /** {@return true for something shaped like an account name} */
@@ -472,10 +481,19 @@ public final class AdminProfileNetwork {
         return payload.names() ? "name" : "chat";
     }
 
-    /** {@return the counts, keyed the way a Minecraft name is compared} */
-    private static Map<String, Integer> caseInsensitive(Map<String, Integer> counts) {
+    /**
+     * {@return the counts, keyed the way a Minecraft name is compared}
+     *
+     * <p>Added together rather than copied: one account name can be stored in more than one spelling, which
+     * is one entry per spelling here, and what the menu shows beside a name is how many profiles the player
+     * has — a copy would keep whichever spelling's count came last and lose the rest.
+     *
+     * <p>Left package-private on the same grounds as the three changes above, so that a check can call it
+     * directly rather than build a payload to reach it.
+     */
+    static Map<String, Integer> caseInsensitive(Map<String, Integer> counts) {
         Map<String, Integer> copy = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
-        copy.putAll(counts);
+        counts.forEach((name, total) -> copy.merge(name, total, Integer::sum));
         return copy;
     }
 

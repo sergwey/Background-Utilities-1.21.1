@@ -85,6 +85,9 @@ public final class MarkupLabel extends UIElement {
         float y = getPositionY();
 
         if (prefix != null && !prefix.getString().isEmpty()) {
+            // Measured every frame rather than kept: the prefix is a marker of a few characters, and a
+            // width kept between frames would be a width from a font whose glyphs a resource pack can
+            // change under a Font instance that stays the same object.
             guiContext.graphics.drawString(font, prefix,
                     Math.round(x), Math.round(y), prefixColour, true);
             x += font.width(prefix);

@@ -5,6 +5,7 @@ import com.lowdragmc.lowdraglib2.gui.texture.IGuiTexture;
 import com.lowdragmc.lowdraglib2.gui.ui.ModularUI;
 import com.lowdragmc.lowdraglib2.gui.ui.UI;
 import com.lowdragmc.lowdraglib2.gui.ui.UIElement;
+import com.lowdragmc.lowdraglib2.gui.ui.data.Horizontal;
 import com.lowdragmc.lowdraglib2.gui.ui.data.Vertical;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.Button;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.ColorSelector;
@@ -15,8 +16,10 @@ import com.lowdragmc.lowdraglib2.gui.ui.elements.TextArea;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.TextElement;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.TextField;
 import com.lowdragmc.lowdraglib2.gui.ui.style.LayoutStyle;
+import dev.vfyjxf.taffy.style.AlignContent;
 import dev.vfyjxf.taffy.style.AlignItems;
 import dev.vfyjxf.taffy.style.FlexDirection;
+import dev.vfyjxf.taffy.style.FlexWrap;
 import dev.vfyjxf.taffy.style.TaffyDisplay;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -43,6 +46,7 @@ import net.xlebupaksa.backutils.client.SymbolChatPanel;
 import net.xlebupaksa.backutils.item.ItemEdit;
 import net.xlebupaksa.backutils.network.ItemEditPayload;
 import net.xlebupaksa.backutils.network.ItemEditorNetwork;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -58,12 +62,47 @@ import java.util.function.Consumer;
  * so what is being edited is never guessed at, and a tag that does not parse is visible as the literal
  * text it becomes. Special effects and values are written straight into the fields: the preview shows
  * the result and does not try to be a pallette of everything the text can contain. An effect written
- * into a line animates here, because the line is drawn the way the item's is — see {@link ItemEdit#line}.
+ * into a line animates here, because the line is drawn the way the item's is — see {@link ItemEdit#line}
+ * — and because each drawn row is wrapped and made into its component once per change rather than sixty
+ * times a second, which is what gives an effect somewhere to keep the state it animates from: see
+ * {@link DrawnRows}.
  *
  * <p><b>The text is white and upright unless the markup says otherwise.</b> The game draws a renamed
  * item's name in its rarity's colour and in italic, and a line of lore in dark purple italic, and none of
  * that is what this editor writes: the default style says white and not italic, so what the preview shows
  * and what the item shows is what the operator typed and not what the game would have done with it.
+ *
+ * <p><b>The panel is two columns.</b> Everything that is read stands on the left — the fields, the preview
+ * and the attributes — and the picker stands in a column of its own at the panel's right edge, with the row
+ * of formatting buttons ending against its left edge and the preview beginning on the row under them, where
+ * the picker is still being drawn beside it. That column is reserved for the whole of the preview's height
+ * and not only for the picker: the preview's width has to be the same on the row beside the picker and on
+ * the rows below it, because the width is what its text is wrapped into — see {@link Rows}. The same shape
+ * answers a window too narrow for both: the picker takes the row under the preview rather than being drawn
+ * over it, and the preview is then as wide as the panel.
+ *
+ * <p><b>The top row belongs to the editor rather than to the work.</b> The title stands in the middle of
+ * its row, the button that closes the editor at its left end where the title used to be, and the button that
+ * writes the item at its right end where the way out used to be — Apply having moved up from the foot of a
+ * panel that scrolls, so that the one button that saves the work is not something an operator with a long
+ * attribute list has to scroll to find. The two buttons do exactly what they did before they changed places:
+ * this one writes and stays open, that one closes and writes nothing — with one thing asked first, because
+ * markup the library will draw as its characters is worth a word before it is written: see {@link #commit}.
+ *
+ * <p><b>Markup that styles nothing is markup the item shows as its tags.</b> The library parses a literal as
+ * it draws it and gives up on one whose runs carry nothing it can draw, at which point the literal is drawn
+ * as its own characters — so a name of nothing but tags is a name of tags on screen, and the editor says so
+ * before writing it rather than after somebody reads the item. The preview is the same reading: it draws what
+ * the item will draw, tags and all, because a preview that hid that would be showing a line the item will not
+ * have. Nothing is rewritten, dropped or reordered for it: the text is stored as it was typed, and the word
+ * said about it is a reading of the item and not a licence to change what the operator wrote.
+ *
+ * <p><b>Ctrl+Z and Ctrl+Y walk one opening's editing back and forward.</b> Everything this screen can change
+ * is a step of the history — the name, the lore, the colour, the attribute list, and the selection in the
+ * preview, which is what the buttons act on. The chords are taken before the focused field is asked, because
+ * the library's own fields keep an undo apiece and an undo of one field alone is half an edit; the history
+ * lives only as long as the screen, so a reopening starts fresh. One step per change, a typed character
+ * included, and a state identical to the one already kept is not kept again.
  *
  * <p><b>The buttons work on what is selected in the preview.</b> Dragging over the drawn name or lore
  * selects the characters the item shows — not the markup's, whose tags nobody can see — and a button
@@ -92,12 +131,12 @@ import java.util.function.Consumer;
  *
  * <p>The lore is one area with real newlines rather than a row per line, and its lines map onto the
  * lore lines of the item one for one — which is why the message that carries an edit did not have to
- * change.
+ * change. An area with nothing in it is no lore rather than one blank line of it: a text area cannot hold
+ * no lines, so the item is read through {@link #itemLore} and not off the field.
  */
 @OnlyIn(Dist.CLIENT)
 public final class ItemEditorScreen extends Screen {
 
-    private static final int PANEL_WIDTH = 420;
     private static final int PANEL_BG = 0xF0101016;
     private static final int PAD = 10;
     private static final int GAP = 5;
@@ -155,8 +194,9 @@ public final class ItemEditorScreen extends Screen {
     /**
      * How large the item's own icon is drawn in the preview, which is the game's sixteen made a little larger.
      *
-     * <p>The icon is what the preview is of, so it leads: the room the text is given beside it, the height of
-     * the box it stands in and the room inside the frame round the two are all measured from this.
+     * <p>The icon is what the preview is of, so it leads: the text is indented by it and the room beside it,
+     * and it is the tallest thing the frame has to hold — taller than the line of text drawn beside it, which
+     * is why the frame reaches below the name's own box to hold it. See the note on that box in build.
      */
     private static final int PREVIEW_ICON = 20;
 
@@ -176,10 +216,13 @@ public final class ItemEditorScreen extends Screen {
     private static final int PREVIEW_BG = 0xC02F2A34;
     private static final int PREVIEW_EDGE = 0xFF4A4550;
 
-    /** The room the name is given, which is the icon drawn in its box and two pixels above and below it. */
-    private static final int NAME_PREVIEW_HEIGHT = PREVIEW_ICON + 4;
-
-    /** The air between the name and the lore under it, which is what a tooltip leaves between its lines. */
+    /**
+     * The air a tooltip leaves between its lines, which is what the lore is separated from the name by.
+     *
+     * <p>Held inside the name's own box rather than as a margin between the two boxes — see the note on that
+     * box in build — so the box is a line of the game's text and this under it, and the lore's box follows
+     * the column's own gap below that.
+     */
     private static final int PREVIEW_GAP = 2;
 
     /** How far the icon is inset from the corner of the box it is drawn in. */
@@ -196,6 +239,15 @@ public final class ItemEditorScreen extends Screen {
 
     /** The lore as a whole, for the one question that is not about one of its lines: where a symbol goes. */
     private static final int LORE = -2;
+
+    /**
+     * How many steps of editing the screen keeps.
+     *
+     * <p>Forty is a few dozen changes — as many typed characters as a line of text, or a long run of
+     * buttons — and a step is small: a name, a lore, a colour, an attribute list and the selection that
+     * stood beside them.
+     */
+    private static final int HISTORY = 40;
 
 
     /** Which slot the item being edited is in, and which menu that index counts in. */
@@ -261,6 +313,39 @@ public final class ItemEditorScreen extends Screen {
     /** What the preview drew last, in the order it drew it: the geometry the mouse is measured against. */
     private final List<Line> drawn = new ArrayList<>();
 
+    /**
+     * The two halves of the preview as they were last wrapped, and what each of them was wrapped from.
+     *
+     * <p>Kept because what a row is drawn from is decided by the text and the width alone, and because a row
+     * rebuilt between two frames is an effect in it that never gets to animate: see {@link Rows}.
+     */
+    private final Rows nameRows = new Rows();
+    private final Rows loreRows = new Rows();
+
+    /**
+     * What this opening can still be walked back through: the states, oldest first, and which of them is
+     * on screen.
+     *
+     * <p>A list with a position in it rather than a stack of past states, because the state on screen is
+     * one of the entries: an undo moves the position back and a redo moves it forward, so "there is
+     * nothing to go back to" is the position at the front, and nothing has to be held in two places.
+     *
+     * <p>It lives for one opening and no longer. A new editor is built for each opening — see
+     * {@link #open} — so nothing is carried from the item edited before to the item edited now; a window
+     * resize runs {@link #init} again, and so {@link #load}, which starts the history over for the same
+     * reason it fills the fields over: what the screen is being given is the item as it stands.
+     */
+    private final List<Snapshot> history = new ArrayList<>();
+
+    /** Which step of {@link #history} is on screen, or -1 before the first {@link #load}. */
+    private int step = -1;
+
+    /**
+     * True while the screen itself is writing, so that no responder keeps a step of its own for one write
+     * of a change that is made of several — see {@link #unrecorded}.
+     */
+    private boolean writing;
+
     private ModularUI ui;
 
     /** SymbolChat's menu, when that mod is installed, and null when it is not. */
@@ -278,6 +363,21 @@ public final class ItemEditorScreen extends Screen {
 
     /** The button that opens and closes the menu, kept for the place the menu is put beside it. */
     private Button symbolToggle;
+
+    /**
+     * The button that writes the edit, kept because it is also the confirmation of a warning: a press that
+     * finds markup drawn as its characters says so and turns this button into the press that writes it
+     * anyway — see {@link #commit}.
+     */
+    private Button applyButton;
+
+    /**
+     * What the last press of this button asked about, or null when it asked nothing: the offending lines as
+     * they stood, with their markup. Kept so that the press after a warning writes what the operator was
+     * shown and nothing else — a warning answered on one text must not become leave to write another — and
+     * so that a change to those lines asks again, without this screen having to watch the fields for edits.
+     */
+    private String warnedAbout;
 
     private ItemEditorScreen(EffectToolSlot.Address source) {
         super(Component.translatable("backutils.item_editor.title"));
@@ -319,8 +419,19 @@ public final class ItemEditorScreen extends Screen {
 
     /** Builds the panel once. The screen is made fresh for each item, so this runs once per open. */
     private void build() {
+        // The title stands in the middle of the top row and the two buttons hold its ends: the one that
+        // leaves the editor where the title used to be, at the left, and the one that writes the item where
+        // the way out used to be, at the right. The title is the flexed item, which is what pushes the
+        // buttons to the ends, and it is centred in its own box because a flexed label draws its words at
+        // the left of a box that is now wider than they are.
+        //
+        // The middle it stands in is the middle of the room between the two buttons rather than of the
+        // panel: they are not the same width — seventy-two against ninety-six — so the title is half that
+        // difference, twelve pixels, left of the panel's own middle. It is a nudge nobody reads as one, and
+        // the alternative is a title stretched over the row and the buttons it would then stand over.
         Label title = new Label();
         text(title, "backutils.item_editor.title", 12f);
+        title.textStyle(t -> t.textAlignHorizontal(Horizontal.CENTER));
         title.layout(l -> l.flex(1).height(ROW));
 
         Button close = new Button();
@@ -328,18 +439,30 @@ public final class ItemEditorScreen extends Screen {
         close.layout(l -> l.width(72).height(LINE_HEIGHT));
         close.setOnClick(e -> Minecraft.getInstance().setScreen(null));
 
-        // The title shares its row with the button that leaves the screen: the editor is one panel, and the
-        // way out of it belongs at the top of it rather than among the work at the bottom.
+        // Apply stands beside the button that leaves the screen, where the way out of the editor used to be,
+        // rather than at the foot of a panel that scrolls: the attribute list grows with the item, and the
+        // one button that writes the whole edit is a button an operator had to scroll past to find. What the
+        // two of them do is untouched — this one writes and stays open, and the one beside it closes and
+        // writes nothing, which is what each of them did before they changed places. What this one does
+        // first is ask: markup that would be drawn as its characters is worth a word before it is written,
+        // and the asking is commit.
+        applyButton = new Button();
+        text(applyButton.text, "backutils.item_editor.button.apply", 9f);
+        applyButton.layout(l -> l.width(96).height(LINE_HEIGHT));
+        applyButton.setOnClick(e -> commit());
+
         UIElement titleRow = new UIElement();
         titleRow.layout(row());
-        titleRow.addChildren(title, close);
+        titleRow.addChildren(close, title, applyButton);
 
         // The two fields hold the workflow's own text: what is typed there is what the server is given,
         // tags and all, and nothing parses it for drawing. The preview is the parsed reading of the same
         // text, which is what makes the pair worth having.
         name.setText("", false);
         name.layout(l -> l.flex(1).height(LINE_HEIGHT));
-        name.setTextResponder(value -> { });
+        // Typing is the one change nothing else announces, so the field's own word that what it holds has
+        // changed is what keeps a step of it — one per character, like the field's own history.
+        name.setTextResponder(value -> record());
 
         UIElement nameRow = new UIElement();
         nameRow.layout(row());
@@ -349,7 +472,7 @@ public final class ItemEditorScreen extends Screen {
 
         lore.setLines(List.of(""));
         lore.layout(l -> l.flex(1).height(LORE_FIELD_HEIGHT));
-        lore.setLinesResponder(lines -> { });
+        lore.setLinesResponder(lines -> record());
 
         UIElement loreRow = new UIElement();
         loreRow.layout(l -> l.widthPercent(100).height(LORE_FIELD_HEIGHT)
@@ -368,21 +491,29 @@ public final class ItemEditorScreen extends Screen {
         //
         // Inset by the frame's own padding at the sides, because the frame is drawn round these two boxes: a box
         // on the content edge with a frame round it puts the frame outside the column every other row is
-        // aligned to, which is a frame that looks like a mistake.
-        namePreview.layout(l -> l.marginLeft(PREVIEW_PAD).marginRight(PREVIEW_PAD)
-                .widthPercent(100).height(NAME_PREVIEW_HEIGHT));
-        // The lore is pulled up under the name by all of the name's box that is not the line of text drawn at
-        // the top of it, less the two pixels of air a tooltip leaves between its lines. The name's box is the
-        // icon's — twenty-four pixels for a twenty-pixel icon — while the words are nine, so without this the
-        // lore would hang a third of an inch below the name it belongs to.
-        int under = rowHeight() + PREVIEW_GAP - NAME_PREVIEW_HEIGHT;
-        lorePreview.layout(l -> l.marginLeft(PREVIEW_PAD).marginRight(PREVIEW_PAD)
-                .widthPercent(100).height(LORE_PREVIEW_HEIGHT).marginTop(under));
+        // aligned to, which is a frame that looks like a mistake. Stretched rather than asked for a hundred
+        // per cent of the column, because a box asked for a hundred per cent and then given a margin either
+        // side is a box that hangs both margins off the column: the frame drawn round it would reach into the
+        // picker's column beside it and be painted over the picker, this screen drawing after the widgets.
+        // Stretched, the margins come off the width, and the frame lands on the column's own edges.
+        //
+        // The name's box is the line of text drawn at its top and the air a tooltip leaves under a line — not
+        // the icon's twenty-four: the icon is drawn at this box's corner and hangs below it, beside the lore
+        // rather than above it, and what holds the icon is the frame, which is drawn from six pixels above
+        // this box to six below the lore's. The air is inside this box rather than a negative margin between
+        // the two boxes, and that is not a matter of taste: a column with a negative margin inside it answers
+        // no height to the row that holds it in this library's layout, so the row, the scroller's content and
+        // everything measured from them would come out shorter than what they hold — and a panel whose
+        // content is measured short is a panel that cannot be scrolled to its last attribute row.
+        namePreview.layout(l -> l.widthStretch().marginLeft(PREVIEW_PAD).marginRight(PREVIEW_PAD)
+                .height(rowHeight() + PREVIEW_GAP));
+        lorePreview.layout(l -> l.widthStretch().marginLeft(PREVIEW_PAD).marginRight(PREVIEW_PAD)
+                .height(LORE_PREVIEW_HEIGHT));
 
         // Neither of these two boxes is ever a target: they hold room for what this screen draws, and a box
         // that holds room is not something to click. Left to take a hit test, one of them swallows the clicks
-        // of whatever it stands over — which is how half of the Apply button came to do nothing, because the
-        // box for the lore is a hundred per cent wide and stood over it.
+        // of whatever it stands over — which is how half of the button that writes the item came to do
+        // nothing, while it stood at the foot of the panel under a box for the lore that spanned the column.
         namePreview.setAllowHitTest(false);
         lorePreview.setAllowHitTest(false);
 
@@ -397,20 +528,15 @@ public final class ItemEditorScreen extends Screen {
             fill();
         });
 
-        Button apply = new Button();
-        text(apply.text, "backutils.item_editor.button.apply", 9f);
-        apply.layout(l -> l.width(96).height(ROW));
-        apply.setOnClick(e -> send());
-
-        // One row at the foot of the panel for what the item grants and for the button that writes it, pushed
-        // to the right so that the attribute rows are the last thing on the screen.
+        // The header of the list names what the item grants and adds a row to it, and holds nothing else now
+        // that the button that writes the item has gone up to the top of the panel. The spacer keeps the two
+        // of them at the left, where the captions of the rows above stand.
         UIElement spacer = new UIElement();
         spacer.layout(l -> l.flex(1));
 
         UIElement attributeHeader = new UIElement();
         attributeHeader.layout(row());
-        attributeHeader.addChildren(caption("backutils.item_editor.label.attributes"), addAttribute,
-                spacer, apply);
+        attributeHeader.addChildren(caption("backutils.item_editor.label.attributes"), addAttribute, spacer);
 
         // The symbol button stands at the right, just under the lore field: it fills whichever field has the
         // caret, and the lore is where most of the text that wants a symbol is typed.
@@ -424,6 +550,35 @@ public final class ItemEditorScreen extends Screen {
         symbolToggle = symbolButton();
         symbolRow.addChildren(symbolSpacer, symbolToggle);
 
+        // The editor's own shape below the fields: a column of the picker's own width at the panel's right
+        // edge, holding the picker, with the row of formatting buttons ending against its left edge and
+        // everything that is read — the preview and the attributes — to the left of that.
+        //
+        // The picker's column is as tall as the whole column and not only as tall as the picker, and that
+        // empty room below the picker is the point of the shape rather than a leftover: the preview beside it
+        // keeps one width from its first row to its last, and the width is what its text is wrapped into — a
+        // preview that grew once the picker's own box was behind it would re-wrap every line it had drawn
+        // while the screen scrolled past the picker, which is the one thing the wrap cache must not be asked
+        // to do quietly (see Rows).
+        UIElement columns = new UIElement();
+        columns.layout(l -> l.widthPercent(100)
+                .flexDirection(FlexDirection.ROW)
+                .alignItems(AlignItems.FLEX_START)
+                .gapAll(GAP)
+                // Wrapped rather than squeezed, for the window too narrow to hold the picker's column and a
+                // usable preview beside it. A flex row takes the room out of whichever item will give it, and
+                // the preview is the one that would: asked for the least room it can hold, below which the
+                // picker stands on the row under it instead. Nothing overlaps either way — the columns are
+                // never drawn over one another, they are laid side by side or one above the other.
+                .flexWrap(FlexWrap.WRAP));
+
+        UIElement left = new UIElement();
+        left.layout(l -> l.flex(1).minWidth(PICKER)
+                .flexDirection(FlexDirection.COLUMN).gapAll(GAP));
+        left.addChildren(styles, namePreview, lorePreview, attributeHeader, attributeRows);
+
+        columns.addChildren(left, pickerColumn());
+
         // Everything is inside a scroller, so the panel scrolls rather than cutting off whatever does not
         // fit: the attribute list grows with the item, and a screen that can show three of them is a screen
         // that cannot edit the fourth.
@@ -432,8 +587,7 @@ public final class ItemEditorScreen extends Screen {
         scroller.viewPort.style(style -> style.backgroundTexture(IGuiTexture.EMPTY));
         scroller.viewContainer.layout(l -> l.widthPercent(100).heightAuto()
                 .flexDirection(FlexDirection.COLUMN).gapAll(GAP));
-        scroller.viewContainer.addChildren(titleRow, nameRow, loreRow, symbolRow, styles, namePreview,
-                lorePreview, attributeHeader, attributeRows);
+        scroller.viewContainer.addChildren(titleRow, nameRow, loreRow, symbolRow, columns);
 
         panel.style(s -> s.background(new ColorRectTexture(PANEL_BG)));
         panel.addChildren(scroller);
@@ -450,26 +604,56 @@ public final class ItemEditorScreen extends Screen {
      * preview first, in the name field when the preview has no selection — and presses a tag on to it or, on
      * words that already wear it, takes it off again; with nothing selected at all it leaves an empty pair
      * with the caret between them, which is how a tag's value is typed. The colour is not here: the picker
-     * below applies its own.
+     * beside the row applies its own.
+     *
+     * <p>The row is the full width of the column it shares with the preview, and the buttons are pushed to
+     * its right end, which is the picker's left edge: the two of them are read as one control, so the picker
+     * stands against them at the panel's right edge rather than a column away from them.
      */
     private UIElement styleRow() {
         UIElement row = new UIElement();
         row.layout(l -> l.widthPercent(100)
                 .flexDirection(FlexDirection.ROW)
                 .alignItems(AlignItems.FLEX_START)
+                .justifyContent(AlignContent.FLEX_END)
                 .gapAll(2));
 
-        // The picker arrives with a colour square, an alpha bar and four rows of fields and sliders under
-        // it, which is more than the room the panel gives it — and what does not fit is drawn over what is
-        // below, because nothing clips it. The alpha bar and the rows under the hex field go, exactly as
-        // they do in the profile editor: an item's colour has no alpha in the markup this mod writes, and
-        // the hex field is the part worth keeping, because a typed value cannot silently fail to register
-        // the way a drag can.
-        //
-        // The size is given, and the minimum is nothing, because a flex item is otherwise at least as
-        // large as its contents: the square is a percentage of the width and the hex field and its copy
-        // button set a floor under it, which is how the picker came out wider and taller than the room
-        // reserved for it and was drawn across the preview.
+        row.addChildren(
+                styleButton("backutils.item_editor.style.bold", "bold"),
+                styleButton("backutils.item_editor.style.italic", "italic"),
+                styleButton("backutils.item_editor.style.underline", "underline"),
+                styleButton("backutils.item_editor.style.strike", "strikethrough"),
+                // The one button that cannot wear its own formatting: obfuscated text is drawn as glyphs the
+                // client picks at random, so a label written that way is a label nobody can read, and it is not
+                // a small label that wobbles — it is a row that wobbles, because the random glyphs are not all
+                // the same width. Its letter says what it does instead, the way the others do with theirs.
+                styleButton("backutils.item_editor.style.obfuscated", "obfuscated"),
+                plainButton("backutils.item_editor.style.clear", () -> clearStyle()));
+
+        return row;
+    }
+
+    /**
+     * {@return the column the colour picker stands in}
+     *
+     * <p>A column of its own at the panel's right edge, as wide as the picker and as tall as the column it
+     * stands beside. What is under the picker inside it is empty room, and that is the point: the preview
+     * keeps one width whether it is drawing the row beside the picker or the rows below it, and the width is
+     * what its text is wrapped into — see {@link Rows}.
+     *
+     * <p>The picker arrives with a colour square, an alpha bar and four rows of fields and sliders under
+     * it, which is more than the room the column gives it — and what does not fit is drawn over what is
+     * below, because nothing clips it. The alpha bar and the rows under the hex field go, exactly as
+     * they do in the profile editor: an item's colour has no alpha in the markup this mod writes, and
+     * the hex field is the part worth keeping, because a typed value cannot silently fail to register
+     * the way a drag can.
+     *
+     * <p>The size is given, and the minimum is nothing, because a flex item is otherwise at least as
+     * large as its contents: the square is a percentage of the width and the hex field and its copy
+     * button set a floor under it, which is how the picker came out wider and taller than the room
+     * reserved for it and was drawn across the preview.
+     */
+    private UIElement pickerColumn() {
         picker.layout(l -> l.width(PICKER).height(PICKER + PICKER_EXTRA).minWidth(0).minHeight(0));
         picker.alphaSlider.setVisible(false);
         picker.alphaSlider.layout(l -> l.display(TaffyDisplay.NONE));
@@ -486,23 +670,14 @@ public final class ItemEditorScreen extends Screen {
         picker.setColor(0xFFFFFFFF, false);
 
         // No colour button: the picker is the colour control, and letting go of it applies what it holds
-        // to whatever is selected — see mouseReleased. It stands beside the buttons rather than at the far
-        // end of the row, because the row is as tall as the picker and a control a screen away from the
-        // buttons it belongs to is a control nobody finds.
-        row.addChildren(
-                styleButton("backutils.item_editor.style.bold", "bold"),
-                styleButton("backutils.item_editor.style.italic", "italic"),
-                styleButton("backutils.item_editor.style.underline", "underline"),
-                styleButton("backutils.item_editor.style.strike", "strikethrough"),
-                // The one button that cannot wear its own formatting: obfuscated text is drawn as glyphs the
-                // client picks at random, so a label written that way is a label nobody can read, and it is not
-                // a small label that wobbles — it is a row that wobbles, because the random glyphs are not all
-                // the same width. Its letter says what it does instead, the way the others do with theirs.
-                styleButton("backutils.item_editor.style.obfuscated", "obfuscated"),
-                plainButton("backutils.item_editor.style.clear", () -> clearStyle()));
-
-        row.addChild(picker);
-        return row;
+        // to whatever is selected — see mouseReleased. It stands at the column's top, level with the row of
+        // formatting buttons, rather than under it: the two are one control, and the buttons are read as
+        // the picker's other half only if they stand beside it on the same line.
+        UIElement column = new UIElement();
+        column.layout(l -> l.width(PICKER).flexShrink(0)
+                .flexDirection(FlexDirection.COLUMN).gapAll(GAP));
+        column.addChild(picker);
+        return column;
     }
 
     /**
@@ -570,10 +745,15 @@ public final class ItemEditorScreen extends Screen {
     }
 
     /**
-     * {@return the top of the menu}: the row the button is on, which is the blank space under the lore
+     * {@return the top of the menu}: the row the button is on, which is the row between the fields and the
+     * preview
      *
-     * <p>Under the fields, beside the picker rather than over it — the picker is to the left and the menu is
-     * at the right edge — so an open menu covers no field and no control.
+     * <p>Under the fields, and at the right edge where the button is. It opens over the row of formatting
+     * buttons and the top of the colour picker, which stand in the panel's right-hand column: the picker was
+     * left of the buttons until it was moved to the edge it was asked to stand at, and the empty room the
+     * menu opened into went with it. It cannot stand over the preview instead, because this screen draws the
+     * preview after the widgets and a menu there would be painted over; the fields are what it was kept off,
+     * which leaves the column the controls are in. It is put away by the button that opened it.
      */
     private int symbolTop() {
         return symbolToggle == null ? PAD : Math.max(PAD, Math.round(symbolToggle.getPositionY()));
@@ -644,23 +824,27 @@ public final class ItemEditorScreen extends Screen {
      * @param change what to do to a line and to the run of it that is selected
      */
     private void edit(BiFunction<String, int[], ItemEdit.Edited> change) {
-        Mark selection = live();
-        if (selection != null) {
-            for (int field = selection.fromField(); field <= selection.toField(); field++) {
-                int[] range = rangeOn(selection, field);
-                if (range == null) continue;
-                setMarkup(field, change.apply(markup(field), range).text());
+        // Every write below belongs to one press of one button, so none of them is kept on its own: the
+        // caller keeps the step, once, when the whole change is on screen — see wrap, clearStyle, colour.
+        unrecorded(() -> {
+            Mark selection = live();
+            if (selection != null) {
+                for (int field = selection.fromField(); field <= selection.toField(); field++) {
+                    int[] range = rangeOn(selection, field);
+                    if (range == null) continue;
+                    setMarkup(field, change.apply(markup(field), range).text());
+                }
+                // The selection itself does not move. What was put round it is invisible, so the same
+                // characters of the item's text are still the ones selected, and the next button applies to
+                // them rather than to whatever the offsets have become.
+                return;
             }
-            // The selection itself does not move. What was put round it is invisible, so the same
-            // characters of the item's text are still the ones selected, and the next button applies to
-            // them rather than to whatever the offsets have become.
-            return;
-        }
 
-        String text = name.getText() == null ? "" : name.getText();
-        ItemEdit.Edited edited = change.apply(text, new int[]{chosenFrom, chosenTo});
-        name.setText(edited.text(), false);
-        name.setSelection(edited.from(), edited.to());
+            String text = nameMarkup();
+            ItemEdit.Edited edited = change.apply(text, new int[]{chosenFrom, chosenTo});
+            name.setText(edited.text(), false);
+            name.setSelection(edited.from(), edited.to());
+        });
     }
 
     /**
@@ -677,6 +861,7 @@ public final class ItemEditorScreen extends Screen {
         edit(off
                 ? (text, range) -> ItemEdit.unwrapped(text, range[0], range[1], open)
                 : (text, range) -> ItemEdit.wrapped(text, range[0], range[1], open, close));
+        record();
     }
 
     /** {@return whether every character the selection covers already wears this style} */
@@ -693,12 +878,14 @@ public final class ItemEditorScreen extends Screen {
     /** Takes every formatting tag out of the selection, which is what the clear button does. */
     private void clearStyle() {
         edit((text, range) -> ItemEdit.untagged(text, range[0], range[1]));
+        record();
     }
 
     /** Sets the picker's colour on whatever is selected, which is what letting go of the picker means. */
     private void colour() {
         String hex = hexOf(picker.getColor());
         edit((text, range) -> ItemEdit.recoloured(text, range[0], range[1], hex));
+        record();
     }
 
     /**
@@ -720,7 +907,7 @@ public final class ItemEditorScreen extends Screen {
 
     /** {@return the markup of one line of the item}, which is what is edited and what the server gets */
     private String markup(int field) {
-        if (field == NAME_FIELD) return name.getText() == null ? "" : name.getText();
+        if (field == NAME_FIELD) return nameMarkup();
         List<String> lines = loreLines();
         return field >= 0 && field < lines.size() ? lines.get(field) : "";
     }
@@ -763,10 +950,14 @@ public final class ItemEditorScreen extends Screen {
             return;
         }
 
-        String text = name.getText() == null ? "" : name.getText();
+        String text = nameMarkup();
         int at = Math.max(0, Math.min(name.getCursorPos(), text.length()));
         name.setText(text.substring(0, at) + inserted + text.substring(at), false);
         name.setCursor(at + inserted.length());
+        // The write above is made with the field's own notification off, so the step is kept here. The
+        // lore's half of this method goes through the area's responder, which keeps one of its own — the
+        // second is the same state and is dropped by record.
+        record();
     }
 
     /** Puts a symbol into the lore at the caret, on the line the caret is on. */
@@ -784,9 +975,42 @@ public final class ItemEditorScreen extends Screen {
         lore.setCursor(line, at + inserted.length());
     }
 
+    /**
+     * {@return the name's markup as the field holds it}
+     *
+     * <p>The one reading of the field, because it is asked in several places — what the server is given, what
+     * the preview is wrapped from, what a selection is measured against — and a field that has never been
+     * typed in answers null rather than nothing.
+     */
+    private String nameMarkup() {
+        return name.getText() == null ? "" : name.getText();
+    }
+
     /** {@return the lore as it stands in the area}, one entry per line */
     List<String> loreLines() {
         return List.copyOf(lore.getLines());
+    }
+
+    /**
+     * {@return the lore the item will be left with}, which is the field's lines with the one blank line a
+     *         text area cannot be rid of read as no lore at all
+     *
+     * <p><b>A text area holds at least one line.</b> The library's own {@code TextArea#setValue} is asked
+     * for no lines and puts one empty line in the field, so an item opened with no lore and an item whose
+     * every line was typed away both stand in the field as one blank entry, and nothing tells them apart.
+     * Read as a line, that entry is a lore line of no characters, and the edit that is sent writes it to the
+     * item: the game draws an empty line of lore as the blank line in the item's tooltip where the operator
+     * expected to see their name alone — the blank lore line that appears when there is no lore. Read as no
+     * lore, the item keeps none and the preview is handed no lore line at all, which is what an empty field
+     * means.
+     *
+     * <p><b>A blank line the operator typed is a different thing and survives.</b> It is one entry among
+     * others rather than the whole of an otherwise empty field, so a lore of two lines whose first was left
+     * blank still sends that blank line, and the item still shows the gap it was written for.
+     */
+    private List<String> itemLore() {
+        List<String> lines = loreLines();
+        return lines.size() == 1 && lines.get(0).isEmpty() ? List.of() : lines;
     }
 
     /** {@return the attributes as they stand in the rows} */
@@ -833,10 +1057,16 @@ public final class ItemEditorScreen extends Screen {
         attributes.clear();
         attributes.addAll(added);
         refreshAttributes();
+        record();
     }
 
     /** Rebuilds the attribute rows from the list, which is the only state the section keeps. */
     private void refreshAttributes() {
+        // A row's widgets go with the rebuild, and one of them may be the field the keyboard is in: an
+        // undo of a typed amount takes the row away from under its own caret. The focus is let go of
+        // first, because the UI would otherwise keep sending keys to a field that is no longer in the
+        // tree, which is a field that does nothing with them and says nothing about why.
+        if (attributeRows.isAncestorOf(ui.getFocusedElement())) ui.clearFocus();
         attributeRows.clearAllChildren();
         for (int i = 0; i < attributes.size(); i++) {
             attributeRows.addChild(attributeRow(i));
@@ -891,6 +1121,9 @@ public final class ItemEditorScreen extends Screen {
         ResourceLocation id = ResourceLocation.tryParse(attribute == null ? "" : attribute);
         if (id == null) return;
         attributes.set(index, new ItemEdit.Granted(id, amount, operation, slot));
+        // Every way a row can be changed arrives here — the name chosen, the amount typed, the operation
+        // and the slot — so this is the one place a step of the attribute list is kept.
+        record();
     }
 
     private void removeAttribute(int index) {
@@ -898,6 +1131,7 @@ public final class ItemEditorScreen extends Screen {
         attributes.remove(index);
         refreshAttributes();
         fill();
+        record();
     }
 
     /** {@return a number as the box should show it}, without a trailing zero on a whole number */
@@ -975,43 +1209,139 @@ public final class ItemEditorScreen extends Screen {
 
     /** Fills the fields from the item as it stands, so the screen opens on what is there. */
     private void load() {
-        ItemStack stack = stack();
-        Component current = stack == null ? null : stack.get(DataComponents.CUSTOM_NAME);
-        // Through the conversion rather than through the text: an item's name carries its styling, and
-        // reading only the words would mean that opening an item and pressing apply restyled it.
-        name.setText(current == null ? "" : ItemEdit.markup(current), false);
+        // Reading the item into the fields is not an edit — there is nothing behind it to go back to —
+        // so it is made off the record and the state it arrives at becomes the only entry of the history
+        // so far. Done on every load rather than on the first, because a load is always the item as it
+        // stands being put on screen: see the note on the history field.
+        unrecorded(() -> {
+            ItemStack stack = stack();
+            Component current = stack == null ? null : stack.get(DataComponents.CUSTOM_NAME);
+            // Through the conversion rather than through the text: an item's name carries its styling, and
+            // reading only the words would mean that opening an item and pressing apply restyled it.
+            name.setText(current == null ? "" : ItemEdit.markup(current), false);
 
-        ItemLore currentLore = stack == null ? null : stack.get(DataComponents.LORE);
-        List<String> lines = new ArrayList<>();
-        if (currentLore != null) {
-            for (Component line : currentLore.lines()) lines.add(ItemEdit.markup(line));
-        }
-        lore.setLines(lines);
-
-        ItemAttributeModifiers currentAttributes = stack == null
-                ? null : stack.get(DataComponents.ATTRIBUTE_MODIFIERS);
-        attributes.clear();
-        if (currentAttributes != null) {
-            for (ItemAttributeModifiers.Entry entry : currentAttributes.modifiers()) {
-                ResourceLocation id = BuiltInRegistries.ATTRIBUTE.getKey(entry.attribute().value());
-                if (id == null) continue;
-                attributes.add(new ItemEdit.Granted(id, entry.modifier().amount(),
-                        entry.modifier().operation(), entry.slot()));
+            ItemLore currentLore = stack == null ? null : stack.get(DataComponents.LORE);
+            List<String> lines = new ArrayList<>();
+            if (currentLore != null) {
+                for (Component line : currentLore.lines()) lines.add(ItemEdit.markup(line));
             }
-        }
-        refreshAttributes();
+            lore.setLines(lines);
+
+            ItemAttributeModifiers currentAttributes = stack == null
+                    ? null : stack.get(DataComponents.ATTRIBUTE_MODIFIERS);
+            attributes.clear();
+            if (currentAttributes != null) {
+                for (ItemAttributeModifiers.Entry entry : currentAttributes.modifiers()) {
+                    ResourceLocation id = BuiltInRegistries.ATTRIBUTE.getKey(entry.attribute().value());
+                    if (id == null) continue;
+                    attributes.add(new ItemEdit.Granted(id, entry.modifier().amount(),
+                            entry.modifier().operation(), entry.slot()));
+                }
+            }
+            refreshAttributes();
+        });
+
+        history.clear();
+        history.add(snapshot());
+        step = 0;
     }
 
     /**
      * Sends all three sections for the server to write.
      *
      * <p>The whole edit, because the screen shows all of it: an empty lore is the operator having
-     * removed every line, and an empty attribute list is an item that grants nothing.
+     * removed every line, and an empty attribute list is an item that grants nothing. The lore is read
+     * through {@link #itemLore} and not off the field, because a field with nothing in it holds one blank
+     * line rather than none — sent as it stands, that line is written to the item as a blank line of lore
+     * where the operator asked for none.
+     *
+     * <p>An edit past the bounds the message and the reader both keep is refused here, in words, and
+     * nothing is sent: the wire would otherwise be written with a smaller item than the one on screen, or
+     * throw on Apply.
      */
     private void send() {
         if (source == null) return;
-        ItemEditorNetwork.send(ItemEditPayload.full(source.where(), source.containerId(),
-                source.slot(), name.getText(), loreLines(), attributeList()));
+        ItemEditPayload payload = ItemEditPayload.full(source.where(), source.containerId(),
+                source.slot(), name.getText(), itemLore(), attributeList());
+        String problem = ItemEditPayload.problem(payload);
+        if (problem != null) {
+            // Nothing is sent, so the item is untouched and this message is the whole of what happened.
+            say(Component.literal(problem));
+            return;
+        }
+        ItemEditorNetwork.send(payload);
+    }
+
+    /**
+     * Writes the edit, or says a word about it once before writing it.
+     *
+     * <p>A name or a line of lore whose markup styles none of its own characters is not markup to the
+     * library: it is drawn as the characters it is written with, so the item shows the tags themselves
+     * rather than the words they were meant to shape — see {@link ItemEdit#styles} and {@link
+     * ItemEdit#shown}, which is the same reading the preview draws by. That is worth a word, because the
+     * operator typed one thing and the item would show another, and it is worth only a word: this screen
+     * never rewrites, drops or reorders what was typed, and the press that follows the word writes it as it
+     * stands.
+     *
+     * <p>So the first press names the lines that would be drawn as their tags and says what that means, and
+     * the button becomes the confirmation; the press after it writes the edit. Anything else cancels: a
+     * press whose offending lines are the ones already asked about writes them, and a press that finds
+     * different ones asks about those, so a confirmation cannot land on a text the operator was not shown.
+     *
+     * <p><b>This is a word, not a gate.</b> The same name can reach an item without this screen being open
+     * at all — the library's own anvil surface lets markup through, and a name can arrive from a command or
+     * another mod — so an operator is told here, and nothing here claims every route passes through it.
+     */
+    private void commit() {
+        List<String> lore = itemLore();
+        List<ItemEdit.Unstyled> lines = ItemEdit.unstyled(nameMarkup(), lore);
+        String asked = about(nameMarkup(), lore, lines);
+        if (lines.isEmpty() || asked.equals(warnedAbout)) {
+            warnedAbout = null;
+            applyButton.text.setText(Text.of("backutils.item_editor.button.apply"), false);
+            send();
+            return;
+        }
+
+        warnedAbout = asked;
+        applyButton.text.setText(Text.of("backutils.item_editor.button.apply_anyway"), false);
+        for (ItemEdit.Unstyled line : lines) warn(line);
+    }
+
+    /**
+     * Tells the operator that one line of the edit will be drawn as the characters of its own tags, and
+     * which line it is: the notice the library's own reading of an item would otherwise give them, said
+     * before the item is written rather than after somebody reads it.
+     */
+    private void warn(ItemEdit.Unstyled line) {
+        Component where = line.title()
+                ? Component.translatable("backutils.item_editor.label.name")
+                : Component.translatable("backutils.item_editor.label.lore_line", line.line() + 1);
+        say(Component.translatable("backutils.item_editor.unstyled", where));
+    }
+
+    /** Says one thing to the operator, on the line every notice from this screen already uses. */
+    private static void say(Component message) {
+        Player player = Minecraft.getInstance().player;
+        if (player == null) return;
+        player.displayClientMessage(message, false);
+    }
+
+    /**
+     * {@return what a warning about these lines is about}: which lines they are and the markup each holds,
+     * in the order they stand.
+     *
+     * <p>Compared with the answer to the same question asked again, which is what tells a confirmed press
+     * from one that has to ask: a line of it changed, a line stopped offending, or another one started, and
+     * the two answers differ.
+     */
+    private static String about(String name, List<String> lore, List<ItemEdit.Unstyled> lines) {
+        StringBuilder out = new StringBuilder();
+        for (ItemEdit.Unstyled line : lines) {
+            String where = line.title() ? "name " : "lore " + (line.line() + 1) + ' ';
+            out.append(where).append(line.title() ? name : lore.get(line.line())).append('\u0000');
+        }
+        return out.toString();
     }
 
     /** Lays the panel out over the whole window, which is what every list change and resize asks for. */
@@ -1027,33 +1357,137 @@ public final class ItemEditorScreen extends Screen {
         return player == null || source == null ? null : EffectToolSlot.stackAt(player, source);
     }
 
+    // ------------------------------------------------------------------
+    // The history: what an undo puts back, and the two chords that ask for one
+    // ------------------------------------------------------------------
+
     /**
-     * {@return one line of the item as the component the game can draw}
+     * One step: everything inside this screen that an edit can alter.
      *
-     * <p>The very component the server writes — {@link ItemEdit#line} — so that this is not a drawing of the
-     * item but the item: the markup travels as the text of a literal, the library's own hook parses it as the
-     * game draws it, and an effect written into a line animates here exactly as it will animate on the item.
-     * That is the whole reason the line is not taken apart into runs first, which is what this used to do: a
-     * component can hold a colour and a weight, and it cannot hold an animation.
+     * <p>The whole state rather than a difference, because an undo has to put a state back and not a
+     * change: the name, the lore, the colour the picker holds, the attributes, and the selection in the
+     * preview — which is an edit's own state as well, since the buttons act on it.
      *
-     * <p>The one place that differs is the size, which is the preview's own: it is drawn a little larger than
-     * the game's font — see drawPreview — and that is a matter of the pose it is drawn in, not of the
-     * component, so nothing here has to know about it.
+     * <p>Not the field the caret is in, the name field's remembered selection, or the drag in progress.
+     * Those are readings of what the operator is doing rather than of what is being edited: the caret's
+     * field is taken again from the focused field on every frame, and a selection belongs to the text it
+     * was taken in, which {@link #live} already checks before anything is done with it.
      */
-    private static Component drawable(String markup) {
-        return ItemEdit.line(markup);
+    private record Snapshot(String name, List<String> lore, int colour, List<ItemEdit.Granted> attributes,
+                            Mark mark, String marked) { }
+
+    /** {@return the state on screen as one step of the history} */
+    private Snapshot snapshot() {
+        return new Snapshot(nameMarkup(), loreLines(), picker.getColor(), attributeList(), mark, marked);
     }
 
+    /**
+     * Keeps the state as it now stands, so that an undo can come back to it.
+     *
+     * <p>Called after a change rather than before one, which is what makes the step the position stands
+     * on the state on screen: a change writes itself into the fields, the change is kept, and an undo
+     * steps back to the entry before it.
+     *
+     * <p>A state identical to the one already kept is not kept again, so re-choosing the colour that is
+     * already chosen, or an edit that turns out to change nothing, does not fill the history with steps
+     * that undo to themselves. What is kept is one step per change, a typed character included — the
+     * library's own fields keep their history at the same grain, see {@code TextField} — rather than a
+     * run of typing gathered into one step, which would make undoing a single word of it impossible.
+     *
+     * <p>A change made after an undo throws away what was undone: the redo of a step is the step that
+     * followed it, and this one no longer does.
+     */
+    private void record() {
+        if (writing) return;
+
+        Snapshot now = snapshot();
+        if (step >= 0 && history.get(step).equals(now)) return;
+
+        while (history.size() > step + 1) history.remove(history.size() - 1);
+        history.add(now);
+        if (history.size() > HISTORY) history.remove(0);
+        step = history.size() - 1;
+    }
+
+    /**
+     * Runs one change with the history deaf to it, so that a change made of several writes is one step.
+     *
+     * <p>A formatting tag written to every line a selection covers is one press of one button, and a
+     * state put back by an undo is not a change at all; without this each write would be its own step and
+     * only the first of them could be walked back to.
+     */
+    private void unrecorded(Runnable change) {
+        writing = true;
+        try {
+            change.run();
+        } finally {
+            writing = false;
+        }
+    }
+
+    /** Goes back one step, if there is one behind the state on screen; nothing happens when there is not. */
+    private void undo() {
+        if (step <= 0) return;
+        step--;
+        restore(history.get(step));
+    }
+
+    /** Goes forward again through a step that was undone, if there is one. */
+    private void redo() {
+        if (step < 0 || step + 1 >= history.size()) return;
+        step++;
+        restore(history.get(step));
+    }
+
+    /**
+     * Puts one step back on screen: every field a change can have written, and the preview with them.
+     *
+     * <p>Written out in one place, because an undo that put the fields back and left the picker or the
+     * attribute list as the undone change left them would be an undo of part of an edit, and the state it
+     * is meant to restore is one the operator had. The writes are made off the record, since putting a
+     * state back is not a change to it.
+     */
+    private void restore(Snapshot state) {
+        unrecorded(() -> {
+            name.setText(state.name(), false);
+            lore.setLines(state.lore());
+            picker.setColor(state.colour(), false);
+            attributes.clear();
+            attributes.addAll(state.attributes());
+            refreshAttributes();
+            mark = state.mark();
+            marked = state.marked();
+            // The rows the preview draws are keyed on the text they were wrapped from, which has just
+            // changed, so the next frame would build them again anyway. They are forgotten outright
+            // because this is a state being put back rather than a change being made, and a preview
+            // redrawn must not be a thing that happens only when comparing that key says so.
+            nameRows.forget();
+            loreRows.forget();
+        });
+    }
 
     // ------------------------------------------------------------------
     // The preview: what it draws, and what can be selected in it
     // ------------------------------------------------------------------
 
-    /** One character of the preview as it was drawn: where it is, and which characters of the item it is. */
+    /**
+     * One character of a drawn row: how far it stands from the row's left edge, how wide it is drawn, and
+     * which characters of the item it is.
+     *
+     * <p>The distance and not the place, because the place moves with the layout and the distance does not:
+     * see {@link #glyphs}.
+     */
     private record Glyph(int x, int width, int from, int to) { }
 
-    /** One drawn line: the line of the item it came from, where it sits, and the characters on it. */
-    private record Line(int field, int y, List<Glyph> glyphs) { }
+    /**
+     * One drawn row of the preview: the line of the item it came from, where it sits, where its text begins,
+     * and its characters.
+     *
+     * <p>The characters are the row's own and still measured from the row's left edge; the left is the edge
+     * they are measured from, taken again each frame because a frame's layout is what puts the row where it
+     * is.
+     */
+    private record Line(int field, int y, int left, List<Glyph> glyphs) { }
 
     /** Where the mouse is: which line of the item, and which character of that line. */
     private record Spot(int field, int at) { }
@@ -1080,8 +1514,10 @@ public final class ItemEditorScreen extends Screen {
      * <p>The frame is drawn rather than given as an element around the two boxes, and that is a decision made
      * after trying the other way: a box put round them in the layout came out shorter than what it held, so
      * the lore was positioned below its own frame and stood over the attribute list — where, being a box that
-     * takes a hit test, it swallowed half the Apply button. A rectangle drawn from the two boxes this screen
-     * already measures cannot do either: it is the same numbers the drawing is done from.
+     * takes a hit test, it swallowed half of the button that writes the item, which then stood at the foot of
+     * the panel. A rectangle drawn from the two boxes this screen already measures cannot do either: it is
+     * the same numbers the drawing is done from, and the frame the two boxes ask for is exactly the column
+     * they stand in — see the note on the previews' width in build.
      *
      * <p>It also writes down what it drew, and that is what the mouse is measured against afterwards: the
      * geometry of the last frame is the only text on screen, so it is the only thing a click can mean.
@@ -1089,9 +1525,14 @@ public final class ItemEditorScreen extends Screen {
     private void drawPreviews(GuiGraphics graphics) {
         drawn.clear();
         markLive = live() != null;
-        // One copy of the item for the whole frame: the icon draws it, and both halves of the preview ask it
-        // how the game draws their line.
-        ItemStack preview = previewStack();
+        // The lore, read once for the whole frame: the copy of the stack the icon is drawn from carries it,
+        // and the preview is wrapped from it, and every read of it copies the field's own list out. Read as
+        // the item will have it rather than off the field, so that an item with no lore has no lore line to
+        // draw and none to send: the field's one blank entry is what an empty field is made of, and read as a
+        // line it is a line of no characters — see itemLore.
+        List<String> lore = itemLore();
+        // One copy of the item for the whole frame: the icon draws it.
+        ItemStack preview = previewStack(lore);
 
         int left = Math.round(namePreview.getPositionX()) - PREVIEW_PAD;
         int top = Math.round(namePreview.getPositionY()) - PREVIEW_PAD;
@@ -1109,8 +1550,8 @@ public final class ItemEditorScreen extends Screen {
         graphics.fill(right - 1, top, right, bottom, PREVIEW_EDGE);
 
         drawIcon(graphics, preview);
-        drawPreview(graphics, namePreview, true, preview);
-        drawPreview(graphics, lorePreview, false, preview);
+        drawPreview(graphics, namePreview, List.of(nameMarkup()), true);
+        drawPreview(graphics, lorePreview, lore, false);
         graphics.disableScissor();
     }
 
@@ -1143,13 +1584,18 @@ public final class ItemEditorScreen extends Screen {
         graphics.pose().popPose();
     }
 
-    /** {@return the item as the editor is about to leave it}, or null when the slot holds nothing */
-    private ItemStack previewStack() {
+    /**
+     * {@return the item as the editor is about to leave it}, or null when the slot holds nothing
+     *
+     * <p>The lore is handed in rather than read here, because the same lines wrap the preview under the icon
+     * and every read of them copies the field's own list out: one copy for the frame is enough.
+     */
+    private ItemStack previewStack(List<String> lore) {
         ItemStack stack = stack();
         if (stack == null || stack.isEmpty()) return null;
 
         ItemStack preview = stack.copy();
-        String markup = name.getText() == null ? "" : name.getText();
+        String markup = nameMarkup();
         if (markup.isEmpty()) {
             preview.remove(DataComponents.CUSTOM_NAME);
         } else {
@@ -1157,7 +1603,7 @@ public final class ItemEditorScreen extends Screen {
         }
 
         List<Component> lines = new ArrayList<>();
-        for (String line : loreLines()) {
+        for (String line : lore) {
             if (!line.isEmpty()) lines.add(ItemEdit.line(line));
         }
         if (lines.isEmpty()) {
@@ -1171,10 +1617,12 @@ public final class ItemEditorScreen extends Screen {
     /**
      * Draws one half of the preview in the space reserved for it.
      *
+     * @param lines the markup of each line this half shows: the name is one line of text, and the lore is
+     *              one for each line it has
      * @param title whether this is the item's name, which is one line of text, or its lore, which is one
      *              line for each line the lore has
      */
-    private void drawPreview(GuiGraphics graphics, UIElement area, boolean title, ItemStack preview) {
+    private void drawPreview(GuiGraphics graphics, UIElement area, List<String> lines, boolean title) {
         Minecraft minecraft = Minecraft.getInstance();
         int box = Math.round(area.getPositionX());
         int left = box + PREVIEW_INDENT;
@@ -1184,11 +1632,18 @@ public final class ItemEditorScreen extends Screen {
 
         // A box the layout has not measured answers nothing, and a preview with no room draws nothing at
         // all — which is how it came out blank once with a name sitting in the field above it. The room
-        // that was asked for is the fallback, which is why the same numbers are constants on both sides.
-        if (inner <= 0) inner = Math.max(1, Math.round(this.width) - 2 * PAD - PREVIEW_INDENT);
-        if (bottom <= top) bottom = top + (title ? NAME_PREVIEW_HEIGHT : LORE_PREVIEW_HEIGHT);
+        // that was asked for is the fallback, so it is the same arithmetic the layout is given: the panel's
+        // width less the picker's column and the gap beside it, less the frame's own padding and the room
+        // the icon is drawn in. A fallback as wide as the panel would wrap the text for a width the box
+        // never has, and the wrap is kept — see Rows, whose key is the width.
+        if (inner <= 0) {
+            inner = Math.max(1, Math.round(this.width) - 2 * PAD - PICKER - GAP
+                    - 2 * PREVIEW_PAD - PREVIEW_INDENT);
+        }
+        if (bottom <= top) {
+            bottom = top + (title ? rowHeight() + PREVIEW_GAP : LORE_PREVIEW_HEIGHT);
+        }
 
-        List<String> lines = title ? List.of(name.getText() == null ? "" : name.getText()) : loreLines();
         // The room one drawn row takes. The text is drawn at the game's own size — a preview is read beside the
         // text it is of, and two sizes of the same words on one screen is a screen that looks wrong — so this is
         // the font's own line height and nothing else.
@@ -1197,18 +1652,17 @@ public final class ItemEditorScreen extends Screen {
         // Wrapped for the whole half rather than row by row inside the drawing loop, because the room the lore
         // asks for is the room its text takes and that has to be known before anything is drawn. Measuring the
         // rows that fit in the box instead would have a preview clipped to a box smaller than its text measure
-        // itself as smaller still, and never grow.
-        List<List<Wrapped>> rows = new ArrayList<>();
+        // itself as smaller still, and never grow. The wrap, and the component each row is drawn from, are kept
+        // until the text or the width they are wrapped into changes — see Rows — because a row rebuilt inside
+        // the draw call is an effect in it that starts again on every frame.
+        List<List<Wrapped>> rows = (title ? nameRows : loreRows).of(minecraft.font, lines, inner);
         int wanted = 0;
-        for (String line : lines) {
-            List<Wrapped> wrapped = wrap(minecraft.font, line, inner);
-            rows.add(wrapped);
-            wanted += wrapped.size();
-        }
+        for (List<Wrapped> line : rows) wanted += line.size();
         if (title) {
-            // The icon and one line of text are the least the name asks for: a name long enough to wrap is shown
-            // whole rather than cut at the edge, and the icon keeps the room it is drawn in.
-            roomFor(namePreview, Math.max(NAME_PREVIEW_HEIGHT, wanted * lineHeight));
+            // The icon's room is not asked for here: the icon is drawn at this box's corner and hangs below
+            // it, and what holds it is the frame — see the note on the name's box in build. The air under the
+            // text is part of the box, because the box's height is what puts the lore where a tooltip puts it.
+            roomFor(namePreview, Math.max(rowHeight(), wanted * lineHeight) + PREVIEW_GAP);
         } else {
             // The lore's box is exactly its text, and nothing when there is no text: a tooltip has no room
             // after its last line, and the room a preview does not use is room the attribute list wants.
@@ -1252,14 +1706,77 @@ public final class ItemEditorScreen extends Screen {
     }
 
     /**
-     * One drawn line: the row's own markup and characters, and where in its line of the item the row begins.
+     * One wrapped row of the preview: the component the game draws it with, and where each of its characters
+     * stands.
      *
-     * <p>The place it begins is carried because a line of the item can be drawn on several rows and a
-     * selection is counted in the characters of the <em>line</em>: a click on the second row of a wrapped lore
-     * line is a click on a character of that line, not on the first character of the row, and without this the
-     * two would be the same number.
+     * <p>The component is the very one the server writes — {@link ItemEdit#line} — so that this is not a
+     * drawing of the item but the item: the markup travels as the text of a literal, the library's own hook
+     * parses it as the game draws it, and a colour and an effect written into a line appear here as they will
+     * appear on the item. Built with the row and kept for as long as the row, because the library hangs the
+     * state an effect animates from off that parse — {@link DrawnRows} says the same thing at length — and the
+     * size is the one thing that differs, a matter of the pose the preview is drawn in rather than of the
+     * component.
+     *
+     * <p>The geometry is kept with it, measured from the row's own left edge rather than from the screen's:
+     * the distances between a row's characters do not change while the layout does, so the drawing and the
+     * mouse both add the row's place to them — see {@link #glyphs}. The index each character carries is its
+     * place in what the <em>line</em> of the item shows, which is what a selection is counted in: the row's
+     * place in its line was added as the row was measured, because a click on the second row of a wrapped lore
+     * line is a click on a character of that line and not on the first character of the row.
      */
-    private record Wrapped(String markup, String shown, int from) { }
+    private record Wrapped(Component component, List<Glyph> glyphs) { }
+
+    /**
+     * The rows one half of the preview was last wrapped into, and the text, the width and the font they were
+     * wrapped from.
+     *
+     * <p>Kept rather than wrapped again on every frame, for the reasons {@link DrawnRows} gives: this is the
+     * same work over the same text, and more than that, each row carries the component the game draws it with,
+     * and an effect in one has nowhere to keep its state if that component is built again sixty times a second.
+     *
+     * <p><b>What decides the rows is everything the wrap reads</b>, and it is meant to be nothing else: the
+     * markup of every line, the width they are wrapped into, and the font they are measured with. A line that
+     * is retyped, a lore line added or removed, the window resized or the panel's columns moved, all arrive as
+     * one of those three.
+     *
+     * <p>The font's own glyph widths are the one input this cannot watch: the game's font is a final field
+     * that reloads its providers in place, so a resource pack replacing a glyph or the unicode font being
+     * switched on changes the widths under the same instance. The rows then stay as they were wrapped until
+     * the text or the width changes, which is the same bargain {@link HudBanner} strikes with the same inputs.
+     */
+    private static final class Rows {
+
+        private List<List<Wrapped>> rows = List.of();
+        private List<String> from = List.of();
+        private Font font;
+        private int width = Integer.MIN_VALUE;
+
+        /** {@return the rows for this text, wrapped again only when something they were built from has changed} */
+        List<List<Wrapped>> of(Font font, List<String> lines, int width) {
+            if (font == this.font && width == this.width && lines.equals(this.from)) return rows;
+
+            List<List<Wrapped>> built = new ArrayList<>(lines.size());
+            for (String line : lines) built.add(wrap(font, line, width));
+            rows = built;
+            from = List.copyOf(lines);
+            this.font = font;
+            this.width = width;
+            return rows;
+        }
+
+        /**
+         * Forgets what was wrapped, so that the next frame measures and builds it again.
+         *
+         * <p>For an undo, which puts a state back rather than changing one: the key above decides by
+         * comparing the text, and a preview that has just been undone out of must not depend on that
+         * comparison happening to differ. One frame's wrapping is what it costs.
+         */
+        void forget() {
+            font = null;
+            width = Integer.MIN_VALUE;
+            from = List.of();
+        }
+    }
 
     /**
      * {@return one line of markup broken into the lines the preview draws it on}
@@ -1274,11 +1791,20 @@ public final class ItemEditorScreen extends Screen {
         List<Wrapped> out = new ArrayList<>();
         if (shown.isEmpty()) return out;
 
+        // When the library will draw the markup as its own characters — see ItemEdit.drawnAsCharacters —
+        // a row is a slice of those characters and nothing else, drawn as a literal of that slice. Written
+        // through the runs instead, the tags would be tidied on the way through: a closer with nothing open,
+        // or a pair round nothing, is dropped by that reading, and a preview that dropped them would be
+        // showing a line the item will not have. The slice needs no tags of its own: it is drawn as the
+        // characters it holds either way, which is what the whole line is drawn as.
+        boolean asWritten = ItemEdit.drawnAsCharacters(markup);
+
         int start = 0;
         while (start < shown.length()) {
             // Measured a character at a time and added up, which is both what the drawing measures and the
             // only way this stays linear: measuring a substring per character is quadratic in the length of
-            // a lore line, and it runs on every frame the screen is open.
+            // a lore line. It runs when the text or the width changes rather than on every frame, which is
+            // what the rows being kept is for — see Rows.
             int end = start;
             int used = 0;
             int space = -1;
@@ -1295,54 +1821,79 @@ public final class ItemEditorScreen extends Screen {
             if (end < shown.length() && space > start) end = space + 1;
             if (end == start) end = Math.min(start + 1, shown.length());
 
-            int[] range = ItemEdit.shownRange(markup, shown, start, end);
-            // The run with the tags over it written round it, and not a slice of the markup: a colour written
-            // round a whole line reaches over the ends of every row it wraps into, and a slice would leave the
-            // row drawn in whatever the hover gives unstyled text — which is how a coloured name came out white.
-            out.add(new Wrapped(ItemEdit.marked(markup, range[0], range[1]), shown.substring(start, end), start));
+            String characters = shown.substring(start, end);
+            Component row;
+            if (asWritten) {
+                row = Component.literal(characters).withStyle(ItemEdit.DEFAULT_STYLE);
+            } else {
+                int[] range = ItemEdit.shownRange(markup, shown, start, end);
+                // The run with the tags over it written round it, and not a slice of the markup: a colour
+                // written round a whole line reaches over the ends of every row it wraps into, and a slice
+                // would leave the row drawn in whatever the hover gives unstyled text — which is how a
+                // coloured name came out white.
+                row = ItemEdit.line(ItemEdit.marked(markup, range[0], range[1]));
+            }
+            out.add(new Wrapped(row, glyphs(font, characters, start)));
             start = end;
         }
         return out;
     }
 
     /**
-     * Draws one line of the preview, and writes down where each of its characters landed.
+     * {@return each character of one row of the preview, and where it stands}
      *
-     * <p>The sink is handed the index every character has in the text the item shows, which is the whole
-     * reason a click on a drawn character can become a position in a field: what is drawn and what is
-     * selected are the same text, and that index says which part of it this character is.
+     * <p>Measured once with the row rather than while the row is drawn, which is the same work over the same
+     * characters: the font's own answer for each of them, added up into a place. Drawn from these, the pen
+     * that puts the selection behind a character and the mouse that turns a click into a position in a field
+     * walk the same numbers, and they have to be the characters' own — the index each glyph carries is its
+     * place in what the line of the item shows, the row's place in it added to the character's place in the
+     * row, which is what a selection means and what the markup's own indices are not. Taken again every frame,
+     * this is a fresh one-character string and a lookup per character of every row on screen.
+     *
+     * <p>Distances and not places, because a row's left edge moves with the layout — the panel scrolls, the
+     * window is resized — while the distance between two of its characters does not. Whoever draws or measures
+     * the row adds its left edge, so a row that has moved takes every character with it.
+     */
+    private static List<Glyph> glyphs(Font font, String shown, int from) {
+        List<Glyph> out = new ArrayList<>();
+        int pen = 0;
+        for (int i = 0; i < shown.length(); ) {
+            int codepoint = shown.codePointAt(i);
+            int width = font.width(new String(Character.toChars(codepoint)));
+            int length = Character.charCount(codepoint);
+            out.add(new Glyph(pen, width, from + i, from + i + length));
+            pen += width;
+            i += length;
+        }
+        return out;
+    }
+
+    /**
+     * Draws one drawn row of the preview, and writes down where each of its characters landed.
+     *
+     * <p>What the mouse is measured against afterwards is the index every character has in the text the item
+     * shows, which is the whole reason a click on a drawn character can become a position in a field: what is
+     * drawn and what is selected are the same text, and that index says which part of it this character is.
+     * The distances are the row's own — see {@link #glyphs} — and the place the row starts at is added to them
+     * here, so a row the layout has moved takes its characters with it.
      */
     private void drawLine(GuiGraphics graphics, Wrapped line, int field, int left, int y, int lineHeight) {
-        Minecraft minecraft = Minecraft.getInstance();
-        Font font = minecraft.font;
-        List<Glyph> glyphs = new ArrayList<>();
-
-        // Measured here rather than asked of the renderer, because these are the numbers a selection is made
-        // of, and they have to be the characters' own: the index each glyph carries is its place in what the
-        // line of the item shows — the row's place in it added to the character's place in the row — which is
-        // what a selection means and what the markup's own indices are not.
-        int pen = left;
-        for (int i = 0; i < line.shown().length(); ) {
-            int codepoint = line.shown().codePointAt(i);
-            String character = new String(Character.toChars(codepoint));
-            int width = font.width(character);
-            glyphs.add(new Glyph(pen, width, line.from() + i, line.from() + i + character.length()));
-            pen += width;
-            i += character.length();
-        }
+        Font font = Minecraft.getInstance().font;
 
         // Behind the text rather than over it, so that what is selected can still be read while it is.
-        for (Glyph glyph : glyphs) {
+        for (Glyph glyph : line.glyphs()) {
             if (!selected(field, glyph.from(), glyph.to())) continue;
-            graphics.fill(glyph.x(), y - 1, glyph.x() + glyph.width(), y + lineHeight - 1, SELECTION_BG);
+            int x = left + glyph.x();
+            graphics.fill(x, y - 1, x + glyph.width(), y + lineHeight - 1, SELECTION_BG);
         }
 
         // The component the server writes, drawn by the game's own renderer: the library's hook on a literal
         // parses it as it is drawn, which is what makes a colour and an effect appear here as they will appear
         // on the item. The colour given here is only the last resort the game uses for text with none of its
-        // own, which the line's default style always gives it.
-        graphics.drawString(font, drawable(line.markup()), left, y, 0xFFFFFF);
-        drawn.add(new Line(field, y, glyphs));
+        // own, which the line's default style always gives it. The component is the row's own rather than one
+        // built here, which is what gives an effect in it somewhere to keep its state: see {@link DrawnRows}.
+        graphics.drawString(font, line.component(), left, y, 0xFFFFFF);
+        drawn.add(new Line(field, y, left, line.glyphs()));
     }
 
     /** {@return whether one character of the item's text is inside what is selected} */
@@ -1413,8 +1964,10 @@ public final class ItemEditorScreen extends Screen {
 
             int at = -1;
             for (Glyph glyph : line.glyphs()) {
-                at = mouseX < glyph.x() + glyph.width() / 2 ? glyph.from() : glyph.to();
-                if (mouseX < glyph.x() + glyph.width()) break;
+                // The row's own distances, placed where the row was drawn: see drawLine.
+                int x = line.left() + glyph.x();
+                at = mouseX < x + glyph.width() / 2 ? glyph.from() : glyph.to();
+                if (mouseX < x + glyph.width()) break;
             }
             // An empty line has no characters to be between.
             return at < 0 ? null : new Spot(line.field(), at);
@@ -1549,6 +2102,24 @@ public final class ItemEditorScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        // The undo and redo chords are taken here: before anything with the focus is asked, and whether or
+        // not there is a step to go to. Both halves matter. The library's own text fields keep an undo
+        // apiece — see TextField's history — and it answers these very chords, so one that reached the
+        // focused field would undo that field alone: the name put back with the lore left as the undone
+        // change wrote it, which is a state the operator never had. And a chord that fell through when the
+        // history was empty would reach that same field undo and do exactly the same thing, which is not
+        // "nothing to undo, so nothing happens". Shift with Ctrl+Z is the other direction, as it is in the
+        // field's own table, and must not be the one chord that still reaches it.
+        if (Screen.hasControlDown() && !Screen.hasAltDown()
+                && (keyCode == GLFW.GLFW_KEY_Z || keyCode == GLFW.GLFW_KEY_Y)) {
+            if (keyCode == GLFW.GLFW_KEY_Z && !Screen.hasShiftDown()) {
+                undo();
+            } else {
+                redo();
+            }
+            return true;
+        }
+
         // The menu's own search box is typed in like any field, so the keys go to it while it holds them,
         // and only then: while a field of the panel has the keyboard, that field is what is being typed in.
         if (menuOpen() && symbols.isFocused() && symbols.keyPressed(keyCode, scanCode, modifiers)) {

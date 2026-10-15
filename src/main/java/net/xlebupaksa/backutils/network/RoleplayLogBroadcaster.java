@@ -10,7 +10,9 @@ import net.xlebupaksa.backutils.data.MarkupUtil;
 import net.xlebupaksa.backutils.log.RoleplayLog;
 import net.xlebupaksa.backutils.profile.ProfileLoader;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -42,19 +44,18 @@ public final class RoleplayLogBroadcaster {
         LogData log = log();
         if (log == null) return;
 
-        ActionLogEntry entry = null;
-        for (ActionLogEntry candidate : log.recent(1)) {
-            if (candidate.id() == logId) {
-                entry = candidate;
-                break;
-            }
-        }
+        // Asked for by id rather than by reading the newest row and comparing: the row is delivered by
+        // the code that has just inserted it, so it is almost always the newest, and the one case where
+        // it is not — a second row written in between — is the case that would silently deliver nothing.
+        ActionLogEntry entry = log.find(logId);
         if (entry == null) return;
 
+        // The actor's name is resolved through this map rather than once per witness: see send.
+        Map<String, String> names = new HashMap<>();
         for (UUID viewerId : audience) {
             ServerPlayer viewer = server.getPlayerList().getPlayer(viewerId);
             if (viewer == null) continue;
-            send(viewer, entry, sound, volume, pitch, roll);
+            send(viewer, entry, names, sound, volume, pitch, roll);
         }
     }
 
@@ -67,6 +68,9 @@ public final class RoleplayLogBroadcaster {
         LogData log = log();
         if (log == null) return;
 
+        // One name per actor for the whole sweep, not one per viewer per entry: a busy log holds many
+        // lines from the same few people, and the sweep walks every player.
+        Map<String, String> names = new HashMap<>();
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             UUID viewerId = player.getUUID();
             if (!SentLogWatermark.known(viewerId)) {
@@ -77,7 +81,7 @@ public final class RoleplayLogBroadcaster {
             List<ActionLogEntry> pending =
                     log.visibleTo(viewerId, SentLogWatermark.sentUpTo(viewerId));
             for (ActionLogEntry entry : pending) {
-                send(player, entry);
+                send(player, entry, names);
             }
         }
     }
@@ -94,22 +98,28 @@ public final class RoleplayLogBroadcaster {
     }
 
     /** The single place that renders, records and transmits one entry to one viewer. */
-    private static void send(ServerPlayer viewer, ActionLogEntry entry) {
-        send(viewer, entry, "", 0f, 1f, false);
+    private static void send(ServerPlayer viewer, ActionLogEntry entry, Map<String, String> names) {
+        send(viewer, entry, names, "", 0f, 1f, false);
     }
 
     /**
      * The same, with a sound for the line to arrive with. The catch-up sweep sends neither a sound
      * nor the roll flag: an entry that could not be pushed when it happened is not worth a noise
      * minutes later, and a roll it failed to push types itself out under the ordinary animation.
+     *
+     * @param names the actor names already resolved for this pass, which is what keeps one name from
+     *              being read once per witness: {@link ProfileLoader#logName} is up to three queries
+     *              with a connection each, so an action witnessed by ten players would otherwise read
+     *              the same name thirty times on the server thread, at the moment of the action
      */
-    private static void send(ServerPlayer viewer, ActionLogEntry entry,
+    private static void send(ServerPlayer viewer, ActionLogEntry entry, Map<String, String> names,
                              String sound, float volume, float pitch, boolean roll) {
         // Marked sent even when the client cannot display it, so the sweep does not re-scan for it.
         SentLogWatermark.markSent(viewer.getUUID(), entry.id());
         if (!RoleplayLogNetwork.canReceive(viewer)) return;
 
-        String line = entry.textFor(viewer.getUUID(), ProfileLoader.logName(entry.actorName()));
+        String name = names.computeIfAbsent(entry.actorName(), ProfileLoader::logName);
+        String line = entry.textFor(viewer.getUUID(), name);
         // An operator reads the truth beside the line, because the line is what everyone else reads.
         if (viewer.hasPermissions(AdminNetwork.REQUIRED_LEVEL)) {
             line = MarkupUtil.withNote(line, entry.adminNote());

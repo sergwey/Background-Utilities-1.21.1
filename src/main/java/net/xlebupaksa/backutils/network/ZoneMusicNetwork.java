@@ -61,7 +61,7 @@ public final class ZoneMusicNetwork {
         }
 
         PacketDistributor.sendToPlayer(player, ZoneMusicPayload.play(
-                ZoneMusicPayload.MENU_HANDLE, music, "music",
+                ZoneMusicPayload.MENU_HANDLE, music, BackUtilsConfig.getMenuMusicChannel(),
                 (float) BackUtilsConfig.getMenuMusicVolume(), 1.0F));
     }
 

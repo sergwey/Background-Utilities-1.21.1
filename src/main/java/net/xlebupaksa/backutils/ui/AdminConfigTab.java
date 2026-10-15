@@ -236,6 +236,7 @@ public final class AdminConfigTab {
         block.layout(l -> l.widthPercent(100).height(ROW + COMMENT + 2)
                 .flexDirection(FlexDirection.COLUMN));
         boolean previewed = false;
+        boolean palette = false;
 
         switch (setting.kind()) {
             case BOOL -> {
@@ -258,7 +259,8 @@ public final class AdminConfigTab {
                         .height(ROW + COMMENT + 2 + PREVIEW_HEIGHT)
                         .flexDirection(FlexDirection.COLUMN));
             }
-            case LIST -> row.addChild(readOnly(setting));
+            case CHOICE -> row.addChild(selectorFor(setting));
+            case LIST -> palette = true;
         }
 
         block.addChild(row);
@@ -275,8 +277,110 @@ public final class AdminConfigTab {
             updatePreview(setting.key());
         }
 
+        // Under the row and its explanation, because that is the order the block is built in: the list
+        // itself, and the block made as tall as its rows rather than the one row everything else is.
+        if (palette) addPalette(setting, block);
+
         rowElements.put(setting.key(), row);
         return block;
+    }
+
+    /** A selector for a setting whose value is one of a fixed set of words, such as a sound channel. */
+    private UpSelector<String> selectorFor(AdminConfigPayload.Row setting) {
+        UpSelector<String> selector = new UpSelector<>();
+        selector.layout(l -> l.flex(1).height(14));
+        selector.setCandidates(setting.options());
+        selector.setSelected(setting.value(), false);
+        selector.setOnValueChanged(value -> {
+            if (value != null) set(setting.key(), value);
+        });
+        return selector;
+    }
+
+    /**
+     * Adds the editor for a list: one field per entry, each with the button that takes it away, and a last
+     * field that is where the next entry is typed.
+     *
+     * <p>One row per entry rather than one line of text, because an entry is a name and the id it plays and
+     * a line of them is not a thing anybody reads. The rows come from the setting's value, or from the
+     * unsaved one when the operator has already changed it, and the value goes back as the fields that are
+     * not blank — which is what makes a cleared field an entry taken away, and the empty last row the place
+     * a new one is written.
+     *
+     * <p>The rows are built once and left alone: a field that is cleared stays as an empty row, which is
+     * the row a new entry would be typed in anyway, so nothing in this tab has to be laid out again while
+     * it is open.
+     */
+    private void addPalette(AdminConfigPayload.Row setting, UIElement block) {
+        String value = pending.getOrDefault(setting.key(), setting.value());
+        List<String> entries = new ArrayList<>();
+        for (String piece : (value == null ? "" : value).split(",")) {
+            String entry = piece.trim();
+            if (!entry.isEmpty()) entries.add(entry);
+        }
+
+        // One field more than there are entries: the empty one at the end is where the next is typed.
+        int rows = entries.size() + 1;
+        block.layout(l -> l.widthPercent(100).height(ROW + COMMENT + 2 + rows * (ROW + 2))
+                .flexDirection(FlexDirection.COLUMN));
+
+        UIElement list = new UIElement();
+        list.layout(l -> l.widthPercent(100).flexDirection(FlexDirection.COLUMN).gapAll(2));
+
+        List<TextField> fields = new ArrayList<>();
+        for (int i = 0; i < rows; i++) {
+            boolean last = i == rows - 1;
+            fields.add(paletteField(setting, list, fields, i < entries.size() ? entries.get(i) : "",
+                    last));
+        }
+        block.addChild(list);
+    }
+
+    /** One entry of a list: its text, and — for every row but the last — the button that clears it. */
+    private TextField paletteField(AdminConfigPayload.Row setting, UIElement list,
+                                   List<TextField> fields, String entry, boolean last) {
+        UIElement row = new UIElement();
+        row.layout(l -> l.widthPercent(100).height(ROW)
+                .flexDirection(FlexDirection.ROW).alignItems(AlignItems.CENTER).gapAll(GAP));
+
+        // The room the setting's own label takes, so the fields line up with the field above them.
+        Label indent = text("", MUTED, 8f, ROW);
+        indent.layout(l -> l.width(LABEL_WIDTH).height(ROW));
+        row.addChild(indent);
+
+        TextField field = new TextField();
+        field.setText(entry, false);
+        field.setFormatter(MarkupUtil::asLiteral);
+        field.textFieldStyle(s -> s.placeholder(Component.literal("name=soundid")));
+        field.layout(l -> l.flex(1).height(14));
+        field.setTextResponder(value -> set(setting.key(), paletteValue(fields)));
+        fields.add(field);
+        row.addChild(field);
+
+        if (last) {
+            Label room = text("", MUTED, 8f, ROW);
+            room.layout(l -> l.width(18).height(ROW));
+            row.addChild(room);
+        } else {
+            Button remove = new Button();
+            remove.setText(Text.of("X"), false);
+            remove.layout(l -> l.width(18).height(14));
+            remove.setOnClick(e -> field.setText("", true));
+            row.addChild(remove);
+        }
+
+        list.addChild(row);
+        return field;
+    }
+
+    /** {@return the entries these fields hold}, in the order they are drawn, without the blank ones */
+    private static String paletteValue(List<TextField> fields) {
+        List<String> entries = new ArrayList<>();
+        for (TextField field : fields) {
+            String text = field.getText();
+            if (text != null && !text.isBlank()) entries.add(text.trim());
+        }
+        return String.join(", ", entries);
     }
 
     /** A switch, for a setting the config file keeps as 0 or 1. */
@@ -341,16 +445,6 @@ public final class AdminConfigTab {
         });
         fields.put(setting.key(), field);
         return field;
-    }
-
-    /** What a list looks like when it is not editable here. */
-    private Label readOnly(AdminConfigPayload.Row setting) {
-        // Cut to the row: a label draws as wide as its text and would run off a narrow tab.
-        int width = Math.max(120, Math.round(root.getSizeWidth()) - LABEL_WIDTH - GAP * 2);
-        Label value = text(MarkupWrap.truncate(setting.value(), width,
-                text -> Minecraft.getInstance().font.width(text)), MUTED, 8f, ROW);
-        value.layout(l -> l.flex(1).height(ROW));
-        return value;
     }
 
     /**

@@ -466,7 +466,8 @@ public final class BackUtilsAdminScreen extends Screen {
         if (instance == null || instance.selected == null) return;
 
         String filter = instance.filterText();
-        String target = filter.startsWith("@") ? filter : String.join(";", instance.listedWitnesses());
+        String target = filter.startsWith("@") ? filter
+                : String.join(";", instance.listedWitnesses(instance.selected));
         if (target.isBlank()) return;
 
         send(new AdminActionPayload(kind, instance.selected.id(), target));
@@ -496,15 +497,21 @@ public final class BackUtilsAdminScreen extends Screen {
         return text == null ? "" : text.trim();
     }
 
-    /** {@return the witnesses the filter currently shows} */
-    private List<String> listedWitnesses() {
-        if (selected == null) return List.of();
+    /**
+     * {@return the witnesses the filter currently shows for one entry}
+     *
+     * <p>The entry is passed in rather than read off the selection: the list is rebuilt from whatever
+     * the caller has in hand, and a filter that silently answered about a different row would be a
+     * coupling between two writes rather than a reading of one.
+     */
+    private List<String> listedWitnesses(AdminLogPayload.Row row) {
+        if (row == null) return List.of();
         String filter = filterText().toLowerCase(java.util.Locale.ROOT);
         // A selector cannot be matched against names locally, so everything stays listed.
-        if (filter.isEmpty() || filter.startsWith("@")) return selected.witnesses();
+        if (filter.isEmpty() || filter.startsWith("@")) return row.witnesses();
 
         List<String> shown = new ArrayList<>();
-        for (String witness : selected.witnesses()) {
+        for (String witness : row.witnesses()) {
             if (witness.toLowerCase(java.util.Locale.ROOT).contains(filter)) shown.add(witness);
         }
         return shown;
@@ -526,7 +533,7 @@ public final class BackUtilsAdminScreen extends Screen {
             return;
         }
 
-        List<String> shown = instance == null ? row.witnesses() : instance.listedWitnesses();
+        List<String> shown = instance == null ? row.witnesses() : instance.listedWitnesses(row);
         if (shown.isEmpty()) {
             built.witnessList.addScrollViewChild(
                     muted(Text.of("backutils.admin.witness.no.match")));

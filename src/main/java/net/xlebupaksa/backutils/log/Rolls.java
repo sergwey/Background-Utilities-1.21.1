@@ -49,13 +49,13 @@ public final class Rolls {
         if (data == null || server == null) return List.of();
 
         if (subjects.isEmpty()) {
-            Integer rolled = record(roller, null, roller, max, reason, hidden, true);
+            Integer rolled = record(roller, null, roller, max, reason, hidden);
             return rolled == null ? List.of() : List.of(rolled);
         }
 
         List<Integer> results = new ArrayList<>(subjects.size());
         for (ServerPlayer subject : subjects) {
-            Integer rolled = record(subject, subject, roller, max, reason, hidden, true);
+            Integer rolled = record(subject, subject, roller, max, reason, hidden);
             if (rolled != null) results.add(rolled);
         }
         return List.copyOf(results);
@@ -67,13 +67,10 @@ public final class Rolls {
      * @param anchor   where the roll happens and who witnesses it: the player being rolled for, or
      *                 the one who ran the command when nobody is named
      * @param subject  who the line names, or null for a line that names nobody
-     * @param roller   the one who asked for it, who reads and hears it wherever they are; null when
-     *                 a line is replayed rather than rolled
-     * @param announce whether this is the roll itself rather than a replay of it, which is what
-     *                 decides whether it arrives with a sound
+     * @param roller   the one who asked for it, who reads and hears it wherever they are
      */
     private static Integer record(ServerPlayer anchor, ServerPlayer subject, ServerPlayer roller,
-                                  int max, String reason, boolean hidden, boolean announce) {
+                                  int max, String reason, boolean hidden) {
         MinecraftServer server = anchor.getServer();
         BackUtilsData data = BackUtils.data();
         if (server == null || data == null) return null;
@@ -84,9 +81,9 @@ public final class Rolls {
         List<UUID> audience = RoleplayLog.witnesses(anchor, BackUtilsConfig.getRollRadius());
         // The one who rolled reads it too, even from across the map: they asked for it, and nothing
         // is said in chat.
-        if (roller != null && !audience.contains(roller.getUUID())) audience.add(roller.getUUID());
+        if (!audience.contains(roller.getUUID())) audience.add(roller.getUUID());
 
-        String sound = announce ? soundFor(result, max, hidden) : "";
+        String sound = soundFor(result, max, hidden);
 
         long id = data.logs().record(
                 subject == null ? null : subject.getUUID(), who,

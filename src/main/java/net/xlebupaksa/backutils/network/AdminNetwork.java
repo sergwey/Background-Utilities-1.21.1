@@ -11,10 +11,13 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 import net.xlebupaksa.backutils.BackUtils;
 import net.xlebupaksa.backutils.data.ActionLogEntry;
+import net.xlebupaksa.backutils.data.LogData;
 import net.xlebupaksa.backutils.profile.ProfileLoader;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /** The administrator menu's traffic; the gate is the server-side permission check. */
@@ -68,21 +71,34 @@ public final class AdminNetwork {
         var data = BackUtils.data();
         if (data == null) return;
 
-        List<AdminLogPayload.Row> rows = new ArrayList<>();
-        for (ActionLogEntry entry : data.logs().all()) {
+        // Bounded to the newest rows: the menu used to be sent the whole table, which is unbounded
+        // memory and an unbounded packet on a server that has been running for a year. Older entries
+        // are no longer shown in the menu; nothing is deleted, and the live log still arrives as it
+        // happens. The count and its justification are LogData.SCREEN_ROWS.
+        List<ActionLogEntry> entries = data.logs().recent(LogData.SCREEN_ROWS);
+
+        // Two names are repeated far more often than the rows are: the actor, and the witnesses, who
+        // are the same few people from row to row. Resolved once each per answer rather than once per
+        // row, which matters because nameOf can reach the game profile cache and hence disk.
+        Map<String, String> actors = new HashMap<>();
+        Map<UUID, String> names = new HashMap<>();
+
+        List<AdminLogPayload.Row> rows = new ArrayList<>(entries.size());
+        for (ActionLogEntry entry : entries) {
             // Resolved here: the client has no player list for people who are offline.
             List<String> witnesses = new ArrayList<>();
-            for (UUID witness : entry.accessList()) witnesses.add(nameOf(player, witness));
+            for (UUID witness : entry.accessList()) witnesses.add(nameOf(player, witness, names));
 
             List<String> hiddenFrom = new ArrayList<>();
-            for (UUID hidden : entry.hiddenFrom()) hiddenFrom.add(nameOf(player, hidden));
+            for (UUID hidden : entry.hiddenFrom()) hiddenFrom.add(nameOf(player, hidden, names));
 
             rows.add(new AdminLogPayload.Row(
                     entry.id(),
                     entry.createdAt(),
                     // Rendered for this viewer, markup intact: this text is also what the copy
                     // option puts on the clipboard.
-                    entry.textFor(player.getUUID(), ProfileLoader.logName(entry.actorName())),
+                    entry.textFor(player.getUUID(),
+                            actors.computeIfAbsent(entry.actorName(), ProfileLoader::logName)),
                     entry.actorName(),
                     entry.dimension() == null ? "" : entry.dimension(),
                     entry.x(), entry.y(), entry.z(),
@@ -94,6 +110,23 @@ public final class AdminNetwork {
                     entry.adminNote()));
         }
         PacketDistributor.sendToPlayer(player, new AdminLogPayload(rows));
+    }
+
+    /**
+     * {@return a name for a UUID, from the server's cache, falling back to the id itself}
+     *
+     * <p>{@code resolved} is what keeps one name from being looked up once per row: a busy log names
+     * the same few witnesses on row after row, and the answer for somebody offline comes from the
+     * game profile cache, which is a disk read behind a memory cache. Held for one answer only, so a
+     * player who logs in or out between two requests is named as they are at that request.
+     */
+    private static String nameOf(ServerPlayer context, UUID playerId, Map<UUID, String> resolved) {
+        String known = resolved.get(playerId);
+        if (known != null) return known;
+
+        String name = nameOf(context, playerId);
+        resolved.put(playerId, name);
+        return name;
     }
 
     /** {@return a name for a UUID, from the server's cache, falling back to the id itself} */

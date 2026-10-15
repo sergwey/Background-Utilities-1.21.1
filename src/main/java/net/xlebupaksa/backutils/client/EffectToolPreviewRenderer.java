@@ -199,6 +199,21 @@ public final class EffectToolPreviewRenderer {
 
     private EffectToolPreviewRenderer() {}
 
+    /**
+     * The moment the frame being drawn was drawn at, kept for the click path.
+     *
+     * <p>A click has no fraction of a tick of its own — the game's own pick, which it reads, was taken
+     * at the end of the last one — but the box drawn to say what a click would take away is built for
+     * this number, and an entity that is moving is in two places between the two. Both sides read this
+     * one, so the box drawn red is the box a click tests.
+     */
+    private static float framePartialTick;
+
+    /** {@return the moment the last frame was drawn at}, for the click that has no moment of its own */
+    static float drawnPartialTick() {
+        return framePartialTick;
+    }
+
     @SubscribeEvent
     @SuppressWarnings("unused") // called by the event bus
     public static void onRenderLevelStage(RenderLevelStageEvent event) {
@@ -223,13 +238,16 @@ public final class EffectToolPreviewRenderer {
 
         ItemStack tool = player.getMainHandItem();
 
+        // Read once for the whole frame, and kept: it is the number the boxes are built with, and the
+        // click reads it back through drawnPartialTick().
+        framePartialTick = event.getPartialTick().getGameTimeDeltaPartialTick(false);
+
         // The delete tool shows what is already placed rather than what would be, and it is read
         // first because the two tools are different items: exactly one of the two drawings is ever
         // made, and neither is ever drawn for the other's item.
         if (tool.getItem() instanceof DeleteToolItem) {
             minecraft.getMainRenderTarget().bindWrite(false);
-            drawPlacedEffects(poses, minecraft, level, cameraPos,
-                    event.getPartialTick().getGameTimeDeltaPartialTick(false));
+            drawPlacedEffects(poses, minecraft, level, cameraPos, framePartialTick);
             return;
         }
 
@@ -240,7 +258,7 @@ public final class EffectToolPreviewRenderer {
 
         double reach = player.blockInteractionRange();
 
-        float partialTick = event.getPartialTick().getGameTimeDeltaPartialTick(false);
+        float partialTick = framePartialTick;
 
         // The aim is read once for every mode, from the game's own crosshair pick, which is the only
         // pick that finds entities as well as blocks. A block-mode tool reads the block it met, an

@@ -9,11 +9,13 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 import net.xlebupaksa.backutils.BackUtils;
 import net.xlebupaksa.backutils.data.ActionLogEntry;
+import net.xlebupaksa.backutils.data.LogData;
 import net.xlebupaksa.backutils.data.MarkupUtil;
 import net.xlebupaksa.backutils.profile.ProfileLoader;
 import net.xlebupaksa.backutils.ui.RoleplayLogOverlay;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -70,8 +72,15 @@ public final class RoleplayLogNetwork {
     }
 
     /**
-     * Runs on the server, in answer to the menu being opened: exactly the history this player may see,
+     * Runs on the server, in answer to the menu being opened: the history this player may see,
      * including entries from before they logged in.
+     *
+     * <p><b>Bounded.</b> The menu used to be sent every row the player may see, which is unbounded
+     * memory and an unbounded packet on a server that has been running for a year. It is now the newest
+     * {@link LogData#SCREEN_ROWS} rows, and <b>older entries are no longer shown</b>: nothing is
+     * deleted, and the live log still arrives as it happens. The rows are read newest first so the
+     * database can stop at the limit, then put back into the oldest-first order the payload and the
+     * menu are both written around, so the screen reads exactly as it did.
      */
     private static void onHistoryRequest(LogHistoryRequestPayload payload, IPayloadContext context) {
         if (!(context.player() instanceof ServerPlayer player)) return;
@@ -81,7 +90,9 @@ public final class RoleplayLogNetwork {
         if (data == null) return;
 
         UUID viewer = player.getUUID();
-        List<ActionLogEntry> visible = data.logs().visibleTo(viewer, 0L);
+        List<ActionLogEntry> visible =
+                new ArrayList<>(data.logs().recentVisibleTo(viewer, LogData.SCREEN_ROWS));
+        Collections.reverse(visible);
         // An operator's history reads like an operator's log: the line everyone saw, with the
         // administrator's note beside it.
         boolean notes = player.hasPermissions(AdminNetwork.REQUIRED_LEVEL);

@@ -31,7 +31,12 @@ public record AdminActionPayload(Kind action, long id, String target) implements
         DELETE_RECORD,
         TELEPORT_TO_ACTION,
         /** Falls back to the action's location when the actor is offline. */
-        TELEPORT_TO_ACTOR
+        TELEPORT_TO_ACTOR,
+        /**
+         * Nothing at all, and never sent by this build: what a number this one has not got is read as,
+         * so that a message from another build cannot throw inside the decoder.
+         */
+        NONE
     }
 
     public static final CustomPacketPayload.Type<AdminActionPayload> TYPE =
@@ -40,11 +45,25 @@ public record AdminActionPayload(Kind action, long id, String target) implements
 
     public static final StreamCodec<RegistryFriendlyByteBuf, AdminActionPayload> STREAM_CODEC =
             StreamCodec.composite(
-                    ByteBufCodecs.VAR_INT.map(i -> Kind.values()[i], Kind::ordinal),
+                    ByteBufCodecs.VAR_INT.map(AdminActionPayload::kindOf, Kind::ordinal),
                     AdminActionPayload::action,
                     ByteBufCodecs.VAR_LONG, AdminActionPayload::id,
                     ByteBufCodecs.STRING_UTF8, AdminActionPayload::target,
                     AdminActionPayload::new);
+
+    /**
+     * {@return the kind a number on the wire means}, or {@link Kind#NONE} for one this build has not got
+     *
+     * <p>A number rather than the name, because every action is sent by this mod and to this mod. An
+     * unknown one is read as doing nothing instead of being indexed straight into the enum: the number
+     * is a claim from a client, and a message that threw where it was decoded would be a disconnect
+     * rather than a refusal. Reading it this way also means a constant inserted above an existing one
+     * cannot silently turn one action into another.
+     */
+    private static Kind kindOf(int id) {
+        Kind[] kinds = Kind.values();
+        return id >= 0 && id < kinds.length ? kinds[id] : Kind.NONE;
+    }
 
     public static AdminActionPayload of(Kind action, long id) {
         return new AdminActionPayload(action, id, "");

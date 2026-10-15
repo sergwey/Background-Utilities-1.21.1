@@ -133,7 +133,7 @@ public final class AdminConfigNetwork {
         for (BackUtilsSettings.Setting setting : BackUtilsSettings.all()) {
             rows.add(new AdminConfigPayload.Row(setting.key(), setting.label(), setting.group(),
                     setting.kind(), setting.value(), setting.min(), setting.max(),
-                    setting.comment()));
+                    setting.options(), setting.comment()));
         }
         PacketDistributor.sendToPlayer(player, new AdminConfigPayload(rows));
     }

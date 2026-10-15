@@ -6,7 +6,6 @@ import net.minecraft.server.level.ServerPlayer;
 import net.xlebupaksa.backutils.BackUtils;
 import net.xlebupaksa.backutils.BackUtilsConfig;
 import net.xlebupaksa.backutils.data.LogData;
-import net.xlebupaksa.backutils.data.ProfileText;
 import net.xlebupaksa.backutils.network.AdminAlerts;
 import net.xlebupaksa.backutils.network.RoleplayLogBroadcaster;
 
@@ -25,14 +24,7 @@ import java.util.UUID;
  */
 public final class RoleplayLog {
 
-    /** {@code {player}} as stored in the log, before per-viewer substitution. */
-    private static final String PLACEHOLDER = ProfileText.PLAYER_PLACEHOLDER;
-
     private RoleplayLog() {}
-
-    public static void recordAction(ServerPlayer actor, String template) {
-        recordAction(actor, template, false);
-    }
 
     /**
      * Records an action, optionally as a silent one: written to the log like any other, but sent to the actor alone.
@@ -50,7 +42,7 @@ public final class RoleplayLog {
 
         List<UUID> audience = silent
                 ? List.of(actor.getUUID())
-                : nearbyAndSelf(server, actor);
+                : nearbyAndSelf(actor);
         long id = log.record(actor.getUUID(), actor.getName().getString(), template, audience,
                 actor.level().dimension().location().toString(),
                 actor.getX(), actor.getY(), actor.getZ());
@@ -99,7 +91,7 @@ public final class RoleplayLog {
     }
 
     /** {@return the acting player plus everyone within the configured radius} */
-    private static List<UUID> nearbyAndSelf(MinecraftServer server, ServerPlayer actor) {
+    private static List<UUID> nearbyAndSelf(ServerPlayer actor) {
         return witnesses(actor, BackUtilsConfig.getLogRadius());
     }
 
@@ -129,10 +121,6 @@ public final class RoleplayLog {
     private static LogData log() {
         var data = BackUtils.data();
         return data == null ? null : data.logs();
-    }
-
-    public static String placeholder() {
-        return PLACEHOLDER;
     }
 
     /**

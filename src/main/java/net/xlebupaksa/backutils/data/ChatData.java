@@ -61,15 +61,22 @@ public class ChatData extends DataManager {
     }
 
     /**
-     * Indexes are created separately and tolerantly; see {@code NameData#createIndexes}.
+     * Indexes are created separately and tolerantly; see {@code NameData#createIndexes}, which explains
+     * why the index on the owner is built with {@code COLLATE NOCASE} and why the unique one is not.
      */
     private void createIndexes() {
         try (
                 Connection connection = openConnection();
                 Statement stmt = connection.createStatement()
         ) {
-            stmt.execute("CREATE INDEX IF NOT EXISTS idx_chat_profile_player " +
-                    "ON chat_profile(player_name);");
+            // The comparison below is written COLLATE NOCASE, which an index over the plain column cannot
+            // serve — so the index is made to match the comparison. One already there under the plain name
+            // is dropped, and the new one is not given that same name: dropping and recreating it on every
+            // start would rebuild the index every time the server came up, which the collation in this
+            // name avoids.
+            stmt.execute("DROP INDEX IF EXISTS idx_chat_profile_player;");
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_chat_profile_player_nocase " +
+                    "ON chat_profile(player_name COLLATE NOCASE);");
         } catch (SQLException e) {
             BackUtils.LOGGER.warn("Could not index chat_profile(player_name)", e);
         }
@@ -95,10 +102,17 @@ public class ChatData extends DataManager {
         ).stream().findFirst();
     }
 
+    /**
+     * {@return this player's profiles}
+     *
+     * <p>Found under whichever spelling of the account name the rows carry, and by a comparison an index
+     * can serve: see {@code NameData#createIndexes}.
+     */
     public List<ChatProfile> findByPlayer(String player) {
         return query(
                 "SELECT chat_profile_id, chat_profile_name, chat_format, sound, player_name " +
-                        "FROM chat_profile WHERE player_name = ? ORDER BY chat_profile_name",
+                        "FROM chat_profile WHERE player_name = ? COLLATE NOCASE " +
+                        "ORDER BY chat_profile_name",
                 MAPPER,
                 player);
     }
@@ -116,7 +130,8 @@ public class ChatData extends DataManager {
     public Optional<ChatProfile> findByPlayerAndName(String player, String name) {
         return query(
                 "SELECT chat_profile_id, chat_profile_name, chat_format, sound, player_name " +
-                        "FROM chat_profile WHERE player_name = ? AND chat_profile_name = ?",
+                        "FROM chat_profile WHERE player_name = ? COLLATE NOCASE " +
+                        "AND chat_profile_name = ?",
                 MAPPER,
                 player, name
         ).stream().findFirst();
@@ -133,7 +148,7 @@ public class ChatData extends DataManager {
     public void update(String name, String newFormat, String sound, String player) {
         update(
                 "UPDATE chat_profile SET chat_format = ?, sound = ? " +
-                        "WHERE player_name = ? AND chat_profile_name = ?",
+                        "WHERE player_name = ? COLLATE NOCASE AND chat_profile_name = ?",
                 newFormat, sound, player, name);
     }
 
@@ -147,7 +162,7 @@ public class ChatData extends DataManager {
     public int rename(String player, String oldName, String newName) {
         return super.update(
                 "UPDATE chat_profile SET chat_profile_name = ? " +
-                        "WHERE player_name = ? AND chat_profile_name = ?",
+                        "WHERE player_name = ? COLLATE NOCASE AND chat_profile_name = ?",
                 newName, player, oldName);
     }
 
@@ -156,7 +171,7 @@ public class ChatData extends DataManager {
     public void delete(String name, String player) {
         update(
                 "DELETE FROM chat_profile " +
-                        "WHERE player_name = ? AND chat_profile_name = ?",
+                        "WHERE player_name = ? COLLATE NOCASE AND chat_profile_name = ?",
                 player, name);
     }
 }

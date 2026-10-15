@@ -26,15 +26,23 @@ public final class ProfileLoader {
 
         ActiveProfile active = activeOpt.get();
 
-        // A stale or foreign id must never be applied, so both lookups verify the profile's owner.
-        ChatProfile chat = data.chats()
-                .findById(active.chatProfileId())
-                .filter(c -> playerName.equals(c.player()))
-                .orElse(null);
+        // A stale or foreign id must never be applied, so both lookups verify the profile's owner, and
+        // verify it ignoring case: a row can carry a spelling of the account name other than the server's
+        // own, and such a row is still this player's. An account name is unique however it is capitalised,
+        // so this cannot reach into anybody else's row.
+        //
+        // The id is checked before the query rather than after it: 0 means no profile of that kind is
+        // chosen, which is the ordinary case, and asking the table for row 0 can only answer nothing.
+        ChatProfile chat = active.chatProfileId() > 0
+                ? data.chats()
+                        .findById(active.chatProfileId())
+                        .filter(c -> playerName.equalsIgnoreCase(c.player()))
+                        .orElse(null)
+                : null;
         NameProfile name = active.nameProfileId() > 0
                 ? data.names()
                         .findById(active.nameProfileId())
-                        .filter(n -> playerName.equals(n.player()))
+                        .filter(n -> playerName.equalsIgnoreCase(n.player()))
                         .orElse(null)
                 : null;
 

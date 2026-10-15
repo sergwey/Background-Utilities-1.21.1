@@ -8,12 +8,13 @@ import net.minecraft.resources.ResourceLocation;
 import net.xlebupaksa.backutils.BackUtils;
 
 /**
- * The server's answer to a profile change: what happened, and to which profile.
+ * The server's answer to a profile change: what happened.
  *
- * <p>Sent for refusals as well as successes, because the checks live on the server. The name
- * travels with it so the window that asked is the one that reacts.
+ * <p>Sent for refusals as well as successes, because the checks live on the server. Nothing names the
+ * profile it was about: it goes to the player who asked, and that player's editor is one window, so
+ * the connection is what says which window reacts.
  */
-public record ProfileFeedbackPayload(boolean ok, String name, String message)
+public record ProfileFeedbackPayload(boolean ok, String message)
         implements CustomPacketPayload {
 
     public static final CustomPacketPayload.Type<ProfileFeedbackPayload> TYPE =
@@ -23,7 +24,6 @@ public record ProfileFeedbackPayload(boolean ok, String name, String message)
     public static final StreamCodec<RegistryFriendlyByteBuf, ProfileFeedbackPayload> STREAM_CODEC =
             StreamCodec.composite(
                     ByteBufCodecs.BOOL, ProfileFeedbackPayload::ok,
-                    ByteBufCodecs.STRING_UTF8, ProfileFeedbackPayload::name,
                     ByteBufCodecs.STRING_UTF8, ProfileFeedbackPayload::message,
                     ProfileFeedbackPayload::new
             );

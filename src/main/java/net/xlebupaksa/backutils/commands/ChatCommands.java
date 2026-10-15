@@ -10,18 +10,19 @@ import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
-import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.xlebupaksa.backutils.BackUtils;
 import net.xlebupaksa.backutils.BackUtilsConfig;
+import net.xlebupaksa.backutils.data.BackUtilsData;
 import net.xlebupaksa.backutils.data.MarkupUtil;
-import net.xlebupaksa.backutils.data.SilenceKind;
+import net.xlebupaksa.backutils.data.SilenceData;
 import net.xlebupaksa.backutils.data.SilenceState;
 import net.xlebupaksa.backutils.profile.ProfileLoader;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
@@ -33,12 +34,17 @@ import java.util.concurrent.CompletableFuture;
  * /chat global &lt;true|false&gt;
  * /chat local &lt;true|false&gt;
  * /chat separator [local|global] &lt;value&gt;
- * /chat silence &lt;player&gt; [&lt;kind&gt; &lt;true|false&gt;]
+ * /chat silence &lt;names...&gt; [&lt;kind&gt; &lt;true|false&gt;]
  * </pre>
  *
  * <p>{@code global} and {@code local} are channel-wide; {@code silence} is per player and per kind,
  * so a player can be muted in one channel and not the other. The separators live here because there
  * is one per channel.
+ *
+ * <p>{@code silence} takes a list — names separated by spaces or commas, or {@code @a} for everyone
+ * online — read by {@link SilenceTargets}. Every name in it is resolved before the first row is
+ * written, so a line that names somebody who is not there changes nothing rather than silencing the
+ * half that does exist.
  */
 public class ChatCommands {
 
@@ -74,12 +80,9 @@ public class ChatCommands {
                                         .executes(ctx -> separatorSet(ctx, true)))))
 
                 .then(Commands.literal("silence")
-                        .then(Commands.argument("target", EntityArgument.player())
-                                .executes(this::silenceShow)
-                                .then(Commands.argument("kind", StringArgumentType.word())
-                                        .suggests(this::suggestKinds)
-                                        .then(Commands.argument("silenced", BoolArgumentType.bool())
-                                                .executes(this::silenceSet))))));
+                        .then(Commands.argument("targets", StringArgumentType.greedyString())
+                                .suggests(this::suggestTargets)
+                                .executes(this::silence))));
     }
 
     // ------------------------------------------------------------------
@@ -180,59 +183,113 @@ public class ChatCommands {
     // Per-player silence
     // ------------------------------------------------------------------
 
-    private int silenceShow(CommandContext<CommandSourceStack> ctx) {
+    private int silence(CommandContext<CommandSourceStack> ctx) {
         try {
-            ServerPlayer target = EntityArgument.getPlayer(ctx, "target");
-            SilenceState state = silenceOf(target);
-            ctx.getSource().sendSuccess(() -> Component.literal(
-                    target.getName().getString() + " is silenced in: " + state.describe() + "."), false);
-            return 1;
-        } catch (Exception e) {
-            ctx.getSource().sendFailure(Component.literal("Error: " + e.getMessage()));
-            return 0;
-        }
-    }
-
-    private int silenceSet(CommandContext<CommandSourceStack> ctx) {
-        try {
-            if (BackUtils.data() == null) {
+            BackUtilsData data = BackUtils.data();
+            if (data == null) {
                 ctx.getSource().sendFailure(Component.literal("The databases are not available."));
                 return 0;
             }
+            SilenceData silences = data.silences();
 
-            ServerPlayer target = EntityArgument.getPlayer(ctx, "target");
-            String raw = StringArgumentType.getString(ctx, "kind");
-            SilenceKind kind = SilenceKind.parse(raw);
-            if (kind == null) {
-                ctx.getSource().sendFailure(Component.literal(
-                        "Unknown kind '" + raw + "'. Use actions, local_chat or global_chat."));
+            SilenceTargets.Parsed parsed =
+                    SilenceTargets.parse(StringArgumentType.getString(ctx, "targets"));
+
+            if (parsed.unknownKind() != null) {
+                ctx.getSource().sendFailure(Component.literal("Unknown kind '"
+                        + parsed.unknownKind() + "'. Use "
+                        + String.join(", ", SilenceTargets.kindWords()) + "."));
+                return 0;
+            }
+            if (parsed.names().isEmpty()) {
+                ctx.getSource().sendFailure(Component.literal("Say who to silence."));
                 return 0;
             }
 
-            boolean silenced = BoolArgumentType.getBool(ctx, "silenced");
-            String name = target.getName().getString();
-            SilenceState updated = BackUtils.data().silences().setFlag(name, kind, silenced);
+            // Resolved before anything is written: a list is one command, so a name that matches
+            // nobody refuses all of it rather than silencing the names that happened to be online.
+            SilenceTargets.Resolved resolved =
+                    SilenceTargets.resolve(parsed.names(), onlineNames(ctx.getSource()));
+            if (resolved.refuses()) {
+                ctx.getSource().sendFailure(Component.literal(
+                        "No player named " + quoted(resolved.unknown()) + "."));
+                return 0;
+            }
+            if (resolved.matched().isEmpty()) {
+                // Only the selector can land here: a name that matched nobody was refused above, so
+                // what is left is @a with nobody online to be it.
+                ctx.getSource().sendFailure(Component.literal(
+                        "Nobody is online to match " + SilenceTargets.EVERYONE + "."));
+                return 0;
+            }
 
-            ctx.getSource().sendSuccess(() -> Component.literal(
-                    name + (silenced ? " is now silenced in " : " is no longer silenced in ")
-                            + kind.label() + " (now: " + updated.describe() + ")."), true);
-            return 1;
+            for (String name : resolved.matched()) {
+                if (!parsed.sets()) {
+                    SilenceState state = silenced(silences, name);
+                    ctx.getSource().sendSuccess(() -> Component.literal(
+                            name + " is silenced in: " + state.describe() + "."), false);
+                    continue;
+                }
+
+                boolean silenced = parsed.value();
+                SilenceState updated = silences.setFlag(name, parsed.kind(), silenced);
+                ctx.getSource().sendSuccess(() -> Component.literal(
+                        name + (silenced ? " is now silenced in " : " is no longer silenced in ")
+                                + parsed.kind().label() + " (now: " + updated.describe() + ")."), true);
+            }
+            return resolved.matched().size();
         } catch (Exception e) {
             ctx.getSource().sendFailure(Component.literal("Error: " + e.getMessage()));
             return 0;
         }
     }
 
-    private static SilenceState silenceOf(ServerPlayer player) {
-        if (BackUtils.data() == null) return SilenceState.none(player.getName().getString());
-        SilenceState state = BackUtils.data().silences().find(player.getName().getString());
-        return state == null ? SilenceState.none(player.getName().getString()) : state;
+    private static SilenceState silenced(SilenceData silences, String name) {
+        SilenceState state = silences.find(name);
+        return state == null ? SilenceState.none(name) : state;
     }
 
-    private CompletableFuture<Suggestions> suggestKinds(CommandContext<CommandSourceStack> ctx,
-                                                        SuggestionsBuilder builder) {
+    /** {@return the account names of the players online, in the order the server lists them} */
+    private static List<String> onlineNames(CommandSourceStack source) {
+        List<String> names = new ArrayList<>();
+        for (ServerPlayer player : source.getServer().getPlayerList().getPlayers()) {
+            names.add(player.getName().getString());
+        }
+        return names;
+    }
+
+    /** {@return the written names as one readable phrase, such as {@code 'a', 'b'}} */
+    private static String quoted(List<String> names) {
+        StringBuilder sb = new StringBuilder();
+        for (String name : names) {
+            if (sb.length() > 0) sb.append(", ");
+            sb.append('\'').append(name).append('\'');
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Offers what can be written next: the players online and {@code @a} while names are being
+     * written, and {@code true} or {@code false} once a kind has been.
+     *
+     * <p>The whole line so far arrives as one remaining string, because the list is one argument, so
+     * the word being typed is the last one in it and everything before it is a whole word — which is
+     * what {@link SilenceTargets#following} reads. The suggestions are offered from where that word
+     * begins, which is what keeps Brigadier's own filtering to that word rather than to the whole
+     * list: the half-typed name is the only thing offered candidates are matched against.
+     */
+    private CompletableFuture<Suggestions> suggestTargets(CommandContext<CommandSourceStack> ctx,
+                                                          SuggestionsBuilder builder) {
+        String remaining = builder.getRemaining();
+        boolean starting = remaining.isEmpty()
+                || SilenceTargets.isSeparator(remaining.charAt(remaining.length() - 1));
+        List<String> written = SilenceTargets.words(remaining);
+        String partial = starting || written.isEmpty() ? "" : written.getLast();
+        List<String> whole = partial.isEmpty() ? written : written.subList(0, written.size() - 1);
+
         return SharedSuggestionProvider.suggest(
-                List.of("actions", "local_chat", "global_chat"), builder);
+                SilenceTargets.following(whole, ctx.getSource().getOnlinePlayerNames(), starting),
+                builder.createOffset(builder.getStart() + remaining.length() - partial.length()));
     }
 
     /** Gathers the whole channel configuration in one place, for the bare command. */

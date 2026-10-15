@@ -14,6 +14,11 @@ import java.util.List;
  *
  * <p>Each row is already rendered for its recipient, so the actor's own name is underlined on their
  * screen and plain on everyone else's. Oldest first, so the menu reads top to bottom.
+ *
+ * <p>The newest {@link net.xlebupaksa.backutils.data.LogData#SCREEN_ROWS} rows and no more, so
+ * <b>older entries are no longer shown in the menu</b>; nothing is deleted, and the live log still
+ * arrives as it happens. Only the order the rows are read in is newest-first, which is what lets the
+ * database stop at the limit: what is sent here is oldest-first, as the menu expects.
  */
 public record LogHistoryPayload(List<Row> rows) implements CustomPacketPayload {
 

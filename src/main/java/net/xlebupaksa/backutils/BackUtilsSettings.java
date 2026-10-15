@@ -1,10 +1,12 @@
 package net.xlebupaksa.backutils;
 
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.sounds.SoundSource;
 import net.neoforged.neoforge.common.ModConfigSpec;
 import net.xlebupaksa.backutils.data.MarkupUtil;
 import net.xlebupaksa.backutils.profile.ProfileSound;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -34,7 +36,9 @@ public final class BackUtilsSettings {
         NUMBER,
         /** Free text: a separator, or a sound. */
         TEXT,
-        /** A list, shown but not edited here. */
+        /** One of a fixed set of words, which the menu draws a selector for. */
+        CHOICE,
+        /** A list, which the menu draws a row per entry for. */
         LIST
     }
 
@@ -62,22 +66,64 @@ public final class BackUtilsSettings {
     /**
      * One setting, as the menu sees it: {@code key} is the config key a change addresses,
      * {@code value} is the current value as text, {@code min} and {@code max} bound a
-     * {@link Kind#NUMBER}, and {@code comment} is the config file's explanation, one line per entry.
+     * {@link Kind#NUMBER}, {@code options} is what a {@link Kind#CHOICE} may be set to, and
+     * {@code comment} is the config file's explanation, one line per entry.
      */
     public record Setting(String key, String label, Group group, Kind kind, String value,
-                          double min, double max, List<String> comment) {}
+                          double min, double max, List<String> options, List<String> comment) {}
 
     /** One row of the table; {@code normalise} tidies a text value or refuses it. */
     private record Entry(String key, String label, Group group, Kind kind,
                          ModConfigSpec.ConfigValue<?> spec,
                          Supplier<String> read, Consumer<String> write,
-                         UnaryOperator<String> normalise) {}
+                         UnaryOperator<String> normalise, List<String> options) {}
 
     private static final String TYPING_PRESETS = String.join(", ", ProfileSound.PRESETS);
 
+    /**
+     * The banner's key, named rather than repeated because the command writes its text through the
+     * banner's own rule by it — see {@link #checkBanner} — so the rule lives in one place and the
+     * command's refusal is worded by the same code the menu is.
+     */
+    public static final String BANNER_TEXT_KEY = "bannerText";
+
+    /**
+     * The most the banner may be, measured in UTF-8 bytes.
+     *
+     * <p>The number is the wire's business rather than a taste of ours. The text reaches every
+     * client in a payload whose codec is {@code ByteBufCodecs.STRING_UTF8}, which is
+     * {@code writeUtf(value, 32767)}: that refuses a value of more than 32767 <em>characters</em>,
+     * and separately refuses an encoded form longer than the reader will take, which Netty allows
+     * three bytes per character for — 98301 bytes at this cap. It is sent on every change and again
+     * to every player who joins, so a value past either bound is not one failed edit: it is a
+     * failing encode for every modded client, on every join, for ever, until somebody corrects the
+     * setting by hand.
+     *
+     * <p>One number in bytes covers both bounds, because the byte count of a string is never below
+     * its character count: 4096 bytes is at most 4096 characters, so a value that passes here is
+     * inside the character bound too, and leaves 28671 characters and 94205 bytes of the wire's own
+     * room unused. That headroom is what covers the one place the two counts can disagree:
+     * {@code getBytes} gives an unpaired surrogate one byte where the wire counts it as three, so
+     * the wire's number is never the smaller of the two and cannot reach a bound this one is under.
+     *
+     * <p>4096 is generous for what this is — a line drawn on the HUD beside one button, not a
+     * document — and a banner past it is refused rather than shortened, because a shortened banner
+     * is a banner the operator did not write, drawn on everybody's screen with no sign that
+     * anything was dropped.
+     */
+    private static final int MAX_BANNER_BYTES = 4096;
+
+    /**
+     * The channels a sound can play on, which is the game's own set: the client resolves the name, so
+     * what is offered here has to be a name it can play on. Declared before the table, which one of its
+     * rows offers them.
+     */
+    private static final List<String> SOUND_CHANNELS = java.util.Arrays.stream(SoundSource.values())
+            .map(SoundSource::getName)
+            .toList();
+
     /** The settings in the order the menu lists them: grouped by sub-tab, and in reading order. */
-    private static final List<Entry> ENTRIES = List.of(
-            text("chatSeparator", "Local separator", Group.CHAT,
+    private static final List<Entry> ENTRIES = List.of(            text("chatSeparator", "Local separator", Group.CHAT,
                     BackUtilsConfig.CHAT_SEPARATOR, BackUtilsConfig::getSeparator,
                     BackUtilsConfig::setSeparator, MarkupUtil::balance),
             text("globalChatSeparator", "Global separator", Group.CHAT,
@@ -132,12 +178,15 @@ public final class BackUtilsSettings {
             number("menuMusicVolume", "Menu music volume", Group.MENU,
                     BackUtilsConfig.MENU_MUSIC_VOLUME, BackUtilsConfig::getMenuMusicVolume,
                     BackUtilsConfig::setMenuMusicVolume),
+            choice("menuMusicChannel", "Menu music channel", Group.MENU,
+                    BackUtilsConfig.MENU_MUSIC_CHANNEL, BackUtilsConfig::getMenuMusicChannel,
+                    BackUtilsConfig::setMenuMusicChannel, SOUND_CHANNELS),
 
             // The banner hangs off the log's menu button, which is why it is a menu setting even
             // though what it belongs to is the log.
-            text("bannerText", "Banner text", Group.MENU,
+            text(BANNER_TEXT_KEY, "Banner text", Group.MENU,
                     BackUtilsConfig.BANNER_TEXT, BackUtilsConfig::getBannerText,
-                    BackUtilsConfig::setBannerText, BackUtilsSettings::trimmed),
+                    BackUtilsConfig::setBannerText, BackUtilsSettings::checkBanner),
 
             number("rollMax", "Default maximum", Group.ROLLS,
                     BackUtilsConfig.ROLL_MAX, () -> (double) BackUtilsConfig.getRollMax(),
@@ -185,7 +234,9 @@ public final class BackUtilsSettings {
 
             list("profileSounds", "Profile sounds (name=soundid or preset)", Group.PROFILES,
                     BackUtilsConfig.PROFILE_SOUNDS,
-                    () -> String.join(", ", BackUtilsConfig.getProfileSounds()))
+                    () -> String.join(", ", BackUtilsConfig.getProfileSounds()),
+                    BackUtilsSettings::checkPalette,
+                    BackUtilsSettings::writePalette)
     );
 
     private static final Map<String, Entry> BY_KEY = index();
@@ -205,14 +256,14 @@ public final class BackUtilsSettings {
     private static Entry text(String key, String label, Group group,
                               ModConfigSpec.ConfigValue<?> spec, Supplier<String> read,
                               Consumer<String> write, UnaryOperator<String> normalise) {
-        return new Entry(key, label, group, Kind.TEXT, spec, read, write, normalise);
+        return new Entry(key, label, group, Kind.TEXT, spec, read, write, normalise, List.of());
     }
 
     private static Entry number(String key, String label, Group group,
                                 ModConfigSpec.ConfigValue<?> spec, Supplier<Double> read,
                                 Consumer<Double> write) {
         return new Entry(key, label, group, Kind.NUMBER, spec, () -> number(read.get()),
-                value -> write.accept(parse(value)), UnaryOperator.identity());
+                value -> write.accept(parse(value)), UnaryOperator.identity(), List.of());
     }
 
     /** A switch the config file stores as {@code 0} or {@code 1} and the menu shows as on or off. */
@@ -222,13 +273,27 @@ public final class BackUtilsSettings {
         return new Entry(key, label, group, Kind.BOOL, spec,
                 () -> String.valueOf(read.get()),
                 value -> write.accept(Boolean.parseBoolean(value)),
-                UnaryOperator.identity());
+                UnaryOperator.identity(), List.of());
     }
 
+    /**
+     * One of a fixed set of words, which the menu offers as a selector.
+     *
+     * <p>The options travel with the setting rather than being a list the client keeps of its own: the
+     * set is the game's, so a client that hard-coded it would be wrong on a client that is not this one.
+     */
+    private static Entry choice(String key, String label, Group group,
+                                ModConfigSpec.ConfigValue<?> spec, Supplier<String> read,
+                                Consumer<String> write, List<String> options) {
+        return new Entry(key, label, group, Kind.CHOICE, spec, read, write,
+                UnaryOperator.identity(), List.copyOf(options));
+    }
+
+    /** A list the menu edits one row per entry, written back as one line of comma-separated entries. */
     private static Entry list(String key, String label, Group group,
-                              ModConfigSpec.ConfigValue<?> spec, Supplier<String> read) {
-        return new Entry(key, label, group, Kind.LIST, spec, read, value -> { },
-                UnaryOperator.identity());
+                              ModConfigSpec.ConfigValue<?> spec, Supplier<String> read,
+                              UnaryOperator<String> normalise, Consumer<String> write) {
+        return new Entry(key, label, group, Kind.LIST, spec, read, write, normalise, List.of());
     }
 
     public static List<Setting> all() {
@@ -236,7 +301,7 @@ public final class BackUtilsSettings {
         for (Entry entry : ENTRIES) {
             double[] range = rangeOf(entry);
             settings.add(new Setting(entry.key(), entry.label(), entry.group(), entry.kind(),
-                    read(entry), range[0], range[1], commentOf(entry)));
+                    read(entry), range[0], range[1], entry.options(), commentOf(entry)));
         }
         return List.copyOf(settings);
     }
@@ -323,8 +388,18 @@ public final class BackUtilsSettings {
                 String value = entry.normalise().apply(text);
                 return value == null ? "" : value;
             }
-            case LIST -> throw new IllegalArgumentException(
-                    "Not changed here — use /backutils sounds add, remove or list.");
+            case CHOICE -> {
+                String value = text.trim().toLowerCase(Locale.ROOT);
+                if (!entry.options().contains(value)) {
+                    throw new IllegalArgumentException("One of " + String.join(", ", entry.options())
+                            + " — '" + value + "' is not one.");
+                }
+                return value;
+            }
+            case LIST -> {
+                String value = entry.normalise().apply(text);
+                return value == null ? "" : value;
+            }
         }
         throw new IllegalArgumentException("Unknown kind for '" + key + "'.");
     }
@@ -337,6 +412,47 @@ public final class BackUtilsSettings {
         Entry entry = BY_KEY.get(key);
         if (entry == null) throw new IllegalArgumentException("Unknown setting '" + key + "'.");
         entry.write().accept(value);
+    }
+
+    /**
+     * {@return the palette as one line, in the order it was given}, refusing an entry that is not a
+     * {@code name=soundid} pair or a bare sound the palette may hold
+     *
+     * <p>Written the way the config file holds the list: entries separated by commas, each one either a
+     * bare id — which is what an Ember preset is, its name being the id it resolves by — or a name and
+     * the id that name plays. Blank entries are dropped, which is how a row of the menu's own list
+     * removes one: a row the operator cleared is an entry they took away, and the same reading lets the
+     * row under the last entry be where a new one is typed.
+     *
+     * <p>The checks are {@link ProfileSound}'s, the ones {@code /backutils typing_sounds add} runs, so
+     * the menu and the command cannot come to accept different palettes.
+     */
+    static String checkPalette(String text) {
+        List<String> entries = new ArrayList<>();
+        for (String piece : (text == null ? "" : text).split(",")) {
+            String entry = piece.trim();
+            if (entry.isEmpty()) continue;
+
+            boolean alias = ProfileSound.isAlias(entry);
+            String problem = alias
+                    ? ProfileSound.checkName(ProfileSound.nameOf(entry), entries)
+                    : null;
+            if (problem == null) problem = ProfileSound.checkId(ProfileSound.idOf(entry), entries);
+            // Two entries answering to one name is what a profile cannot tell apart, and a bare entry's
+            // name is the whole of it, which the id's own check does not look at.
+            if (problem == null && ProfileSound.taken(ProfileSound.nameOf(entry), entries)) {
+                problem = "'" + ProfileSound.nameOf(entry) + "' is already one of the profile sounds.";
+            }
+            if (problem != null) throw new IllegalArgumentException(problem);
+
+            entries.add(entry);
+        }
+        return String.join(", ", entries);
+    }
+
+    /** Writes the palette a checked line holds; the line is already the list, one entry per comma. */
+    private static void writePalette(String value) {
+        BackUtilsConfig.setProfileSounds(List.of(value.split(",")));
     }
 
     /**
@@ -356,15 +472,34 @@ public final class BackUtilsSettings {
     }
 
     /**
-     * {@return the banner's text, with only the whitespace a text field gathers at its edges dropped}
+     * {@return the banner's text, with only the whitespace a text field gathers at its edges
+     * dropped}, refusing one longer than the payload can carry
      *
      * <p>Deliberately not {@link MarkupUtil#balance}: a closer the operator never typed is drawn as
      * the literal tag it is, which is the bug that put a visible {@code </typewriter>} at the end of
      * a banner whose own tag was simply never closed. Empty is allowed, and is the banner switched
-     * off, so nothing here refuses a value.
+     * off.
+     *
+     * <p>The length rule is here rather than at the wire because this is the one place both ways of
+     * setting the banner meet: the command's {@code banner set} and the menu's editor both go
+     * through {@link #check}, so a value one of them accepts is a value the other accepts, and both
+     * refuse it in the same words. It is refused rather than shortened because a shortened banner is
+     * a banner the operator did not write, drawn on everybody's screen with no sign that anything
+     * was dropped. Counting bytes rather than characters is what makes the number safe to hold: the
+     * codec bounds both, a text of 40 000 Cyrillic letters is 40 000 characters and 80 000 bytes,
+     * and the byte count is never the smaller of the two — so one limit in bytes keeps the value
+     * inside the character bound as well as its own.
      */
-    private static String trimmed(String text) {
-        return text == null ? "" : text.trim();
+    private static String checkBanner(String text) {
+        String value = text == null ? "" : text.trim();
+        int bytes = value.getBytes(StandardCharsets.UTF_8).length;
+        if (bytes > MAX_BANNER_BYTES) {
+            throw new IllegalArgumentException("The banner is " + bytes + " bytes of UTF-8, and it"
+                    + " may be at most " + MAX_BANNER_BYTES + ". A letter outside ASCII takes two"
+                    + " bytes or more, so a text in Cyrillic or Chinese runs out sooner than its"
+                    + " length suggests.");
+        }
+        return value;
     }
 
     /**

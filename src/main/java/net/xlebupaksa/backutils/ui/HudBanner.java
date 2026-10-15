@@ -95,7 +95,7 @@ public final class HudBanner {
      */
     public void render(GuiGraphics graphics) {
         if (!visible()) return;
-        rebuildIfStale(graphics.guiWidth());
+        rebuildIfStale(RoleplayLogButton.left(graphics.guiWidth()));
         if (rows.isEmpty()) return;
 
         Font font = Minecraft.getInstance().font;
@@ -115,10 +115,16 @@ public final class HudBanner {
      *
      * <p>The wrap is kept rather than redone every frame for the same reason the components are: it
      * is the same work over the same string, and a row that is rebuilt is a row that is re-measured.
+     *
+     * <p>The number is the button's left rather than the window's width, because that is the space
+     * the rows have: the width a row may occupy is everything left of the button, which
+     * {@link #available} is told rather than being asked for the window. Passing the window here
+     * instead wraps 36 pixels too wide on the defaults, which is a row that reaches into the button
+     * before {@link #rowLeft} clamps it against the screen's edge.
      */
-    private void rebuildIfStale(int guiWidth) {
+    private void rebuildIfStale(int buttonLeft) {
         String text = BannerTextCache.text();
-        int available = available(guiWidth);
+        int available = available(buttonLeft);
         if (!stale && Objects.equals(text, builtFrom) && available == builtFor) return;
 
         rows.clear();

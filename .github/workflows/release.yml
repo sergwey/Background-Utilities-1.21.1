@@ -81,6 +81,10 @@ jobs:
       # What changed in this version, for Modrinth's changelog: the commit subjects since the previous
       # tag, which is what a changelog is. The release notes are deliberately not used for this — they
       # describe the mod, not the release — and commit subjects here are written to be read as entries.
+      #
+      # The tagged commit is the release commit `releaseVersion` writes, whose subject is the version
+      # itself, and a range that ends at the tag includes it: inverted grep drops those subjects, so
+      # the changelog is the work and not the line that names what it is being released as.
       - name: Changelog for this version
         id: changelog
         run: |
@@ -88,7 +92,7 @@ jobs:
           {
             echo 'changelog<<CHANGELOG'
             if [ -n "${previous}" ]; then
-              git log --no-merges --pretty='- %s' "${previous}..${GITHUB_REF_NAME}"
+              git log --no-merges --invert-grep --grep='^Release ' --pretty='- %s' "${previous}..${GITHUB_REF_NAME}"
             else
               echo 'First release.'
             fi

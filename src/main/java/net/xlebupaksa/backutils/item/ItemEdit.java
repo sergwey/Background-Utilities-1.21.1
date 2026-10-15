@@ -174,6 +174,45 @@ public final class ItemEdit {
         }
     }
 
+    /**
+     * {@return whether this markup puts a style on at least one of its own characters}
+     *
+     * <p>The question a literal is <em>drawn</em> by, and deliberately a different one from {@link #reads}:
+     * that asks whether the parser refuses the text, this asks whether it found anything in it. A literal
+     * whose runs carry no effect, weight, slant, line, font, colour, item, entity, click or hover is given
+     * up on by the library, which then draws the literal as its own characters — the tags an operator wrote,
+     * on screen, as the item's name. Markup that styles nothing is therefore not the same as markup that is
+     * unreadable, and a check for one is not a check for the other.
+     *
+     * <p>A text the parser refuses is answered as unstyled, which is what it is to a renderer: nothing of it
+     * was read, so nothing of it is styled and its characters are drawn as they stand.
+     *
+     * <p>Asked about the text the item's literal will hold rather than about the field's own, which is why
+     * {@link #effectColours} is applied first: a colour has two spellings, only one of them is the one that
+     * reaches the renderer, and the two are not the same markup to this question.
+     */
+    public static boolean styles(String markup) {
+        if (markup == null || markup.isEmpty()) return false;
+        try {
+            for (TextSpan span : MarkupParser.parse(effectColours(markup))) {
+                if (styled(span)) return true;
+            }
+            return false;
+        } catch (RuntimeException refused) {
+            return false;
+        }
+    }
+
+    /** {@return whether this run carries anything the library draws a literal with} */
+    private static boolean styled(TextSpan span) {
+        return (span.getEffects() != null && !span.getEffects().isEmpty())
+                || truth(span.getBold()) || truth(span.getItalic()) || truth(span.getUnderline())
+                || truth(span.getStrikethrough()) || truth(span.getObfuscated())
+                || span.getFont() != null || span.getColor() != null
+                || span.getItemId() != null || span.getEntityId() != null
+                || span.getClickAction() != null || span.getHoverAction() != null;
+    }
+
     private static boolean truth(Boolean flag) {
         return Boolean.TRUE.equals(flag);
     }
@@ -744,15 +783,76 @@ public final class ItemEdit {
     }
 
     /**
-     * {@return the characters an item shows for this markup}, which is what a preview draws
+     * {@return whether the library draws this markup as its own characters rather than as the words it wraps}
+     *
+     * <p>The one reading of the second way a literal is drawn — the first being from its runs, with the tags
+     * spent on the words under them — and the answer a preview and a warning are both built on. See
+     * {@link #styles} for the question behind it: markup that styles none of its own characters is markup
+     * Ember gives up on, and the literal is then drawn as the characters it is written with.
+     *
+     * <p>A text with no markup in it is drawn as its own characters too, which is only to say that it is
+     * drawn as the text it is.
+     */
+    public static boolean drawnAsCharacters(String markup) {
+        return markup == null || markup.isEmpty()
+                || (!styles(markup) && !MarkupParser.containsLangTag(markup));
+    }
+
+    /**
+     * {@return the characters an item shows for this markup}, which is what a preview draws and measures
+     *
+     * <p>Whichever of the two ways the library draws this text, which is the whole point of asking here.
+     * Markup that styles a character of its own is drawn from its runs, with the tags spent on the words
+     * under them, so the answer is those words. Markup that styles none of them is drawn as its own
+     * characters — see {@link #drawnAsCharacters} — so the answer is those characters, which are exactly
+     * what the item's literal holds, {@link #line} writing the markup as its text. A reading of the first
+     * kind alone showed a name that was nothing but tags as no name at all, and hid the tags of a name
+     * whose words stood outside them: the two shapes an operator most needs to see before writing the item.
      *
      * <p>The tags are not text, so a selection made by dragging over what is drawn is measured in these
-     * characters and not in the markup's. Asking the component rather than taking the tags out here is
-     * also the only way to be certain which parts of the markup really are invisible: the parser decides
-     * that, and it is the same parser whose answer is drawn.
+     * characters and not in the markup's. Asking the library rather than taking the tags out here is also
+     * the only way to be certain which parts of the markup really are invisible: the parser decides that,
+     * and it is the same parser whose answer is drawn — unless it gave up, and then nothing is invisible.
      */
     public static String shown(String markup) {
+        if (markup == null || markup.isEmpty()) return "";
+        if (drawnAsCharacters(markup)) return effectColours(markup);
         return component(markup).getString();
+    }
+
+    /**
+     * One line of an edit that a renderer draws as its own characters rather than as the words its markup
+     * wraps: the item will show the tags themselves.
+     *
+     * @param title the item's name rather than one of its lore lines
+     * @param line  the line within that field, counted from zero
+     */
+    public record Unstyled(boolean title, int line) { }
+
+    /**
+     * {@return every line of an edit whose markup styles none of its own characters}
+     *
+     * <p>What a screen warns about before writing an item, and the reason it warns rather than tidying the
+     * text up: the markup is the operator's, a name and a lore are stored on an item somebody keeps, and
+     * this is a reading of what the item will draw and not a licence to change it.
+     *
+     * <p>A line with no markup at all is not one of these. There is nothing in it to be drawn as
+     * characters — the library never parses a literal without both brackets — and the item shows the words
+     * it was given, which is what the operator typed.
+     */
+    public static List<Unstyled> unstyled(String name, List<String> lore) {
+        List<Unstyled> found = new ArrayList<>();
+        if (drawsItsTags(name)) found.add(new Unstyled(true, 0));
+        for (int i = 0; i < lore.size(); i++) {
+            if (drawsItsTags(lore.get(i))) found.add(new Unstyled(false, i));
+        }
+        return found;
+    }
+
+    /** {@return whether this one line is markup drawn as its characters, rather than text with no markup} */
+    private static boolean drawsItsTags(String markup) {
+        return markup != null && markup.contains("<") && markup.contains(">")
+                && drawnAsCharacters(markup);
     }
 
     // ------------------------------------------------------------------
@@ -993,14 +1093,9 @@ public final class ItemEdit {
     /**
      * {@return one run of text with the tags its style asks for around it}
      *
-     * <p>{@code value=} rather than the {@code col=} the profile markup writes, and the difference is
-     * not a matter of taste. {@code col=} becomes an <em>effect</em>: the library's own note in
-     * {@link net.xlebupaksa.backutils.profile.ProfileMarkup} says that form is the one the library
-     * renders, and the harness found the other half of it — a {@code col=} tag leaves the span's colour
-     * empty, because the colour is applied when it is drawn rather than carried by the text. An item's
-     * name is drawn by the game from its style, so the colour has to be <b>in the span</b>, which is
-     * what {@code value=} produces. Writing the profile's form here would round-trip a name to text
-     * with no colour at all.
+     * <p>{@code col=} rather than the {@code value=} the profile markup writes, because only that form
+     * draws on a literal an item's text is — {@link #effectColours} rewrites the other one into it for
+     * exactly this reason, and carries the reading of the library that says so.
      *
      * <p>The hex form rather than a colour name, because a name is not a palette entry: the colour came
      * from an item, not from a list of colours this mod offers, and any of the sixteen million values

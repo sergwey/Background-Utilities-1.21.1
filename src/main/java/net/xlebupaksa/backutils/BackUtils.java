@@ -12,6 +12,7 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 import net.xlebupaksa.backutils.chat.ChatHandler;
+import net.xlebupaksa.backutils.chat.PrivateMessageGate;
 import net.xlebupaksa.backutils.client.BackUtilsClientConfig;
 import net.xlebupaksa.backutils.client.ClientSetup;
 import net.xlebupaksa.backutils.commands.arguments.TolerantDoubleArgument;
@@ -59,6 +60,8 @@ public class BackUtils {
 
         NeoForge.EVENT_BUS.register(this);
         NeoForge.EVENT_BUS.register(new ChatHandler());
+        // Private messages: a command rather than a line, so it is gated before it runs.
+        NeoForge.EVENT_BUS.register(new PrivateMessageGate());
         NeoForge.EVENT_BUS.register(new MeCommand());
         NeoForge.EVENT_BUS.register(new BackUtilsCommands());
         NeoForge.EVENT_BUS.register(new ChatCommands());
@@ -103,10 +106,11 @@ public class BackUtils {
     @SubscribeEvent
     @SuppressWarnings("unused") // called by the event bus
     public void onServerStopping(ServerStoppingEvent event) {
-        if (data != null) {
-            data.closeAll();
-            data = null;
-        }
+        // Dropped rather than closed: every statement opens and closes a connection of its own, so a
+        // manager holds nothing that a session's end could leave open. What ends here is this
+        // session's reference to the files, so nothing looks in the databases of a world that is no
+        // longer loaded.
+        data = null;
     }
 
     public static BackUtilsData data() {

@@ -9,6 +9,15 @@ log, and a pair of tools for placing and removing visual effects.
 - **Action log.** `/me` and `*asterisk*` lines — `^caret^` for silent ones — are recorded with every
   player who was within the witness radius, and shown to them in an on-screen log. Staff review,
   hide or delete entries from the administrator menu, and each action raises an alert for operators.
+  A player silenced in actions gets nothing through at all, and on a server whose action recording is
+  switched off an action is not said either: either way the actor is told why, and told which of the
+  two it was.
+- **Items in chat.** `[item]`, `[i]`, `[hand]`, `[offhand]`, `[head]`, `[chest]`, `[legs]` and `[feet]` in a
+  message are taken out of the sentence — which is left with one space between its parts — and what the slot
+  holds is drawn on a line under it, with the item's own tooltip on the words: the name and the lore, on a
+  client with no mod of ours. The item is drawn as it stands rather than typed out with the message. The
+  trigger words and the slot names are the BasicShowItem plugin's vocabulary, reimplemented here so that a
+  server running NeoForge rather than Paper has them too.
 - **Banner.** One line of text stays on screen to the left of the log's menu button, and so above the
   log itself, for as long as the game is in a world. It is off until a text is set, and the text is
   all there is to it: it is written in the same markup as chat — colours, gradients, animations,
@@ -27,7 +36,8 @@ log, and a pair of tools for placing and removing visual effects.
   would say which number came up.
 - **Chat channels.** A plain message goes to local chat, which reaches the players around you; a
   leading `!` sends it to global chat. Each channel has its own separator and can be open to
-  everyone or restricted to staff, and a player can be silenced per channel or for actions.
+  everyone or restricted to staff, and a player can be silenced in local chat, in global chat, for
+  actions, or for private messages.
 - **Profiles.** Players write their own chat formats — colour, weight, gradients, animations, an
   optional typing sound — in the corner menu. Operators write display names and manage any player's
   profiles from the administrator menu. A player's markup is checked against an allow-list; an
@@ -45,7 +55,9 @@ log, and a pair of tools for placing and removing visual effects.
 - **Zone music.** `/playradius` and `/playbox` play a sound to the players inside a region, and
   `/stopzone` ends one.
 - **Menu music.** Opening the corner menu plays a track named in the server's config for the player
-  who opened it, and fades it out when the menu closes. Set `menuMusic` empty for silence.
+  who opened it, and fades it out when the menu closes. Set `menuMusic` empty for silence, and
+  `menuMusicChannel` to whichever of the game's sound channels it should answer to — the player's own
+  slider for that channel is the one that turns it down.
 
 ## How this mod was made
 
@@ -76,24 +88,31 @@ Optional, each one switching a feature off rather than breaking anything:
 
 Server settings live in `config/backutils-server.toml` and can also be changed from the
 administrator menu's Config tab — the banner's text among them, since it is the server's text that
-every player's client draws; the purely client display settings, including the operator alert's
-sound, volume, pitch and icon, are in `config/backutils-client.toml`. The mod's databases are SQLite
+every player's client draws, and the palette of profile sounds, which is edited there a row to an
+entry alongside the `/backutils typing_sounds` commands that do the same; the purely client display
+settings, including the operator alert's sound, volume, pitch and icon, are in
+`config/backutils-client.toml`. The mod's databases are SQLite
 files under `serverconfig/backutils/` in the directory a server runs in: the game directory for a
 client's integrated server, and the dedicated server's own directory for a real one.
 
 ## Commands
 
-Everything is permission level 2:
+Everything is permission level 2, except `/me` and `/sme`: an action line is the players' own, `/me`
+replaces the vanilla command so that the log can see it, and neither may be gated without taking a
+vanilla command away from the people who have it.
 
 - `/me <action>`, `/sme <action>` — an action line; the silent one is shown to the actor alone
-- `/backutils menu`, `actions`, `typing_sounds`, `sounds add|remove|list` — `sounds` is the palette a
+- `/backutils menu`, `actions`, `typing_sounds add|remove|list` — `typing_sounds` is the palette a
   chat profile may name: `add <name> <sound id>` stores `name=soundid` in the server's config, a bare
   name in that list stays what Ember's own preset table resolves, and `list` shows what each name plays
 - `/freeze`, `/unfreeze` — hold a player still, or let them go; naming nobody is yourself
 - `/backutils banner` — the text every player draws beside the log, shown as it was typed;
   `set <text>` sets it in chat's own markup (`\n` starts a new line) and `clear` draws nothing
-- `/chat radius`, `global`, `local`, `separator local|global`, `silence`
-- `/profile chat|name create|edit|delete|use`, `reload`
+- `/chat radius`, `global`, `local`, `separator local|global`, `silence <names...> [<kind> [<true|false>]]`
+  — the list is names separated by spaces or commas, or `@a` for every player online; a kind is
+  `actions`, `local_chat`, `global_chat` or `msg`, and writing one silences it, while `false` after it
+  lifts that one again. A name on its own asks what a player is silenced in
+- `/profile chat|name create|edit|delete|use|list`, `reload [all|<player>]`
 - `/roll`, `/hroll` — `[players] [maximum] [reason]`, each part optional; `/hroll` hides the result
 - `/playradius`, `/playbox`, `/stopzone`, `/log <targets> <message>`
 
@@ -133,7 +152,9 @@ In PowerShell a version has to be quoted, or the shell hands Gradle `0.1.8` as a
 the IDE passes the parameters to Gradle itself.
 
 `mod_version` is the version of everything: the jar's name, the Modrinth version number and the tag
-the release is published under. `build.yml` and `release.yml` both refuse a tag that disagrees with it.
+the release is published under. `release.yml` refuses a tag that disagrees with it — that workflow is
+the one that publishes, so the check is where the publish would be. `build.yml` is the plain build and
+knows nothing of tags: it runs on every push and pull request, tag or not.
 
 `.github/workflows/release.yml` then builds the mod exactly as the development workflow does, and
 publishes a release with the jar attached, using the repository's own token — for that part no

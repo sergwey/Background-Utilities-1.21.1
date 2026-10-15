@@ -12,6 +12,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
 import net.xlebupaksa.backutils.BackUtils;
 import net.xlebupaksa.backutils.BackUtilsConfig;
+import net.xlebupaksa.backutils.BackUtilsSettings;
 
 /**
  * Both ends of the banner traffic: the text the server holds, sent to the clients that draw it.
@@ -73,9 +74,34 @@ public final class BannerTextNetwork {
         for (ServerPlayer player : server.getPlayerList().getPlayers()) send(player);
     }
 
+    /**
+     * Tells one player what the banner says, when what the server holds is something the wire can carry.
+     *
+     * <p>The command and the menu both put their text through {@link BackUtilsSettings#check}, so a
+     * value they accepted is inside the bound the payload's codec has. A file edited by hand reaches
+     * neither: its value is read straight out of the config and encoded for every player who joins,
+     * and a value past the bound is not one failed edit but a failing encode for every modded client,
+     * on every join, for as long as the file says so. The same check is therefore run here, on the way
+     * out, and a text it refuses is not sent at all.
+     *
+     * <p>Refused rather than shortened, which is the decision the command makes and for its reason: a
+     * shortened banner is a banner the operator did not write, drawn on everybody's screen with
+     * nothing to say that anything was dropped. Nobody in the game is told either way — the rows the
+     * banner would have been drawn on simply are not there — so the error goes to the server log,
+     * which is where an operator can see that the file, and not the banner, is what needs correcting.
+     */
     private static void send(ServerPlayer player) {
         if (!OptionalChannels.negotiated(player, BannerTextPayload.TYPE)) return;
-        PacketDistributor.sendToPlayer(player,
-                new BannerTextPayload(BackUtilsConfig.getBannerText()));
+
+        String text;
+        try {
+            text = BackUtilsSettings.check(BackUtilsSettings.BANNER_TEXT_KEY,
+                    BackUtilsConfig.getBannerText());
+        } catch (IllegalArgumentException refusal) {
+            BackUtils.LOGGER.error("The banner in the server config is not being sent: {}",
+                    refusal.getMessage());
+            return;
+        }
+        PacketDistributor.sendToPlayer(player, new BannerTextPayload(text));
     }
 }

@@ -20,6 +20,39 @@ public class LogData extends DataManager {
     private static final String COLUMNS = "log_id, access_list, contents, actor_id, actor_name, "
             + "created_at, dimension, x, y, z, hidden_all, hidden_from, admin_note";
 
+    /**
+     * How many of the newest entries either log screen is sent.
+     *
+     * <p>Both screens used to be sent the whole table, which on a long-running server is unbounded
+     * memory on the server, an unbounded packet, and an unbounded list for the client to lay out — all
+     * of it to be scrolled by hand. Four hundred is a few hundred: far more scrollback than an
+     * operator or a player reads in a sitting, while keeping even the heaviest administrator row —
+     * which carries the witness and hidden-from name lists as well as the line — to a packet of a few
+     * hundred kilobytes at the very outside.
+     *
+     * <p>The trade is that <b>older entries are no longer shown on either screen</b>. Nothing is
+     * deleted: the rows are still in the table, the live log still pushes new lines as they happen,
+     * and the catch-up sweep still walks everything a player has not been sent, so this bounds what a
+     * screen loads rather than what the log keeps. Pruning the table is a separate decision and is
+     * deliberately not made here.
+     */
+    public static final int SCREEN_ROWS = 400;
+
+    /**
+     * Who may see a row, spelled once because two reads of it must not drift: the incremental sweep
+     * and the bounded screen load ask the same question, and a rule written twice is a rule that can
+     * disagree with itself.
+     *
+     * <p>{@code access_list} is a comma-separated UUID list, so a match is valid only on a whole
+     * element: both the stored column and the needle are padded with commas, because a plain
+     * {@code LIKE '%uuid%'} would also match a UUID that merely contains this one as a substring. The
+     * two placeholders are the same needle twice: the list and the hidden-from list.
+     */
+    private static final String VISIBILITY =
+            "AND (',' || replace(access_list, ' ', '') || ',') LIKE ? "
+                    + "AND COALESCE(hidden_all, 0) = 0 "
+                    + "AND (',' || replace(COALESCE(hidden_from, ''), ' ', '') || ',') NOT LIKE ? ";
+
     private static final RowMapper<ActionLogEntry> MAPPER = rs -> new ActionLogEntry(
             rs.getLong("log_id"),
             rs.getString("actor_id") == null ? "" : rs.getString("actor_id"),
@@ -181,12 +214,10 @@ public class LogData extends DataManager {
     }
 
     /**
-     * {@return entries the given player is allowed to see, oldest first}
+     * {@return entries the given player is allowed to see after {@code afterId}, oldest first}
      *
-     * <p>{@code access_list} is a comma-separated UUID list, so a match is valid only on a whole
-     * element: the query pads both the stored column and the needle with commas and looks for
-     * {@code ,uuid,}, because a plain {@code LIKE '%uuid%'} would also match a UUID that merely
-     * contains this one as a substring.
+     * <p>The catch-up read, which is bounded by the watermark rather than by a count: a player is only
+     * ever asked for what has been added since they were last sent anything.
      */
     public List<ActionLogEntry> visibleTo(UUID viewer, long afterId) {
         String needle = "," + viewer + ",";
@@ -194,27 +225,37 @@ public class LogData extends DataManager {
         return query(
                 "SELECT " + COLUMNS + " FROM action_log " +
                         "WHERE log_id > ? " +
-                        "AND (',' || replace(access_list, ' ', '') || ',') LIKE ? " +
-                        "AND COALESCE(hidden_all, 0) = 0 " +
-                        "AND (',' || replace(COALESCE(hidden_from, ''), ' ', '') || ',') NOT LIKE ? " +
+                        VISIBILITY +
                         "ORDER BY log_id ASC",
                 MAPPER,
                 afterId, "%" + needle + "%", "%" + needle + "%");
+    }
+
+    /**
+     * {@return up to {@code limit} of the newest entries the given player is allowed to see, newest
+     * first}
+     *
+     * <p>What a screen is loaded from, and the reason it is bounded is {@link #SCREEN_ROWS}: the query
+     * asks for the newest rows and stops, rather than reading the table and throwing the tail away,
+     * which is what bounds the memory and the packet on a server that has been running for a year.
+     */
+    public List<ActionLogEntry> recentVisibleTo(UUID viewer, int limit) {
+        String needle = "," + viewer + ",";
+        return query(
+                "SELECT " + COLUMNS + " FROM action_log " +
+                        // The log's ids are AUTOINCREMENT and start at one, so this selects every row
+                        // and leaves the shared visibility rule as the only narrowing.
+                        "WHERE log_id > 0 " +
+                        VISIBILITY +
+                        "ORDER BY log_id DESC LIMIT ?",
+                MAPPER,
+                "%" + needle + "%", "%" + needle + "%", limit);
     }
 
     /** {@return up to {@code limit} most recent entries over the whole table} */
     public List<ActionLogEntry> recent(int limit) {
         return query("SELECT " + COLUMNS + " FROM action_log ORDER BY log_id DESC LIMIT ?",
                 MAPPER, limit);
-    }
-
-    /**
-     * {@return every entry, newest first, ignoring {@code access_list}}
-     *
-     * <p>The administrator's view.
-     */
-    public List<ActionLogEntry> all() {
-        return query("SELECT " + COLUMNS + " FROM action_log ORDER BY log_id DESC", MAPPER);
     }
 
     /** {@return one entry, or null when no row has that id} */

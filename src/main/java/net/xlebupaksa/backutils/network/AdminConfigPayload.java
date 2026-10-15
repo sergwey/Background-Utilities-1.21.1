@@ -23,11 +23,11 @@ public record AdminConfigPayload(List<Row> settings) implements CustomPacketPayl
     /** One setting. */
     public record Row(String key, String label, BackUtilsSettings.Group group,
                       BackUtilsSettings.Kind kind, String value, double min, double max,
-                      List<String> comment) {
+                      List<String> options, List<String> comment) {
 
         /**
-         * Written out rather than composed: eight fields, and {@code StreamCodec.composite} takes
-         * six. The enums go as enums, since both ends are this same jar.
+         * Written out rather than composed: nine fields, and {@code StreamCodec.composite} takes six. The
+         * enums go as enums, since both ends are this same jar.
          */
         public static final StreamCodec<RegistryFriendlyByteBuf, Row> STREAM_CODEC =
                 StreamCodec.of(Row::write, Row::read);
@@ -40,6 +40,7 @@ public record AdminConfigPayload(List<Row> settings) implements CustomPacketPayl
             buf.writeUtf(value.value);
             buf.writeDouble(value.min);
             buf.writeDouble(value.max);
+            buf.writeCollection(value.options, (out, option) -> out.writeUtf(option));
             buf.writeCollection(value.comment, (out, line) -> out.writeUtf(line));
         }
 
@@ -52,10 +53,12 @@ public record AdminConfigPayload(List<Row> settings) implements CustomPacketPayl
                     buf.readUtf(),
                     buf.readDouble(),
                     buf.readDouble(),
+                    buf.readList(in -> in.readUtf()),
                     buf.readList(in -> in.readUtf()));
         }
 
         public Row {
+            options = List.copyOf(options);
             comment = List.copyOf(comment);
         }
     }

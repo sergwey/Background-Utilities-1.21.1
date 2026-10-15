@@ -47,14 +47,28 @@ public class NameData extends DataManager {
      * of the same name — the commands only check-then-insert, which two administrators can race. A
      * unique index cannot be built over a database that already holds duplicates, so that failure
      * is logged rather than fatal.
+     *
+     * <p>The index on the owner is built with {@code COLLATE NOCASE}, because that is how every lookup of
+     * a row by its owner is compared. One account name can be stored in more than one spelling — the
+     * server's own, which the commands write, and one a typed name left behind — and a row carrying
+     * either spelling is still that player's, an account name being unique ignoring case. A lookup that
+     * insisted on the exact spelling would hide a profile from the player it was made for, while a
+     * comparison and an index that disagree about case would leave the index unable to serve it.
+     *
+     * <p>The uniqueness guarantee is left comparing as written, which is why it is not built the same
+     * way: it is there to stop two administrators racing, it cannot be widened without failing to build
+     * over a database that already holds a pair differing only in case, and a failure there would take
+     * the guarantee away rather than extend it. The old index under a plain name is dropped once, and
+     * the new one names the collation so that neither is rebuilt on the next start.
      */
     private void createIndexes() {
         try (
                 Connection connection = openConnection();
                 Statement stmt = connection.createStatement()
         ) {
-            stmt.execute("CREATE INDEX IF NOT EXISTS idx_name_profile_player " +
-                    "ON name_profile(player_name);");
+            stmt.execute("DROP INDEX IF EXISTS idx_name_profile_player;");
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_name_profile_player_nocase " +
+                    "ON name_profile(player_name COLLATE NOCASE);");
         } catch (SQLException e) {
             BackUtils.LOGGER.warn("Could not index name_profile(player_name)", e);
         }
@@ -80,10 +94,17 @@ public class NameData extends DataManager {
         ).stream().findFirst();
     }
 
+    /**
+     * {@return this player's profiles}
+     *
+     * <p>Found under whichever spelling of the account name the rows carry: see {@link #createIndexes}
+     * for why the comparison is case-insensitive.
+     */
     public List<NameProfile> findByPlayer(String player) {
         return query(
                 "SELECT name_profile_id, name_profile_name, displayed_name, player_name " +
-                        "FROM name_profile WHERE player_name = ? ORDER BY name_profile_name",
+                        "FROM name_profile WHERE player_name = ? COLLATE NOCASE " +
+                        "ORDER BY name_profile_name",
                 MAPPER,
                 player);
     }
@@ -91,7 +112,8 @@ public class NameData extends DataManager {
     public Optional<NameProfile> findByPlayerAndName(String player, String name) {
         return query(
                 "SELECT name_profile_id, name_profile_name, displayed_name, player_name " +
-                        "FROM name_profile WHERE player_name = ? AND name_profile_name = ?",
+                        "FROM name_profile WHERE player_name = ? COLLATE NOCASE " +
+                        "AND name_profile_name = ?",
                 MAPPER,
                 player, name
         ).stream().findFirst();
@@ -118,7 +140,7 @@ public class NameData extends DataManager {
     public void update(String name, String newDisplayed, String player) {
         update(
                 "UPDATE name_profile SET displayed_name = ? " +
-                        "WHERE player_name = ? AND name_profile_name = ?",
+                        "WHERE player_name = ? COLLATE NOCASE AND name_profile_name = ?",
                 newDisplayed, player, name);
     }
 
@@ -132,7 +154,7 @@ public class NameData extends DataManager {
     public int rename(String player, String oldName, String newName) {
         return super.update(
                 "UPDATE name_profile SET name_profile_name = ? " +
-                        "WHERE player_name = ? AND name_profile_name = ?",
+                        "WHERE player_name = ? COLLATE NOCASE AND name_profile_name = ?",
                 newName, player, oldName);
     }
 
@@ -144,7 +166,7 @@ public class NameData extends DataManager {
     public void delete(String name, String player) {
         super.update(
                 "DELETE FROM name_profile " +
-                        "WHERE player_name = ? AND name_profile_name = ?",
+                        "WHERE player_name = ? COLLATE NOCASE AND name_profile_name = ?",
                 player, name);
     }
 }

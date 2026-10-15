@@ -30,14 +30,6 @@ public final class AdminProfileCache {
         return playersRevision;
     }
 
-    public static boolean profileNames() {
-        return profileNames;
-    }
-
-    public static String profilePlayer() {
-        return profilePlayer;
-    }
-
     public static List<ProfileListPayload.Row> profiles() {
         return profiles;
     }

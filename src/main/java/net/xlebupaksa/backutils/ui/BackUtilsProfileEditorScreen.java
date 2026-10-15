@@ -25,11 +25,11 @@ import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.Style;
+import net.minecraft.util.FormattedCharSequence;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
-import net.tysontheember.emberstextapi.compat.patchouli.PatchouliBypass;
+import net.xlebupaksa.backutils.client.LiteralDrawing;
 import net.xlebupaksa.backutils.client.BackUtilsClientConfig;
-import net.xlebupaksa.backutils.data.MarkupUtil;
 import net.xlebupaksa.backutils.data.MarkupWrap;
 import net.xlebupaksa.backutils.network.AdminProfileCache;
 import net.xlebupaksa.backutils.network.AdminProfileEditPayload;
@@ -64,9 +64,17 @@ import java.util.function.IntConsumer;
  *
  * <h2>Why the widget render is wrapped</h2>
  * Ember's Text API parses every {@code Component.literal} it draws, text fields included.
- * {@link PatchouliBypass} is the library's nestable, thread-local switch for editors that draw raw
+ * {@link LiteralDrawing} is the library's nestable, thread-local switch for editors that draw raw
  * markup, honoured by the literal renderer and the width splitter, so the widget tree is rendered
  * with it on and the preview with it off.
+ *
+ * <h2>Why the preview is cached</h2>
+ * The preview is markup drawn as markup, so its rows are the one part of this window Ember parses
+ * — and the parse is what its effects hang off, which {@link DrawnRows} explains at length: a
+ * literal rebuilt inside the draw call gives a rainbow or a typewriter a new identity sixty times
+ * a second and it never gets anywhere, while the message the profile will actually write does
+ * animate. The rows are therefore built once per change and kept, keyed on everything the preview
+ * reads so no change can quietly go unshown; see {@link #rebuildPreviewIfStale}.
  */
 @OnlyIn(Dist.CLIENT)
 public final class BackUtilsProfileEditorScreen extends Screen {
@@ -107,6 +115,14 @@ public final class BackUtilsProfileEditorScreen extends Screen {
     private static final List<String> INSTRUCTIONS_ADMIN_NAME = List.of(
             "backutils.editor.help.admin_name.message",
             "backutils.editor.help.admin_name.restrictions");
+
+    /**
+     * The most lines any of the three blocks holds. The strip is built once for whichever block the
+     * window is showing, and its height and the documentation link below it are sized from this, so a
+     * block that grows a line still fits instead of drawing its link over its own last line.
+     */
+    private static final int INSTRUCTION_LINES = Math.max(INSTRUCTIONS_SELF.size(),
+            Math.max(INSTRUCTIONS_ADMIN_CHAT.size(), INSTRUCTIONS_ADMIN_NAME.size()));
 
     private static BackUtilsProfileEditorScreen instance;
 
@@ -177,6 +193,51 @@ public final class BackUtilsProfileEditorScreen extends Screen {
     private int linkY;
     private int linkWidth;
     private int linkHeight;
+    /** The link's flat text, and the width it is drawn at, kept rather than resolved per frame. */
+    private String docsText;
+    private int docsTextWidth;
+    /** Whether the last link component was built for a hovered link, which is all that recolours it. */
+    private boolean docsHovered;
+    /** The link as it was last drawn, built when the hover state changes rather than every frame. */
+    private Component docsLink;
+
+    /**
+     * Everything the preview was built from, so the {@code equals} a record writes is what decides
+     * whether it has to be built again.
+     *
+     * @param advanced   which way of writing the format the preview reads
+     * @param nameMode   the kind of profile, and so which of the two placeholders is substituted
+     * @param target     the player an operator is editing for, whose name stands in for the sample
+     * @param colour     the simple controls' colour
+     * @param bold       the simple controls' weight
+     * @param italic     the simple controls' slant
+     * @param underline  the simple controls' underline
+     * @param strike     the simple controls' strikethrough
+     * @param inner      the text a displayed name wraps
+     * @param rawFormat  the format in the advanced field, as typed
+     * @param staff      whether the format is checked by an operator's rules
+     * @param sampleName the localised stand-in for {@code {player}}, which the language can change
+     * @param sampleBody the localised stand-in for {@code {m}}, likewise
+     */
+    private record PreviewKey(boolean advanced, boolean nameMode, String target, String colour,
+                              boolean bold, boolean italic, boolean underline, boolean strike,
+                              String inner, String rawFormat, boolean staff, String sampleName,
+                              String sampleBody) {}
+
+    /** One drawn preview row: the sequence vanilla's splitter made of the line, kept not rebuilt. */
+    private record PreviewRow(FormattedCharSequence row) {}
+
+    private final List<PreviewRow> previewRows = new ArrayList<>();
+
+    /** The inputs the rows were built from, or null while nothing has been built. */
+    private PreviewKey previewKey;
+    /** The space the rows were wrapped into, so a resized window wraps them again. */
+    private int previewWidth = -1;
+    /**
+     * The font the rows were measured with. A resource reload can put a different one behind
+     * {@code Minecraft.font}, and the same text is a different width in a different font.
+     */
+    private Font previewFont;
 
     private BackUtilsProfileEditorScreen(Built built) {
         super(Component.translatable("backutils.editor.screen.title"));
@@ -190,10 +251,6 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         screen.target = "";
         screen.load(existing);
         Minecraft.getInstance().setScreen(screen);
-    }
-
-    public static void openFor(String player, boolean names, ProfileListPayload.Row existing) {
-        openFor(player, names, existing, true);
     }
 
     public static void openFor(String player, boolean names, ProfileListPayload.Row existing,
@@ -343,9 +400,9 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         UIElement advancedRow = row(built, "backutils.editor.label.advanced_mode",
                 built.advancedToggle);
 
-        // Two lines always, so the strip only ever changes its words. Plain labels, because drawing
-        // the explanation of markup through Ember would parse it.
-        built.instructions = new Label[INSTRUCTIONS_SELF.size()];
+        // As many labels as the longest block, so whichever block is shown has one per line, and
+        // plain ones, because drawing the explanation of markup through Ember would parse it.
+        built.instructions = new Label[INSTRUCTION_LINES];
         built.instructionsRow = new UIElement();
         built.instructionsRow.layout(l -> l.widthPercent(100).height(instructionHeight()));
         UIElement instructionColumn = new UIElement();
@@ -448,10 +505,14 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         for (Built.Caption caption : built.captions) {
             caption.element().setText(Text.of(caption.key()), false);
         }
+        // The link is not a caption, being drawn rather than held as a widget, so its text is
+        // resolved here too: this is the one place that reaches every language change, and the
+        // width and the component both follow from it.
+        if (instance != null) instance.resolveDocsText();
     }
 
     private static int instructionHeight() {
-        return INSTRUCTIONS_SELF.size() * LINE + LINE + 6;
+        return INSTRUCTION_LINES * LINE + LINE + 6;
     }
 
     /** A labelled switch, with the toggle's own text cleared: it draws across the label beside it. */
@@ -514,6 +575,10 @@ public final class BackUtilsProfileEditorScreen extends Screen {
     // ------------------------------------------------------------------
 
     private void load(ProfileListPayload.Row existing) {
+        // A different profile, so the preview is built again whatever the key says: the two are
+        // compared field by field, and identical controls around a different format would otherwise
+        // be read as no change at all.
+        markPreviewStale();
         editing = existing;
         colour = "";
         bold = false;
@@ -589,9 +654,18 @@ public final class BackUtilsProfileEditorScreen extends Screen {
     }
 
     /**
-     * Shows the one control the shared row carries, and hides the other by switching it out of the
-     * layout rather than collapsing the row: a dropdown with a scrollable list inside cannot satisfy a
-     * box of no height, so it re-lays the whole tree out on every frame.
+     * Shows the one control the shared row carries, and takes the other out of the tree rather than
+     * merely hiding it.
+     *
+     * <p>The dropdown is the one that has to leave rather than be switched off: it holds a scrollable
+     * list, and an element left in the tree for a box it cannot fill is laid out again on every pass
+     * the library's own layout makes - the tree dirtied from inside the frame's layout, which the
+     * library then reports as a layout dirty more than ten times in that frame. Taken out, it is
+     * neither measured nor re-dirtied, and it keeps its own place in the row for when it comes back,
+     * so the row reads as it always did.
+     *
+     * <p>The two plain fields are only switched when their display moves, for the same reason: every
+     * style write is work the layout follows.
      */
     private void applyExtraRow() {
         boolean sound = hasSound();
@@ -604,14 +678,27 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         built.extraLabel.setText(sound
                 ? Text.of("backutils.editor.label.sound")
                 : Text.of("backutils.editor.label.text"), false);
-        built.soundSelector.setDisplay(sound);
+        // In the tree only while the row carries it, and back in its own place - after the caption and
+        // before the fields - so nothing the row shows moves.
+        if (sound != (built.soundSelector.getParent() == built.extraRow)) {
+            if (sound) {
+                built.extraRow.addChildAt(built.soundSelector, 1);
+            } else {
+                built.extraRow.removeChild(built.soundSelector);
+            }
+        }
         // The free-text sound is the operator's half of the row: the dropdown offers the palette, this
         // offers the rest of the game's sounds.
-        built.soundField.setDisplay(sound && unrestricted());
-        built.innerField.setDisplay(text);
+        setShown(built.soundField, sound && unrestricted());
+        setShown(built.innerField, text);
         built.extraRow.setVisible(shown);
         built.extraRow.layout(l -> l.widthPercent(100).height(shown ? ROW : 0)
                 .flexDirection(FlexDirection.ROW).alignItems(AlignItems.CENTER).gapAll(GAP));
+    }
+
+    /** Writes a display only when it moves, so a row put back as it already stands costs nothing. */
+    private static void setShown(UIElement element, boolean display) {
+        if (element.isDisplayed() != display) element.setDisplay(display);
     }
 
     private boolean hasSound() {
@@ -719,9 +806,10 @@ public final class BackUtilsProfileEditorScreen extends Screen {
      * still styles the text. A staff edit takes the palette that came with the list it is editing.
      */
     private void applyPalette() {
-        // A name has no sound, so its dropdown is left alone: filling a list nothing can open is work
-        // for a widget that is not in the layout.
-        if (!hasSound()) return;
+        // Filled only while the row carries the dropdown: filling a list nothing can open is work for a
+        // widget the tree does not hold, and the list it would fill is rebuilt on every pass the
+        // dropdown is measured in - see applyExtraRow.
+        if (built.soundSelector.getParent() != built.extraRow) return;
 
         List<String> candidates = new ArrayList<>();
         candidates.add("none");
@@ -827,6 +915,12 @@ public final class BackUtilsProfileEditorScreen extends Screen {
 
     private void refreshStatus() {
         if (built.status == null || built.nameField == null) return;
+
+        // Every way of changing what the preview is made of is meant to come through here: a switch,
+        // a colour, the box a format is typed in. A path that misses this is still covered, because
+        // the preview's key is compared on every frame rather than trusted to a setter, but saying
+        // it here is what keeps the two from drifting apart when a control is added.
+        markPreviewStale();
 
         String problem = localProblem();
         if (problem != null) {
@@ -938,11 +1032,11 @@ public final class BackUtilsProfileEditorScreen extends Screen {
      */
     @Override
     public void tick() {
-        PatchouliBypass.enter();
+        LiteralDrawing.begin();
         try {
             super.tick();
         } finally {
-            PatchouliBypass.exit();
+            LiteralDrawing.end();
         }
         pollColour();
         pollPalette();
@@ -1064,15 +1158,21 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         // loading the profile resolves it.
         applyTitle(editing);
 
+        // Rebuilt on every open: the caption labels are captions, but the sample the preview
+        // substitutes and the link's text are strings resolved once each, and the language is chosen
+        // on a screen that replaces this one.
+        markPreviewStale();
+        resolveDocsText();
+
         layoutPanel();
 
         // Text measurement and rendering both have to see the raw string, or the caret and the text
         // disagree about how long the format is.
-        PatchouliBypass.enter();
+        LiteralDrawing.begin();
         try {
             built.ui.setScreenAndInit(this);
         } finally {
-            PatchouliBypass.exit();
+            LiteralDrawing.end();
         }
 
         addRenderableWidget(built.ui.getWidget());
@@ -1096,11 +1196,11 @@ public final class BackUtilsProfileEditorScreen extends Screen {
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         // The widget tree is drawn with markup parsing off, so a format being typed is visible as the
         // characters it is made of. Below it the preview and the link are markup on purpose.
-        PatchouliBypass.enter();
+        LiteralDrawing.begin();
         try {
             super.render(graphics, mouseX, mouseY, partialTick);
         } finally {
-            PatchouliBypass.exit();
+            LiteralDrawing.end();
         }
 
         drawPreview(graphics);
@@ -1113,11 +1213,106 @@ public final class BackUtilsProfileEditorScreen extends Screen {
         int y = Math.round(built.previewRow.getPositionY());
         int width = Math.round(built.previewRow.getSizeWidth());
 
-        List<String> lines = MarkupWrap.wrapByWidth(previewText(), Math.max(40, width),
-                line -> font.width(MarkupUtil.strip(line)));
-        for (int i = 0; i < Math.min(PREVIEW_LINES, lines.size()); i++) {
-            graphics.drawString(font, Component.literal(lines.get(i)), x, y + i * LINE, PLAIN, false);
+        rebuildPreviewIfStale(font, Math.max(40, width));
+        for (int i = 0; i < previewRows.size(); i++) {
+            // The chat draws each of its own rows with this call, on the rows the same splitter made
+            // of the same string: see rebuildPreviewIfStale.
+            graphics.drawString(font, previewRows.get(i).row(), x, y + i * LINE, PLAIN, false);
         }
+    }
+
+    /**
+     * Rebuilds the preview's rows - the rows the chat line itself is drawn on - when anything the
+     * preview is made of has changed.
+     *
+     * <p>The key is every input {@link #previewText} and {@link #currentFormat} read, in one record:
+     * the format is only composed and validated when one of them differs, and the rows only then
+     * either. Everything is compared rather than the fields marked dirty as they are written, because
+     * a setter that forgot to do it would leave a stale preview on screen, which is a worse fault than
+     * the work this saves - and because the comparison is what the banner beside the log already does.
+     *
+     * <h2>Why the rows are the chat's own</h2>
+     * The line a player sees is <b>one literal</b> - the format with the message in it and its written
+     * breaks made real - which Ember parses in one piece and vanilla's splitter then cuts into rows.
+     * That is what happens here: {@link #previewBody} builds the literal the way
+     * {@code ChatHandler.composeMessage} builds it, {@link Font#split} cuts it, and every row is drawn
+     * with the call the chat draws its rows with. Rows built one literal at a time by this window
+     * answered differently for a row holding nothing but tags: parsed on its own such a row has no text
+     * to format, Ember gives up on the markup and draws the characters of the tags themselves, where
+     * the chat's parse of the whole line spent those tags and draws nothing on that row. Nothing here
+     * decides which rows draw markup; the parse of the line decides, exactly as it does in chat.
+     *
+     * <p>A line is more than its format, and what is not the format is not shown. The name and the
+     * separator the server puts in front of the message are not part of one, so they are absent; the
+     * typewriter the chat wraps a line in when its profile has a sound is not added, so a profile types
+     * itself out in chat and does not here; {@code {m}} and {@code {player}} stand as the localised
+     * sample; only {@link #PREVIEW_LINES} rows are drawn; and an operator's format without {@code {m}}
+     * is shown as written, where the chat appends the message to it - which {@code ProfileMarkup} names
+     * at the check that allows that. The width is this window's and not the chat's, so a row too wide
+     * for the panel is cut where the panel ends; a <em>written</em> break is a break in both, and that
+     * row count is what the preview mirrors.
+     *
+     * <p>The rows are kept, not rebuilt: the same sequences are drawn on every frame, which is what
+     * lets the state behind an effect outlive one. Ember hangs its effects off what its parse of a
+     * literal produced - an id per {@code LiteralContents}, animation tracks keyed on the literal's own
+     * text - so a literal rebuilt every frame is a rainbow or a typewriter that starts again every
+     * frame. That parse happens once, here, when the rows are built - see {@link DrawnRows}.
+     */
+    private void rebuildPreviewIfStale(Font font, int width) {
+        PreviewKey key = previewKey();
+        // The width is compared the way the banner compares the space it wraps into: a window made
+        // wider or narrower wraps the same text differently, and this row is sized from the panel.
+        // The font is compared with it, because the wrap is the answer to a measurement.
+        if (previewKey != null && previewKey.equals(key) && previewWidth == width
+                && previewFont == font) {
+            return;
+        }
+
+        previewRows.clear();
+        List<FormattedCharSequence> rows = font.split(Component.literal(previewBody()), width);
+        // The preview is two lines: only the rows that are drawn are kept, so the rest are neither
+        // held nor drawn.
+        for (int i = 0; i < Math.min(PREVIEW_LINES, rows.size()); i++) {
+            previewRows.add(new PreviewRow(rows.get(i)));
+        }
+        previewKey = key;
+        previewWidth = width;
+        previewFont = font;
+    }
+
+    /**
+     * {@return the literal the chat line is drawn from}, the format with the sample text in it and
+     * every written break made real.
+     *
+     * <p>A written {@code \n} is a real break in a chat profile's text, because {@code ChatHandler}
+     * makes it one on the server before the line is sent and the chat display draws the rows vanilla's
+     * splitter makes of it. A displayed name is drawn on one row wherever the game draws it - above the
+     * player, in the tab list - so a break written in one is not a break, and making it one here would
+     * draw a row the game never draws.
+     */
+    private String previewBody() {
+        String text = previewText();
+        return nameMode ? text : MarkupWrap.withLineBreaks(text);
+    }
+
+    /** {@return everything {@link #previewText} is made of, so a change to any of it is visible} */
+    private PreviewKey previewKey() {
+        return new PreviewKey(advanced, nameMode, target, colour, bold, italic, underline,
+                strikethrough, built.innerField.getText(), built.advancedField.getText(),
+                unrestricted(), Text.of("backutils.editor.preview.sample_player"),
+                Text.of("backutils.editor.preview.sample_message"));
+    }
+
+    /**
+     * Throws the built preview away, so the next frame builds it again.
+     *
+     * <p>Called wherever a window forgets what it was showing: a profile loaded, a control worked, a
+     * format typed. The key is what is dropped rather than the rows, because {@code render} puts the
+     * frame together before the preview is drawn: clearing the rows would draw an empty preview for
+     * that frame, where dropping the key rebuilds them in the same one.
+     */
+    private void markPreviewStale() {
+        previewKey = null;
     }
 
     private void drawDocsLink(GuiGraphics graphics, int mouseX, int mouseY) {
@@ -1128,20 +1323,37 @@ public final class BackUtilsProfileEditorScreen extends Screen {
 
         Font font = Minecraft.getInstance().font;
         int x = Math.round(built.instructionsRow.getPositionX());
-        int y = Math.round(built.instructionsRow.getPositionY()) + INSTRUCTIONS_SELF.size() * LINE + 2;
-        String docsText = Text.of("backutils.editor.label.docs_link");
+        int y = Math.round(built.instructionsRow.getPositionY()) + INSTRUCTION_LINES * LINE + 2;
 
-        boolean hovered = mouseX >= x && mouseX < x + font.width(docsText)
+        boolean hovered = mouseX >= x && mouseX < x + docsTextWidth
                 && mouseY >= y && mouseY < y + LINE;
-        Component link = Component.translatable("backutils.editor.label.docs_link").withStyle(style -> style
-                .withColor(hovered ? ChatFormatting.WHITE : ChatFormatting.AQUA)
-                .withUnderlined(true));
-        graphics.drawString(font, link, x, y, PLAIN, false);
+        // The one thing that changes how the link is drawn is whether the pointer is on it, so the
+        // component is built when that flips rather than sixty times a second.
+        if (docsLink == null || hovered != docsHovered) {
+            docsHovered = hovered;
+            docsLink = Component.translatable("backutils.editor.label.docs_link").withStyle(style -> style
+                    .withColor(hovered ? ChatFormatting.WHITE : ChatFormatting.AQUA)
+                    .withUnderlined(true));
+        }
+        graphics.drawString(font, docsLink, x, y, PLAIN, false);
 
         linkX = x;
         linkY = y;
-        linkWidth = font.width(docsText);
+        linkWidth = docsTextWidth;
         linkHeight = LINE;
+    }
+
+    /**
+     * Resolves the link's flat text and how wide it is drawn, at every open rather than every frame,
+     * and drops the component built from that text so the next frame builds one in the language now
+     * in force. Both were resolved twice a frame before: the text is a translation lookup and the
+     * width walks every glyph of it.
+     */
+    private void resolveDocsText() {
+        if (built.instructionsRow == null) return;
+        docsText = Text.of("backutils.editor.label.docs_link");
+        docsTextWidth = Minecraft.getInstance().font.width(docsText);
+        docsLink = null;
     }
 
     @Override
@@ -1158,61 +1370,61 @@ public final class BackUtilsProfileEditorScreen extends Screen {
             return true;
         }
 
-        PatchouliBypass.enter();
+        LiteralDrawing.begin();
         try {
             return super.mouseClicked(mouseX, mouseY, button);
         } finally {
-            PatchouliBypass.exit();
+            LiteralDrawing.end();
         }
     }
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        PatchouliBypass.enter();
+        LiteralDrawing.begin();
         try {
             return super.mouseReleased(mouseX, mouseY, button);
         } finally {
-            PatchouliBypass.exit();
+            LiteralDrawing.end();
         }
     }
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-        PatchouliBypass.enter();
+        LiteralDrawing.begin();
         try {
             return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
         } finally {
-            PatchouliBypass.exit();
+            LiteralDrawing.end();
         }
     }
 
     @Override
     public void mouseMoved(double mouseX, double mouseY) {
-        PatchouliBypass.enter();
+        LiteralDrawing.begin();
         try {
             super.mouseMoved(mouseX, mouseY);
         } finally {
-            PatchouliBypass.exit();
+            LiteralDrawing.end();
         }
     }
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        PatchouliBypass.enter();
+        LiteralDrawing.begin();
         try {
             return super.keyPressed(keyCode, scanCode, modifiers);
         } finally {
-            PatchouliBypass.exit();
+            LiteralDrawing.end();
         }
     }
 
     @Override
     public boolean charTyped(char codePoint, int modifiers) {
-        PatchouliBypass.enter();
+        LiteralDrawing.begin();
         try {
             return super.charTyped(codePoint, modifiers);
         } finally {
-            PatchouliBypass.exit();
+            LiteralDrawing.end();
         }
     }
 

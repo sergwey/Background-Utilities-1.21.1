@@ -44,6 +44,7 @@ public final class BackUtilsConfig {
     private static final String MIN_ROLL_SOUND_DEFAULT = "minecraft:block.anvil.land";
     private static final String MAX_ROLL_SOUND_DEFAULT = "minecraft:entity.player.levelup";
     private static final String MENU_MUSIC_DEFAULT = "minecraft:music.menu";
+    private static final String MENU_MUSIC_CHANNEL_DEFAULT = "music";
 
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
@@ -207,9 +208,21 @@ public final class BackUtilsConfig {
             .define("menuMusic", MENU_MUSIC_DEFAULT);
 
     public static final ModConfigSpec.DoubleValue MENU_MUSIC_VOLUME = BUILDER
-            .comment("Volume of that music, 0 to 2. It plays on the music channel, so the",
-                    "player's own music slider still applies.")
+            .comment("Volume of that music, 0 to 2. The channel below decides which slider of the",
+                    "player's own applies, and music is the default channel for a track.")
             .defineInRange("menuMusicVolume", 1.0D, 0.0D, 2.0D);
+
+    /**
+     * The sound channel that music plays on, which is which of the player's own sliders applies to
+     * it: {@code music} by default, and any of the game's own channels is allowed — {@code record},
+     * which is the jukebox and note block slider, or {@code ambient} — so a server whose menu music
+     * should follow a different slider than the player's music can say so.
+     */
+    public static final ModConfigSpec.ConfigValue<String> MENU_MUSIC_CHANNEL = BUILDER
+            .comment("The sound channel the menu music plays on, as the game names its channels:",
+                    "master, music, record, weather, block, hostile, neutral, player, ambient or",
+                    "voice. The player's own slider for that channel is the one that turns it down.")
+            .define("menuMusicChannel", MENU_MUSIC_CHANNEL_DEFAULT);
 
     // The operator corner in the bottom-right of the screen: the button that opens the administrator
     // menu, and the alert icon above it. Its size, its icon and that icon's fade are client settings,
@@ -296,7 +309,7 @@ public final class BackUtilsConfig {
      * shatter), which Ember resolves itself, or a name of the operator's own and the sound id it plays,
      * written {@code name=soundid}. A profile stores the name, so the operator can change what a name
      * sounds like without touching a profile. An operator edits the palette with
-     * {@code /backutils sounds add <name> <sound id>}, {@code remove <name>} and {@code list}.
+     * {@code /backutils typing_sounds add <name> <sound id>}, {@code remove <name>} and {@code list}.
      */
     public static final ModConfigSpec.ConfigValue<List<? extends String>> PROFILE_SOUNDS = BUILDER
             .comment("Sounds a chat profile may be set to play as its text types out. Each entry is",
@@ -308,8 +321,8 @@ public final class BackUtilsConfig {
                     "sounds like changes every profile that uses it. The id is resolved on each",
                     "client, so an id only a resourcepack adds works here as well as a vanilla one,",
                     "and only the shape of an id is checked on this side. The volume is fixed at 0.1",
-                    "for every profile. Edit it with /backutils sounds add <name> <sound id>,",
-                    "/backutils sounds remove <name> and /backutils sounds list.")
+                    "for every profile. Edit it with /backutils typing_sounds add <name> <sound id>,",
+                    "/backutils typing_sounds remove <name> and /backutils typing_sounds list.")
             .defineListAllowEmpty("profileSounds", ProfileSound.PRESETS, () -> "click",
                     sound -> sound instanceof String);
 
@@ -477,12 +490,9 @@ public final class BackUtilsConfig {
         ROLL_HIDDEN_TEXT.save();
     }
 
+    /** {@return the lowest roll's treatment, which may be empty for no treatment at all} */
     public static String getRollMinFormat() {
-        try {
-            return text(ROLL_FORMAT_MIN, MIN_ROLL_FORMAT);
-        } catch (Exception e) {
-            return MIN_ROLL_FORMAT;
-        }
+        return textAllowingEmpty(ROLL_FORMAT_MIN, MIN_ROLL_FORMAT);
     }
 
     public static void setRollMinFormat(String value) {
@@ -490,12 +500,9 @@ public final class BackUtilsConfig {
         ROLL_FORMAT_MIN.save();
     }
 
+    /** {@return the highest roll's treatment, which may be empty for no treatment at all} */
     public static String getRollMaxFormat() {
-        try {
-            return text(ROLL_FORMAT_MAX, MAX_ROLL_FORMAT);
-        } catch (Exception e) {
-            return MAX_ROLL_FORMAT;
-        }
+        return textAllowingEmpty(ROLL_FORMAT_MAX, MAX_ROLL_FORMAT);
     }
 
     public static void setRollMaxFormat(String value) {
@@ -503,12 +510,9 @@ public final class BackUtilsConfig {
         ROLL_FORMAT_MAX.save();
     }
 
+    /** {@return the roll's sound, which may be empty for silence} */
     public static String getRollSound() {
-        try {
-            return text(ROLL_SOUND, ROLL_SOUND_DEFAULT);
-        } catch (Exception e) {
-            return ROLL_SOUND_DEFAULT;
-        }
+        return textAllowingEmpty(ROLL_SOUND, ROLL_SOUND_DEFAULT);
     }
 
     public static void setRollSound(String value) {
@@ -516,12 +520,9 @@ public final class BackUtilsConfig {
         ROLL_SOUND.save();
     }
 
+    /** {@return the lowest roll's sound, which may be empty for silence} */
     public static String getRollMinSound() {
-        try {
-            return text(ROLL_MIN_SOUND, MIN_ROLL_SOUND_DEFAULT);
-        } catch (Exception e) {
-            return MIN_ROLL_SOUND_DEFAULT;
-        }
+        return textAllowingEmpty(ROLL_MIN_SOUND, MIN_ROLL_SOUND_DEFAULT);
     }
 
     public static void setRollMinSound(String value) {
@@ -529,12 +530,9 @@ public final class BackUtilsConfig {
         ROLL_MIN_SOUND.save();
     }
 
+    /** {@return the highest roll's sound, which may be empty for silence} */
     public static String getRollMaxSound() {
-        try {
-            return text(ROLL_MAX_SOUND, MAX_ROLL_SOUND_DEFAULT);
-        } catch (Exception e) {
-            return MAX_ROLL_SOUND_DEFAULT;
-        }
+        return textAllowingEmpty(ROLL_MAX_SOUND, MAX_ROLL_SOUND_DEFAULT);
     }
 
     public static void setRollMaxSound(String value) {
@@ -574,6 +572,30 @@ public final class BackUtilsConfig {
         return value == null || value.isEmpty() ? fallback : value;
     }
 
+    /**
+     * {@return the stored text exactly as the file holds it, empty included, or the default when
+     * there is nothing to read}
+     *
+     * <p>For the settings whose own comment promises that an empty value is an answer — silence, or
+     * no treatment at all: the sounds, the two extreme formats and the menu's music. {@link #text}
+     * puts the default back in place of an empty value, which is right for every other text setting
+     * and wrong for these, because the operator who cleared one meant to clear it.
+     *
+     * <p>A config that has not been read yet still answers with the default: {@code get()} throws
+     * before the file is loaded, and reading that throw as empty would turn a server that has not
+     * opened its config into one that deliberately says nothing. A value that was never written is
+     * unaffected too, since the spec answers with the default it was defined with.
+     */
+    private static String textAllowingEmpty(ModConfigSpec.ConfigValue<String> spec, String fallback) {
+        String value;
+        try {
+            value = spec.get();
+        } catch (Exception e) {
+            return fallback;
+        }
+        return value == null ? fallback : value;
+    }
+
     /** {@return the value in the file, or null when there is nothing to read} */
     private static String stored(ModConfigSpec.ConfigValue<String> spec) {
         try {
@@ -605,12 +627,9 @@ public final class BackUtilsConfig {
     // The client menus
     // ------------------------------------------------------------------
 
+    /** {@return the menu's music, which may be empty to play nothing} */
     public static String getMenuMusic() {
-        try {
-            return text(MENU_MUSIC, MENU_MUSIC_DEFAULT);
-        } catch (Exception e) {
-            return MENU_MUSIC_DEFAULT;
-        }
+        return textAllowingEmpty(MENU_MUSIC, MENU_MUSIC_DEFAULT);
     }
 
     public static void setMenuMusic(String value) {
@@ -629,6 +648,27 @@ public final class BackUtilsConfig {
     public static void setMenuMusicVolume(double value) {
         MENU_MUSIC_VOLUME.set(value);
         MENU_MUSIC_VOLUME.save();
+    }
+
+    /**
+     * {@return the sound channel the menu music plays on}, never empty
+     *
+     * <p>Empty falls back to the default rather than being stored: a channel is not something a server
+     * can switch off — clearing the music is what {@link #getMenuMusic} is for — and the client has no
+     * channel to play a sound on that names none.
+     */
+    public static String getMenuMusicChannel() {
+        try {
+            String value = MENU_MUSIC_CHANNEL.get();
+            return value == null || value.isBlank() ? MENU_MUSIC_CHANNEL_DEFAULT : value.trim();
+        } catch (Exception e) {
+            return MENU_MUSIC_CHANNEL_DEFAULT;
+        }
+    }
+
+    public static void setMenuMusicChannel(String value) {
+        MENU_MUSIC_CHANNEL.set(value);
+        MENU_MUSIC_CHANNEL.save();
     }
 
     // ------------------------------------------------------------------
@@ -817,5 +857,25 @@ public final class BackUtilsConfig {
         PROFILE_SOUNDS.set(List.copyOf(sounds));
         PROFILE_SOUNDS.save();
         return true;
+    }
+
+    /**
+     * Replaces the whole palette, which is how the settings menu writes it: that menu edits the list as
+     * one value, and an entry added there is followed by no second edit to remove the old one.
+     *
+     * <p>Blank entries are dropped rather than stored — a menu row the operator cleared is an entry
+     * they took away — and the order they were given in is the order players see them in.
+     */
+    public static void setProfileSounds(List<String> entries) {
+        LinkedHashSet<String> clean = new LinkedHashSet<>();
+        if (entries != null) {
+            for (String entry : entries) {
+                if (entry == null) continue;
+                String trimmed = entry.trim();
+                if (!trimmed.isEmpty()) clean.add(trimmed);
+            }
+        }
+        PROFILE_SOUNDS.set(List.copyOf(clean));
+        PROFILE_SOUNDS.save();
     }
 }

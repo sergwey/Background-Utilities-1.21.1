@@ -22,10 +22,6 @@ public final class AdminProfileFeedbackCache {
         return names;
     }
 
-    public static String player() {
-        return player;
-    }
-
     public static String message() {
         return message;
     }

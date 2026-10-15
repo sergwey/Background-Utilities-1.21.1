@@ -11,9 +11,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The whole action log, for an administrator, newest first. It ignores {@code access_list}, so it
- * is only sent to somebody whose permission has been checked on the server; reusing the player
- * payload would put the visibility rule in two places.
+ * The newest entries of the action log, for an administrator, newest first. It ignores
+ * {@code access_list}, so it is only sent to somebody whose permission has been checked on the
+ * server; reusing the player payload would put the visibility rule in two places.
+ *
+ * <p>Bounded to {@link net.xlebupaksa.backutils.data.LogData#SCREEN_ROWS} rows, so
+ * <b>older entries are no longer shown in the menu</b>; nothing is deleted, and the live log still
+ * arrives as it happens.
  */
 public record AdminLogPayload(List<Row> rows) implements CustomPacketPayload {
 

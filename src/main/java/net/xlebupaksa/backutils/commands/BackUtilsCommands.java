@@ -1,6 +1,5 @@
 package net.xlebupaksa.backutils.commands;
 
-import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.context.CommandContext;
@@ -8,11 +7,11 @@ import net.minecraft.commands.Commands;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.xlebupaksa.backutils.BackUtilsConfig;
+import net.xlebupaksa.backutils.BackUtilsSettings;
 import net.xlebupaksa.backutils.data.MarkupUtil;
 import net.xlebupaksa.backutils.freeze.FreezeState;
 import net.xlebupaksa.backutils.network.AdminAlerts;
@@ -24,17 +23,19 @@ import net.xlebupaksa.backutils.profile.ProfileSound;
 import java.util.List;
 
 /**
- * {@code /backutils} — the server configuration root: whether actions are recorded at all, what the
- * typing effect sounds like, the banner text drawn beside the log's button, and the palette of sounds
- * a chat profile may name. Running it bare reports the current settings. The chat separators live
- * under {@code /chat}; {@code /freeze} and {@code /unfreeze} are roots of their own, registered
- * beside this one.
+ * {@code /backutils} — the server configuration root: whether actions are recorded at all, the banner
+ * text drawn beside the log's button, and {@code typing_sounds}, the palette of sounds a chat profile
+ * may name. Running it bare reports the current settings.
+ *
+ * <p>The typing effect's own settings — whether it types at all, its sound, its volume, its pitch and
+ * its speed — are not a command: they belong to {@link BackUtilsConfig} and are edited from the
+ * administrator menu's Log tab, because they describe how the log is drawn rather than what any
+ * player may choose.
+ *
+ * <p>The chat separators live under {@code /chat}; {@code /freeze} and {@code /unfreeze} are roots of
+ * their own, registered beside this one.
  */
 public class BackUtilsCommands {
-
-    /** Ember's preset names, listed only to make the command discoverable. */
-    private static final String TYPING_PRESETS =
-            "click, whoosh, static, magic, tick, pop, thud, shatter";
 
     @SubscribeEvent
     @SuppressWarnings("unused") // called by the event bus
@@ -69,21 +70,6 @@ public class BackUtilsCommands {
                         .then(Commands.literal("true").executes(ctx -> setActions(ctx, true)))
                         .then(Commands.literal("false").executes(ctx -> setActions(ctx, false))))
 
-                // /backutils typing_sounds on | off
-                // /backutils typing_sounds minecraft:block.note_block.snare 0.3 1.5
-                .then(Commands.literal("typing_sounds")
-                        .executes(this::typingGet)
-                        .then(Commands.literal("on").executes(ctx -> setTyping(ctx, true)))
-                        .then(Commands.literal("off").executes(ctx -> setTyping(ctx, false)))
-                        .then(Commands.literal("speed")
-                                .then(Commands.argument("charactersPerSecond",
-                                                DoubleArgumentType.doubleArg(0.1D, 1000.0D))
-                                        .executes(this::typingSpeed)))
-                        .then(Commands.argument("sound", StringArgumentType.string())
-                                .then(Commands.argument("volume", DoubleArgumentType.doubleArg(0.0D, 2.0D))
-                                        .then(Commands.argument("pitch", DoubleArgumentType.doubleArg(0.5D, 2.0D))
-                                                .executes(this::typingSet)))))
-
                 // /backutils banner set <text>
                 // /backutils banner clear
                 // /backutils banner          - what it says now
@@ -93,7 +79,9 @@ public class BackUtilsCommands {
                 // client-side text would be seen by whoever typed the command and by nobody else.
                 // This tree is the only one holding `banner` - the client tree that used to answer
                 // it is gone - so nothing on the client can shadow this path or keep the server
-                // from ever seeing it.
+                // from ever seeing it. The text is bounded, and the bound comes from the payload's
+                // own codec: see BackUtilsSettings.checkBanner, which is where a value too long to
+                // send is refused rather than stored.
                 .then(Commands.literal("banner")
                         .executes(this::bannerGet)
                         .then(Commands.literal("set")
@@ -101,14 +89,16 @@ public class BackUtilsCommands {
                                         .executes(this::bannerSet)))
                         .then(Commands.literal("clear").executes(this::bannerClear)))
 
-                // /backutils sounds add <name> <sound id>
-                // /backutils sounds list
-                // /backutils sounds remove <name>
+                // /backutils typing_sounds add <name> <sound id>
+                // /backutils typing_sounds list
+                // /backutils typing_sounds remove <name>
                 //
                 // The palette a player's chat profile may name. It lives here rather than in the
                 // client menu because it is a server decision: a profile stores the name, Ember
-                // cannot know that name, and this list is what decides the id it plays.
-                .then(Commands.literal("sounds")
+                // cannot know that name, and this list is what decides the id it plays. Named for
+                // what the sounds are for rather than for the effect that plays them, whose own
+                // settings the menu's Log tab holds.
+                .then(Commands.literal("typing_sounds")
                         .executes(this::soundList)
                         .then(Commands.literal("list").executes(this::soundList))
                         .then(Commands.literal("add")
@@ -125,7 +115,8 @@ public class BackUtilsCommands {
 
     /** Opens the administrator menu, checking permission again because the menu exposes the whole
      * action log; the tree itself is already gated at level 2. */
-    private int openMenu(CommandContext<CommandSourceStack> ctx) {        try {
+    private int openMenu(CommandContext<CommandSourceStack> ctx) {
+        try {
             ServerPlayer player = ctx.getSource().getPlayerOrException();
             if (!player.hasPermissions(AdminNetwork.REQUIRED_LEVEL)) {
                 ctx.getSource().sendFailure(Component.literal(
@@ -214,7 +205,6 @@ public class BackUtilsCommands {
         ctx.getSource().sendSuccess(() -> Component.literal(
                 "Background Utils - radius " + BackUtilsConfig.getLogRadius()
                         + ", actions " + (BackUtilsConfig.isActionLoggingEnabled() ? "on" : "off")
-                        + ", typing_sounds " + (BackUtilsConfig.isTypingEnabled() ? "on" : "off")
                         + ".\nChat settings, including the separators, are under /chat."), false);
         return 1;
     }
@@ -233,87 +223,6 @@ public class BackUtilsCommands {
             ctx.getSource().sendFailure(Component.literal("Error: " + e.getMessage()));
             return 0;
         }
-    }
-
-    // ------------------------------------------------------------------
-    // Typing effect
-    // ------------------------------------------------------------------
-
-    private int typingGet(CommandContext<CommandSourceStack> ctx) {
-        ctx.getSource().sendSuccess(() -> Component.literal(
-                "Typing: " + (BackUtilsConfig.isTypingEnabled() ? "on" : "off")
-                        + ", sound " + BackUtilsConfig.getTypingSound()
-                        + ", volume " + BackUtilsConfig.getTypingVolume()
-                        + ", pitch " + BackUtilsConfig.getTypingPitch()
-                        + ", speed " + BackUtilsConfig.getTypingSpeed() + " chars/s."), false);
-        return 1;
-    }
-
-    private int setTyping(CommandContext<CommandSourceStack> ctx, boolean enabled) {
-        try {
-            BackUtilsConfig.setTypingEnabled(enabled);
-            ctx.getSource().sendSuccess(() -> Component.literal(
-                    "Typing effect " + (enabled ? "enabled" : "disabled") + "."), false);
-            return 1;
-        } catch (Exception e) {
-            ctx.getSource().sendFailure(Component.literal("Error: " + e.getMessage()));
-            return 0;
-        }
-    }
-
-    private int typingSpeed(CommandContext<CommandSourceStack> ctx) {
-        try {
-            double speed = DoubleArgumentType.getDouble(ctx, "charactersPerSecond");
-            BackUtilsConfig.setTypingSpeed(speed);
-            ctx.getSource().sendSuccess(() -> Component.literal(
-                    "Typing speed set to " + speed + " characters per second."), false);
-            return 1;
-        } catch (Exception e) {
-            ctx.getSource().sendFailure(Component.literal("Error: " + e.getMessage()));
-            return 0;
-        }
-    }
-
-    private int typingSet(CommandContext<CommandSourceStack> ctx) {
-        try {
-            String sound = unquote(StringArgumentType.getString(ctx, "sound"));
-            double volume = DoubleArgumentType.getDouble(ctx, "volume");
-            double pitch = DoubleArgumentType.getDouble(ctx, "pitch");
-
-            if (sound == null || sound.isBlank()) {
-                ctx.getSource().sendFailure(Component.literal("No sound given."));
-                return 0;
-            }
-
-            // A bare word is passed through to Ember's preset table; a namespaced id only has to be
-            // shaped like one. It is resolved on the client that hears it, so a resourcepack's sounds
-            // are as valid here as the registry's are, and asking the registry would refuse them.
-            if (sound.indexOf(':') >= 0 && ResourceLocation.tryParse(sound) == null) {
-                ctx.getSource().sendFailure(Component.literal(
-                        "'" + sound + "' is not a sound id. Give one such as "
-                                + "minecraft:block.note_block.hat, or one of Ember's presets: "
-                                + TYPING_PRESETS + "."));
-                return 0;
-            }
-
-            BackUtilsConfig.setTypingSound(sound, volume, pitch);
-            BackUtilsConfig.setTypingEnabled(true);
-            ctx.getSource().sendSuccess(() -> Component.literal(
-                    "Typing sound set to " + sound + " at volume " + volume
-                            + " and pitch " + pitch + "."), false);
-            return 1;
-        } catch (Exception e) {
-            ctx.getSource().sendFailure(Component.literal("Error: " + e.getMessage()));
-            return 0;
-        }
-    }
-
-    private static String unquote(String s) {
-        if (s == null) return null;
-        if (s.length() < 2) return s;
-        boolean dq = s.startsWith("\"") && s.endsWith("\"");
-        boolean sq = s.startsWith("'") && s.endsWith("'");
-        return (dq || sq) ? s.substring(1, s.length() - 1) : s;
     }
 
     // ------------------------------------------------------------------
@@ -336,11 +245,20 @@ public class BackUtilsCommands {
 
     private int bannerSet(CommandContext<CommandSourceStack> ctx) {
         try {
-            String text = StringArgumentType.getString(ctx, "text");
+            // Through the settings table rather than straight into the config, so what this refuses
+            // is the banner's own rule — the same one the menu's editor is held to, and the same
+            // words — rather than a second copy of the length here that could drift from it.
+            String text = BackUtilsSettings.check(BackUtilsSettings.BANNER_TEXT_KEY,
+                    StringArgumentType.getString(ctx, "text"));
             setBanner(text);
             ctx.getSource().sendSuccess(() -> Component.literal("Banner set: ")
                     .append(MarkupUtil.asLiteral(text)), false);
             return 1;
+        } catch (IllegalArgumentException refusal) {
+            // Said as it stands: it already names the limit and the size given, and an "Error:"
+            // in front of it would read as a fault rather than as a value to shorten.
+            ctx.getSource().sendFailure(Component.literal(refusal.getMessage()));
+            return 0;
         } catch (Exception e) {
             ctx.getSource().sendFailure(Component.literal("Error: " + e.getMessage()));
             return 0;
@@ -373,12 +291,25 @@ public class BackUtilsCommands {
     // The profile sound palette
     // ------------------------------------------------------------------
 
+    /**
+     * {@return the word a quoted argument holds}, which Brigadier keeps the quotes around: a name or
+     * an id read with {@code string()} arrives as the player typed it, quotation marks included, and
+     * those marks are not part of either.
+     */
+    private static String unquote(String s) {
+        if (s == null) return null;
+        if (s.length() < 2) return s;
+        boolean dq = s.startsWith("\"") && s.endsWith("\"");
+        boolean sq = s.startsWith("'") && s.endsWith("'");
+        return (dq || sq) ? s.substring(1, s.length() - 1) : s;
+    }
+
     private int soundList(CommandContext<CommandSourceStack> ctx) {
         List<String> sounds = BackUtilsConfig.getProfileSounds();
         if (sounds.isEmpty()) {
             ctx.getSource().sendSuccess(() -> Component.literal(
-                    "No profile sounds set up. Add one with /backutils sounds add <name> <sound id>."),
-                    false);
+                    "No profile sounds set up. Add one with /backutils typing_sounds add"
+                            + " <name> <sound id>."), false);
             return 1;
         }
         ctx.getSource().sendSuccess(() -> Component.literal(
@@ -400,14 +331,16 @@ public class BackUtilsCommands {
             List<String> palette = BackUtilsConfig.getProfileSounds();
 
             // The name is the part a profile stores, so it is checked against the palette as it is;
-            // the id only has to be shaped like one, because the pack that holds it belongs to the
-            // client that hears it and this server has never seen it.
+            // the id is checked against the palette too, and only for the one thing the palette can
+            // tell it that its shape cannot: whether it is another entry's name. The pack that holds
+            // the sound itself belongs to the client that hears it and this server has never seen it,
+            // so the id's shape, and nothing of the registry, is still the whole of the rest.
             String nameProblem = ProfileSound.checkName(name, palette);
             if (nameProblem != null) {
                 ctx.getSource().sendFailure(Component.literal(nameProblem));
                 return 0;
             }
-            String idProblem = ProfileSound.checkId(sound);
+            String idProblem = ProfileSound.checkId(sound, palette);
             if (idProblem != null) {
                 ctx.getSource().sendFailure(Component.literal(idProblem));
                 return 0;

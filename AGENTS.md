@@ -44,8 +44,11 @@ the CIT Resewn and Inline runs, including what each of them exists to reproduce.
 - British spelling in comments, documentation and language files.
 - Comments and javadoc say *why*, not what. Where a decision looks arbitrary, the reason belongs
   beside it.
-- The mod writes nothing to the log in normal operation, and logs an error only when something is
-  wrong. No debug prints.
+- Nothing is written to the log to debug with: no debug prints, no per-frame or per-tick lines. What
+  the mod does write is a record — one line per channel message, per recorded action, per roll and per
+  administrator change, refused ones included — and the channel line carries the real account name
+  where the chat itself shows the player's profile, which is what a console is for. Anything else is an
+  error, logged only when something is wrong.
 - Every language key goes in both `src/main/resources/assets/backutils/lang/en_us.json` and
   `ru_ru.json`.
 - Never soften, skip or delete a check to make it pass. Correcting a check that pinned behaviour
@@ -107,8 +110,10 @@ licence notice belongs with its own files, not here.
 ## Checks that exist here
 
 The maintainer keeps a throwaway harness under `build/tmp/` — a compile check, a lint pass, a
-metadata check and a set of `main()` suites covering the markup, the profile storage, the effect
-tool, the item editor, the tool sounds and the HUD banner's text and placement. It is not committed,
+metadata check and a set of `main()` suites: the chat markup and the literals it is drawn as, the
+profile storage and the edits made to it, the command readings for rolls and silences, items in chat,
+the settings table and the client config, the effect tool's placement and its data, the item editor,
+the tool sounds, and the HUD banner's text and placement. It is not committed,
 because it is regenerated as the work needs it, so a fresh clone will not have it. If `build/tmp/` is
 present, run what is there before claiming a change is done; if it is not, build, run the game, and
 say what was run.

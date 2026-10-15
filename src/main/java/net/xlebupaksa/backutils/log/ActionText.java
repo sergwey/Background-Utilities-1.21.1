@@ -30,18 +30,6 @@ public final class ActionText {
         return body;
     }
 
-    /** {@return the action body with surrounding asterisks removed} — used by {@code /me}, where players type the
-     *  asterisks out of habit; only a matching pair is removed, so {@code /me *waves*} and {@code /me waves} are alike. */
-    public static String stripLeadingAsterisks(String body) {
-        if (body == null) return "";
-        String trimmed = body.trim();
-        if (trimmed.length() >= 2 && trimmed.charAt(0) == '*'
-                && trimmed.charAt(trimmed.length() - 1) == '*') {
-            return trimmed.substring(1, trimmed.length() - 1).trim();
-        }
-        return trimmed;
-    }
-
     /**
      * {@return the silent-action body when the message is {@code ^…^}, otherwise null}
      * <p>Stricter than {@link #stripAsterisks}: {@code ^} collides with a common emoticon, so the body must contain a

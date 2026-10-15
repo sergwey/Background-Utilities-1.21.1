@@ -94,7 +94,7 @@ public final class ProfileNetwork {
         try {
             BackUtilsData data = BackUtils.data();
             if (data == null) {
-                reply(player, payload.name(), false,
+                reply(player, false,
                         "Profile storage is unavailable — see the server log.");
                 return;
             }
@@ -104,12 +104,12 @@ public final class ProfileNetwork {
                 case ProfileEditPayload.UPDATE -> update(player, payload, data);
                 case ProfileEditPayload.DELETE -> delete(player, payload, data);
                 case ProfileEditPayload.USE -> use(player, payload, data);
-                default -> reply(player, payload.name(), false, "Unknown profile request.");
+                default -> reply(player, false, "Unknown profile request.");
             }
         } catch (Exception e) {
             BackUtils.LOGGER.error("Could not apply a profile change from {}",
                     player.getName().getString(), e);
-            reply(player, payload.name(), false,
+            reply(player, false,
                     "Something went wrong on the server; see its log.");
         }
     }
@@ -120,11 +120,11 @@ public final class ProfileNetwork {
 
         ProfileMarkup.Result name = ProfileMarkup.validateName(payload.name());
         if (!name.ok()) {
-            reply(player, payload.name(), false, name.error());
+            reply(player, false, name.error());
             return;
         }
         if (data.chats().findByPlayerAndName(playerName, name.value()).isPresent()) {
-            reply(player, name.value(), false,
+            reply(player, false,
                     "You already have a profile called '" + name.value() + "'.");
             return;
         }
@@ -132,22 +132,22 @@ public final class ProfileNetwork {
         // has no cap, so refusing here would only send them elsewhere to do the same thing.
         if (!staff
                 && data.chats().findByPlayer(playerName).size() >= ProfileMarkup.MAX_PROFILES_PER_PLAYER) {
-            reply(player, name.value(), false, "You already have "
+            reply(player, false, "You already have "
                     + ProfileMarkup.MAX_PROFILES_PER_PLAYER + " profiles — the limit.");
             return;
         }
 
         ProfileMarkup.Result format = formatOf(payload, staff);
         if (!format.ok()) {
-            reply(player, name.value(), false, format.error());
+            reply(player, false, format.error());
             return;
         }
-        String sound = resolveSound(player, payload, name.value(), staff);
+        String sound = resolveSound(player, payload, staff);
         if (sound == null) return;
 
         data.chats().create(name.value(), format.value(), sound, playerName);
         ProfileLoader.reload(player);
-        reply(player, name.value(), true, "Saved '" + name.value() + "'.");
+        reply(player, true, "Saved '" + name.value() + "'.");
         sendList(player);
     }
 
@@ -157,38 +157,42 @@ public final class ProfileNetwork {
         boolean staff = isStaff(player);
 
         if (data.chats().findByPlayerAndName(playerName, name).isEmpty()) {
-            reply(player, name, false, "You have no profile called '" + name + "'.");
+            reply(player, false, "You have no profile called '" + name + "'.");
             return;
         }
 
-        // The rename happens first, so everything below works with the name the profile will
-        // have; the row id does not change, so an active profile stays active across it.
+        // The name is settled before anything else is judged or written, so every check below speaks
+        // of the profile the player will have; nothing is stored until all of them have passed, so a
+        // refused format or sound cannot leave a rename behind.
         ProfileMarkup.Result wanted = ProfileMarkup.validateName(payload.newName());
         if (!wanted.ok()) {
-            reply(player, name, false, wanted.error());
+            reply(player, false, wanted.error());
             return;
         }
         String finalName = wanted.value();
-        if (!finalName.equals(name)) {
-            if (data.chats().findByPlayerAndName(playerName, finalName).isPresent()) {
-                reply(player, name, false,
-                        "You already have a profile called '" + finalName + "'.");
-                return;
-            }
-            data.chats().rename(playerName, name, finalName);
+        if (!finalName.equals(name)
+                && data.chats().findByPlayerAndName(playerName, finalName).isPresent()) {
+            reply(player, false,
+                    "You already have a profile called '" + finalName + "'.");
+            return;
         }
 
         ProfileMarkup.Result format = formatOf(payload, staff);
         if (!format.ok()) {
-            reply(player, finalName, false, format.error());
+            reply(player, false, format.error());
             return;
         }
-        String sound = resolveSound(player, payload, finalName, staff);
+        String sound = resolveSound(player, payload, staff);
         if (sound == null) return;
 
+        // The rename is the first write, so the writes that follow it work with the name the profile
+        // will have; the row id does not change, so an active profile stays active across it.
+        if (!finalName.equals(name)) {
+            data.chats().rename(playerName, name, finalName);
+        }
         data.chats().update(finalName, format.value(), sound, playerName);
         ProfileLoader.reload(player);
-        reply(player, finalName, true, "Updated '" + finalName + "'.");
+        reply(player, true, "Updated '" + finalName + "'.");
         sendList(player);
     }
 
@@ -198,7 +202,7 @@ public final class ProfileNetwork {
 
         Optional<ChatProfile> profile = data.chats().findByPlayerAndName(playerName, name);
         if (profile.isEmpty()) {
-            reply(player, name, false, "You have no profile called '" + name + "'.");
+            reply(player, false, "You have no profile called '" + name + "'.");
             return;
         }
 
@@ -209,7 +213,7 @@ public final class ProfileNetwork {
         }
 
         ProfileLoader.reload(player);
-        reply(player, name, true, "Deleted '" + name + "'.");
+        reply(player, true, "Deleted '" + name + "'.");
         sendList(player);
     }
 
@@ -220,7 +224,7 @@ public final class ProfileNetwork {
         if (ProfileOptions.DEFAULT_PROFILE.equalsIgnoreCase(name)) {
             data.active().clearActiveChat(playerName);
             ProfileLoader.reload(player);
-            reply(player, ProfileOptions.DEFAULT_PROFILE, true,
+            reply(player, true,
                     "Back to the plain chat format.");
             sendList(player);
             return;
@@ -228,13 +232,13 @@ public final class ProfileNetwork {
 
         Optional<ChatProfile> profile = data.chats().findByPlayerAndName(playerName, name);
         if (profile.isEmpty()) {
-            reply(player, name, false, "You have no profile called '" + name + "'.");
+            reply(player, false, "You have no profile called '" + name + "'.");
             return;
         }
 
         data.active().setActiveChat(playerName, profile.get().id());
         ProfileLoader.reload(player);
-        reply(player, name, true, "Now using '" + name + "'.");
+        reply(player, true, "Now using '" + name + "'.");
         sendList(player);
     }
 
@@ -260,14 +264,14 @@ public final class ProfileNetwork {
     }
 
     /** {@return the sound to store, or null when the choice was refused} */
-    private static String resolveSound(ServerPlayer player, ProfileEditPayload payload, String name,
+    private static String resolveSound(ServerPlayer player, ProfileEditPayload payload,
                                        boolean staff) {
         // The palette stops a player picking a sound that is startling or far too long; an
         // operator's markup can reach any sound id anyway, so theirs only has to be a sound.
         if (staff) {
             String problem = ProfileSound.checkStaff(payload.sound());
             if (problem != null) {
-                reply(player, name, false, problem);
+                reply(player, false, problem);
                 return null;
             }
             return ProfileSound.normaliseStaff(payload.sound(), BackUtilsConfig.getProfileSounds());
@@ -276,7 +280,7 @@ public final class ProfileNetwork {
         List<String> palette = BackUtilsConfig.getProfileSounds();
         String problem = ProfileSound.check(payload.sound(), palette);
         if (problem != null) {
-            reply(player, name, false, problem);
+            reply(player, false, problem);
             return null;
         }
         return ProfileSound.normalise(payload.sound(), palette);
@@ -309,7 +313,7 @@ public final class ProfileNetwork {
     }
 
     /** Answers the change: to the server log, and to the window that asked, never to chat. */
-    private static void reply(ServerPlayer player, String name, boolean ok, String message) {
+    private static void reply(ServerPlayer player, boolean ok, String message) {
         // A refusal always says something: an empty one leaves a window showing nothing.
         String said = message == null || message.isBlank()
                 ? "The change was refused, without a reason." : message;
@@ -321,8 +325,7 @@ public final class ProfileNetwork {
                     player.getName().getString(), said);
         }
         if (canReceive(player)) {
-            PacketDistributor.sendToPlayer(player,
-                    new ProfileFeedbackPayload(ok, name == null ? "" : name, said));
+            PacketDistributor.sendToPlayer(player, new ProfileFeedbackPayload(ok, said));
         }
     }
 

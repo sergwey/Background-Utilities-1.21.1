@@ -34,6 +34,9 @@ public final class ClientConfigLoader {
     private static void refresh(ModConfigEvent event) {
         if (event.getConfig() == null) return;
         if (!BackUtils.MOD_ID.equals(event.getConfig().getModId())) return;
+        // Before anything acts on the new values: this is the only notice an edit of the file gives,
+        // and a screen holding controls built from the old ones reads the number to learn that.
+        BackUtilsClientConfig.bumpRevision();
         RoleplayLogOverlay.instance().onConfigChanged();
         // A file edited by hand arrives here rather than through the setters, so the banner is told
         // about it too: its text and its components are only rebuilt when something says so.

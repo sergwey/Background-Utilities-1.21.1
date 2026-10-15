@@ -77,7 +77,7 @@ public final class ZoneMusicPlayer {
             return;
         }
 
-        Loop loop = new Loop(payload.zoneId(), location, sourceByName(payload.source()));
+        Loop loop = new Loop(location, sourceByName(payload.source()));
         loop.retarget(payload.volume(), payload.pitch(), ZoneMusicPayload.Fade.IN_TICKS);
         ACTIVE.put(payload.zoneId(), loop);
 
@@ -137,15 +137,13 @@ public final class ZoneMusicPlayer {
      * field in {@link #tick()} is all a fade needs. */
     private static final class Loop extends AbstractSoundInstance implements TickableSoundInstance {
 
-        private final long zoneId;
         private float target;
         private float step;
         private float pitch;
         private boolean stopped;
 
-        Loop(long zoneId, ResourceLocation location, SoundSource source) {
+        Loop(ResourceLocation location, SoundSource source) {
             super(location, source, SoundInstance.createUnseededRandom());
-            this.zoneId = zoneId;
             this.looping = true;
             this.attenuation = SoundInstance.Attenuation.NONE;
             this.relative = true;
@@ -205,10 +203,6 @@ public final class ZoneMusicPlayer {
         @Override
         public boolean isLooping() {
             return true;
-        }
-
-        long zoneId() {
-            return zoneId;
         }
     }
 }

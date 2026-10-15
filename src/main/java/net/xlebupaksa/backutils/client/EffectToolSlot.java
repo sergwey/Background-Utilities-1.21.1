@@ -67,12 +67,14 @@ public final class EffectToolSlot {
     }
 
     /**
-     * Says what an address was made of, when the stack it names is not the tool that was hovered.
+     * Says what an address was made of, when the slot it names holds nothing.
      *
-     * <p>A wrong address has no other symptom on this side: the screen opens with nothing in it, and
-     * the server can only report that the slot it was given holds something else. Between them they do
-     * not say whether the hovered slot was read wrongly, whether the two menus disagree about which
-     * index means which slot, or whether the stack simply moved. These numbers do.
+     * <p>An address that reads wrongly has no other symptom on this side: the screen opens with nothing
+     * in it, and the server can only report that the slot it was given holds something else. Between
+     * them they do not say whether the hovered slot was read wrongly, whether the two menus disagree
+     * about which index means which slot, or whether the stack simply moved. These numbers do — and a
+     * slot that holds nothing here is the one case this side can see for itself, which is why it is the
+     * test rather than a comparison against the hovered stack.
      *
      * <p>The hovered slot's own class is the first number for a reason: a screen that wraps the
      * player's inventory in slots of its own is the one case where an index means something different

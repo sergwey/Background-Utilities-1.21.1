@@ -20,6 +20,7 @@ import net.xlebupaksa.backutils.data.MarkupUtil;
 import net.xlebupaksa.backutils.data.NameProfile;
 import net.xlebupaksa.backutils.data.ProfileOptions;
 import net.xlebupaksa.backutils.profile.ProfileLoader;
+import net.xlebupaksa.backutils.profile.ProfileMarkup;
 import net.xlebupaksa.backutils.profile.ProfileText;
 
 import java.util.List;
@@ -111,6 +112,16 @@ public class ProfileCommands {
                 return 0;
             }
             String displayed = sanitise(StringArgumentType.getString(ctx, "displayed"));
+            // The command line is a surface like the menu, so it runs the check the menu runs: a
+            // displayed name is drawn on every nametag and in front of every line its owner writes.
+            // The value that comes back is the one stored, because the check is also where a colour
+            // written as value= is respelled the way Ember renders it.
+            ProfileMarkup.Result checked = ProfileMarkup.validateStaff(displayed, true);
+            if (!checked.ok()) {
+                ctx.getSource().sendFailure(Component.literal(checked.error()));
+                return 0;
+            }
+            displayed = checked.value();
             String p = target.getName().getString();
 
             if (BackUtils.data().names().findByPlayerAndName(p, name).isPresent()) {
@@ -137,6 +148,14 @@ public class ProfileCommands {
             ServerPlayer target = EntityArgument.getPlayer(ctx, "target");
             String name = StringArgumentType.getString(ctx, "name");
             String displayed = sanitise(StringArgumentType.getString(ctx, "displayed"));
+            // As in create: what the menu would refuse, the command line refuses too, and its value
+            // is what gets stored — see the note there.
+            ProfileMarkup.Result checked = ProfileMarkup.validateStaff(displayed, true);
+            if (!checked.ok()) {
+                ctx.getSource().sendFailure(Component.literal(checked.error()));
+                return 0;
+            }
+            displayed = checked.value();
             String p = target.getName().getString();
 
             if (BackUtils.data().names().findByPlayerAndName(p, name).isEmpty()) {
@@ -254,6 +273,15 @@ public class ProfileCommands {
                 return 0;
             }
             String format = sanitise(StringArgumentType.getString(ctx, "format"));
+            // The chat format is what every line is built from, so it runs the same check the menu
+            // runs. The check below is a different question and stays: an operator's format need not
+            // make the placeholder mandatory in the eyes of the markup library.
+            ProfileMarkup.Result checked = ProfileMarkup.validateStaff(format, false);
+            if (!checked.ok()) {
+                ctx.getSource().sendFailure(Component.literal(checked.error()));
+                return 0;
+            }
+            format = checked.value();
             String p = target.getName().getString();
 
             if (!format.contains(ProfileText.MESSAGE)) {
@@ -285,6 +313,13 @@ public class ProfileCommands {
             ServerPlayer target = EntityArgument.getPlayer(ctx, "target");
             String name = StringArgumentType.getString(ctx, "name");
             String format = sanitise(StringArgumentType.getString(ctx, "format"));
+            // As in create: the menu's check, on the command line too — see the note there.
+            ProfileMarkup.Result checked = ProfileMarkup.validateStaff(format, false);
+            if (!checked.ok()) {
+                ctx.getSource().sendFailure(Component.literal(checked.error()));
+                return 0;
+            }
+            format = checked.value();
             String p = target.getName().getString();
 
             if (!format.contains(ProfileText.MESSAGE)) {
@@ -293,14 +328,16 @@ public class ProfileCommands {
                                 + " — that is where the message text is inserted."));
                 return 0;
             }
-            if (BackUtils.data().chats().findByPlayerAndName(p, name).isEmpty()) {
+            // Read once and keep the row: the sound it carries is what the update below has to preserve,
+            // and asking for the same row twice would be two connections for one answer.
+            Optional<ChatProfile> existing = BackUtils.data().chats().findByPlayerAndName(p, name);
+            if (existing.isEmpty()) {
                 ctx.getSource().sendFailure(Component.literal(
                         p + " has no chat profile called '" + name + "'."));
                 return 0;
             }
             // The sound is left alone: it belongs to the player, and this command edits the format.
-            ChatProfile existing = BackUtils.data().chats().findByPlayerAndName(p, name).orElseThrow();
-            BackUtils.data().chats().update(name, format, existing.sound(), p);
+            BackUtils.data().chats().update(name, format, existing.get().sound(), p);
             ProfileLoader.reload(target);
             ctx.getSource().sendSuccess(() -> Component.literal(
                     "Updated chat profile '" + name + "' for " + p + "."), false);

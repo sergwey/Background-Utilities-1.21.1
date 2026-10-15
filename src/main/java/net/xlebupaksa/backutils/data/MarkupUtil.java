@@ -3,6 +3,9 @@ package net.xlebupaksa.backutils.data;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public final class MarkupUtil {
@@ -20,6 +23,28 @@ public final class MarkupUtil {
 
     public static String strip(String input) {
         return TAG.matcher(input).replaceAll("");
+    }
+
+    /**
+     * {@return true when a renderer shows no text of this}: its tags, its blanks, its control characters
+     *
+     * <p>Three things draw no text. A tag is spent on the words under it, which is what {@link #strip} takes
+     * out. A blank draws an empty space. And a control character is not drawn at all — it is a mark for
+     * something drawn elsewhere, the chat line's item mark among them, and what that stands for is a
+     * component, which no tag reaches.
+     *
+     * <p>Asked where the question is whether there is text for a tag to wrap: the wrapper hands a row's
+     * characters to a row with text in it and not to a row of marks, and the chat line keeps a piece's tag
+     * characters in hand rather than drawing them when the piece has no text of its own.
+     */
+    public static boolean drawsNothing(String input) {
+        if (input == null) return true;
+        String drawn = strip(input);
+        for (int i = 0; i < drawn.length(); i++) {
+            char c = drawn.charAt(i);
+            if (!Character.isWhitespace(c) && !Character.isISOControl(c)) return false;
+        }
+        return true;
     }
 
     /**
@@ -86,11 +111,31 @@ public final class MarkupUtil {
                 : text + "  <color col=#8a8a8a>" + note + "</color>";
     }
 
+    /**
+     * {@return the text with a closing tag for every tag it leaves open}
+     *
+     * <p>For markup an administrator types — a chat separator, a profile format or displayed name — where
+     * a tag left open runs on into whatever is drawn beside it: the rest of the chat line, in the
+     * separator's case.
+     *
+     * <p>Openers are tracked in a stack that a closing tag pops <i>without its name being looked at</i>,
+     * which is deliberately how Ember reads the markup it is handed: {@code MarkupParser.parse} pops its
+     * own style stack on any closing tag and consumes one with nothing to pop rather than drawing it. The
+     * closers appended here are therefore exactly the openers still on that stack, and the result has as
+     * many closing tags as opening ones. A closing tag that names something other than the innermost
+     * opener is read the same way Ember reads it — it closes the innermost one — so
+     * {@code <a><b></a>} comes back as {@code <a><b></a></a>}, which nests no differently for a parser
+     * that never compares the two names. Making the names match would mean rewriting the text between
+     * them, which is markup the author wrote and this has no business editing.
+     *
+     * <p>Text that is already complete comes back untouched, so this can be applied where it may not be
+     * needed.
+     */
     public static String balance(String input) {
         if (input == null || input.isEmpty()) return input;
 
-        java.util.Deque<String> open = new java.util.ArrayDeque<>();
-        java.util.regex.Matcher m = TAG.matcher(input);
+        Deque<String> open = new ArrayDeque<>();
+        Matcher m = TAG.matcher(input);
         while (m.find()) {
             boolean closing = !m.group(1).isEmpty();
             boolean selfClosing = !m.group(4).isEmpty();

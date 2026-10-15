@@ -320,11 +320,12 @@ public final class ProfileMarkup {
     /**
      * Parses a format written by an operator, and refuses only what is wrong.
      *
-     * <p>An operator is on the other side of the allow-list: {@code /profile} has always taken a raw
-     * format at permission level 2, so applying the list here would only make the menus weaker than
-     * the command line. No tag or nesting caps either. What is checked is shape — balanced, matching
-     * tags, the wire's length, and {@code {m}} or {@code {player}} where each belongs — and an
-     * unknown tag is left to Ember, which is the one place that knows what it has.
+     * <p>An operator is on the other side of the allow-list: the list exists to contain what a player
+     * writes for themselves, and an operator writing a format for somebody else is trusted with any tag
+     * Ember has — which is why the menu, the profile traffic and {@code /profile} all end up here. No
+     * tag or nesting caps either. What is checked is shape — balanced, matching tags, the wire's length,
+     * and {@code {m}} or {@code {player}} where each belongs — and an unknown tag is left to Ember,
+     * which is the one place that knows what it has.
      *
      * @param nameProfile whether this is a displayed name rather than a chat format
      */
@@ -463,6 +464,10 @@ public final class ProfileMarkup {
      * {@code ColorEffect}, whose colour is applied. Only the attribute name is touched, and only
      * when {@code col} is not already there.
      *
+     * <p>A colour written as a bare value, {@code <color red>} or {@code <color #ff0000>}, is the
+     * same case: Ember reads the first bare token of an ordinary tag as its value and then drops it
+     * the same way, so that token is given the name {@code col=} too — see {@link #bareColour}.
+     *
      * <p>{@code <grad>} is left alone: its colours belong in {@code colors=}.
      */
     private static String rewriteTag(String body) {
@@ -477,7 +482,35 @@ public final class ProfileMarkup {
         String lower = rest.toLowerCase(Locale.ROOT);
         if (lower.contains("col=") || lower.contains("col:")) return body;
 
-        return body.substring(0, nameEnd) + rename(rest, "value|color", "col");
+        String renamed = rename(rest, "value|color", "col");
+        String rewritten = renamed.equals(rest) ? bareColour(rest) : renamed;
+        return body.substring(0, nameEnd) + rewritten;
+    }
+
+    /** {@return true when this tag's own value is its colour}, the tags {@link #rewriteTag} rewrites */
+    private static boolean colourTag(String tag) {
+        String name = tag.toLowerCase(Locale.ROOT);
+        return name.equals("color") || name.equals("c");
+    }
+
+    /**
+     * {@return the tag's attributes with a leading bare colour named {@code col=}}, or unchanged
+     *
+     * <p>Ember reads the first bare token of an ordinary tag as its value and applies a value only
+     * when the attribute is called {@code col}, so {@code <color red>} is a colour nobody would see
+     * until it is written as {@code <color col=red>}. Nothing else is touched: only that one token,
+     * and only when it is a colour.
+     */
+    private static String bareColour(String rest) {
+        int start = 0;
+        while (start < rest.length() && Character.isWhitespace(rest.charAt(start))) start++;
+        int end = start;
+        while (end < rest.length() && !Character.isWhitespace(rest.charAt(end))) end++;
+        if (end == start) return rest;
+
+        String token = rest.substring(start, end);
+        if (!looksLikeColour(token)) return rest;
+        return rest.substring(0, start) + "col=" + token + rest.substring(end);
     }
 
     /**
@@ -683,7 +716,9 @@ public final class ProfileMarkup {
 
     /** {@return null when every attribute is allowed, otherwise the refusal} */
     private static Result checkAttributes(String tag, String rest, Set<String> allowed) {
-        for (String token : splitAttributes(rest)) {
+        List<String> tokens = splitAttributes(rest);
+        for (int t = 0; t < tokens.size(); t++) {
+            String token = tokens.get(t);
             if (token.isEmpty()) continue;
 
             String key = token;
@@ -707,9 +742,11 @@ public final class ProfileMarkup {
             if (value == null) {
                 // A bare word: an attribute that is switched on, as in <grad hue>, or a colour
                 // written on its own, as in <color red>. Ember reads the first bare token of an
-                // ordinary tag as its value, which is the colour case here.
+                // ordinary tag as its value, which is the colour case here — and only the first
+                // token can be it, so a bare colour later in the tag is still refused. rewriteTag
+                // then spells the one that is the value col=, which is the form that renders.
                 if (allowed.contains(lower)) continue;
-                if (COLOUR_ATTRIBUTES.contains(lower) && looksLikeColour(key)) continue;
+                if (t == 0 && colourTag(tag) && looksLikeColour(key)) continue;
                 return refuse("<" + tag + "> has no attribute called '" + key + "'.");
             }
 

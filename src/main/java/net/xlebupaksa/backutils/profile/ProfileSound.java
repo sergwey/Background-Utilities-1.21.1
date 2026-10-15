@@ -10,7 +10,7 @@ import java.util.Locale;
  * The sound a profile's text makes while it types itself out.
  * <p>The volume is fixed at {@link #VOLUME} for everyone, because a per-profile volume would hand its owner a loudness
  * knob for the whole channel. The palette exists because Ember plays any sound id from markup: an operator curates the
- * list with {@code /backutils sounds add}, a profile may only name one of those, and no client can talk around it.
+ * list with {@code /backutils typing_sounds add}, a profile may only name one of those, and no client can talk around it.
  * <p>An entry is either a bare name — Ember's own preset, which Ember resolves itself — or a name of the operator's
  * choosing and the id it should play, stored {@code name=soundid}. A profile stores the <em>name</em>, so what a name
  * sounds like can be changed without touching a profile, and everything stored before the palette had names keeps
@@ -141,16 +141,45 @@ public final class ProfileSound {
         return null;
     }
 
-    /** {@return null when the sound id may be stored, otherwise the reason to show} — empty is refused, since a name
-     *  that plays nothing is what removing it is for. */
-    public static String checkId(String id) {
+    /**
+     * {@return null when the sound id may be stored, otherwise the reason to show} — empty is refused, since a name
+     * that plays nothing is what removing it is for.
+     *
+     * <p>The palette is asked one question and no other: whether the value is the name of an entry that carries an id
+     * of its own. Such a value is not a sound id however well shaped it is — {@code beb} parses as {@code minecraft:beb}
+     * as readily as any word parses — and storing it would leave the new entry pointing at a name rather than at
+     * something a client can play, because a profile's name is resolved one step and no further. Only an alias is
+     * refused, though: a bare entry's name <em>is</em> the id Ember resolves it by, so pointing a new name at one of
+     * those is what choosing a preset has always meant.
+     */
+    public static String checkId(String id, List<String> palette) {
         String value = id == null ? "" : id.trim();
         if (value.isEmpty()) {
             return "Give the sound id this name should play, such as minecraft:block.note_block.bell.";
         }
-        return isSoundId(value) ? null
-                : "'" + value + "' is not a sound id. Give one such as minecraft:block.note_block.bell,"
-                        + " or a bare Ember preset.";
+        if (!isSoundId(value)) {
+            return "'" + value + "' is not a sound id. Give one such as minecraft:block.note_block.bell,"
+                    + " or a bare Ember preset.";
+        }
+        String alias = aliasNamed(value, palette);
+        if (alias != null) {
+            return "'" + value + "' is not a sound id: it is the name of the palette entry "
+                    + describe(alias) + ". Give the id that entry plays, or another sound id.";
+        }
+        return null;
+    }
+
+    /**
+     * {@return the entry of a palette that answers to this name and carries a sound id of its own}, or null
+     *
+     * <p>Only those. An entry that is a bare name is its own id, so naming it as an id says exactly what writing the
+     * id out says, and a preset in the default palette is one of those.
+     */
+    private static String aliasNamed(String name, List<String> palette) {
+        for (String entry : palette) {
+            if (isAlias(entry) && nameOf(entry).equalsIgnoreCase(name)) return entry;
+        }
+        return null;
     }
 
     /**

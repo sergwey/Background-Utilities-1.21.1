@@ -380,4 +380,35 @@ public final class BackUtilsClientConfig {
         }
         RoleplayLogOverlay.instance().onConfigChanged();
     }
+
+    // ------------------------------------------------------------------
+    // Reloads
+    // ------------------------------------------------------------------
+
+    /**
+     * Bumped whenever this config is loaded or reloaded.
+     *
+     * <p>A file edited by hand changes these values without a single setter running, so a screen that
+     * has already read them has no other way to learn that what it holds is out of date. Volatile
+     * because the reload can arrive on the loader's thread while the client's render thread reads it.
+     *
+     * <p>The loader fires for the mod's server config as well and bumps there too, rather than testing
+     * which spec moved: an extra bump only makes a reader seed itself from the values it already
+     * holds, which costs a comparison and changes nothing.
+     */
+    private static volatile int revision;
+
+    /** {@return a number that changes on every load and reload of this config} */
+    public static int revision() {
+        return revision;
+    }
+
+    /**
+     * Tells whoever has already read these values that they have moved. Called for the initial load
+     * as well as for a reload, so a reader can rely on the number rather than on having been built
+     * after the load.
+     */
+    public static void bumpRevision() {
+        revision++;
+    }
 }

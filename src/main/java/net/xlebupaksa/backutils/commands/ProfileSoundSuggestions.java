@@ -14,15 +14,28 @@ import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Tab-completion for {@code /backutils sounds}. Removing offers the names already in the palette, which
- * are what a profile stores; adding offers Ember's presets followed by every registered sound, the same
- * browse-everything behaviour {@code /playsound} has. A preset is suggested bare ({@code click}) because
- * Ember resolves it against its own table. The registry is a convenience here and never a check: an id
- * from a resourcepack is typed, and accepted, exactly the same.
+ * Tab-completion for {@code /backutils typing_sounds}. Removing offers the names already in the palette, which
+ * are what a profile stores; adding offers every registered sound, the same browse-everything behaviour
+ * {@code /playsound} has.
+ *
+ * <p><b>Only ids are offered for the id an added name should play</b>, and no bare word. Ember's presets are
+ * still <em>accepted</em> there — a bare entry's name is its own id, and {@code click} parses as one — but
+ * offering them put two names that are not ids into a list of ids, which reads as sound names among the sound
+ * ids and is what the owner asked not to see. An operator who knows a preset's name can still type it: the
+ * argument's rule is untouched, and only the list changed.
+ *
+ * <p>The registry is a convenience here and never a check: an id from a resourcepack is typed, and accepted,
+ * exactly the same. The mod's own {@code backutils:tool_shot} is in the list because it is registered like any
+ * other sound.
+ *
+ * <p>Nothing a palette holds can reach this list, because the palette is not read here at all: what is listed
+ * is the registry's own keys. A name the palette command accepts is a bare word and can never be one of them —
+ * see {@link ProfileSound#checkName} — and a preset's name is a bare word too, which is why dropping the
+ * presets from the list costs the palette nothing.
  */
 public final class ProfileSoundSuggestions implements SuggestionProvider<CommandSourceStack> {
 
-    /** Ember's presets, then every registered sound, for the id an added name should play. */
+    /** Every registered sound, for the id an added name should play. */
     public static final ProfileSoundSuggestions AVAILABLE = new ProfileSoundSuggestions(false);
 
     /** Only the names already in the palette. */
@@ -48,9 +61,6 @@ public final class ProfileSoundSuggestions implements SuggestionProvider<Command
             return builder.buildFuture();
         }
 
-        for (String preset : ProfileSound.PRESETS) {
-            if (remaining.isEmpty() || preset.contains(remaining)) builder.suggest(preset);
-        }
         for (ResourceLocation id : BuiltInRegistries.SOUND_EVENT.keySet()) {
             String text = id.toString();
             if (remaining.isEmpty() || text.toLowerCase(Locale.ROOT).contains(remaining)) {

@@ -39,7 +39,13 @@ public class UpSelector<T> extends Selector<T> {
         var pos = root.worldToLocalLayoutOffset(worldPos);
 
         float dialogHeight = this.dialog.getSizeHeight();
-        final float top = Math.max(0, pos.y - dialogHeight);
+        // Kept on the screen here rather than left to the library's own adaptPositionToScreen, which
+        // answers the same layout change this does: a list hung over an edge was pulled back on screen
+        // by that one and put back over the edge by this one, pass after pass, which is a tree dirtied
+        // inside the frame's own layout - the library's "dirty for more than 10 times per frame".
+        // Landing where adaptPositionToScreen would leave it is what makes the two agree.
+        final float top = Math.max(0,
+                Math.min(pos.y - dialogHeight, mui.getScreenHeight() - dialogHeight));
         final float left = pos.x;
         final float width = Math.max(this.getSizeWidth(), 50);
 

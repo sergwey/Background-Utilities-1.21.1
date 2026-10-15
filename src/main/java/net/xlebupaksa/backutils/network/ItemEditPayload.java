@@ -70,6 +70,39 @@ public record ItemEditPayload(EffectToolConfigPayload.Where where, int container
         return new ItemEditPayload(where, containerId, slot, name, lore, attributes, true, true);
     }
 
+    /**
+     * {@return why this edit cannot be sent, or null when it can}
+     *
+     * <p>The writer answers to the reader's bounds, so a list longer than {@link #MAX_LINES} or
+     * {@link #MAX_ATTRIBUTES} is a refusal at the other end, and a text longer than {@link #MAX_TEXT}
+     * throws while the message is being written — an exception on Apply, after the screen has already
+     * said the edit was written. The editor asks this before sending, so that what it says happened is
+     * what happened, rather than the wire quietly writing a smaller item than the one on screen.
+     */
+    public static String problem(ItemEditPayload payload) {
+        if (payload.name() != null && payload.name().length() > MAX_TEXT) {
+            return "The name is longer than " + MAX_TEXT + " characters.";
+        }
+
+        List<String> lore = payload.lore();
+        if (lore != null) {
+            if (lore.size() > MAX_LINES) {
+                return "An item carries at most " + MAX_LINES + " lines of lore.";
+            }
+            for (String line : lore) {
+                if (line != null && line.length() > MAX_TEXT) {
+                    return "A line of lore is longer than " + MAX_TEXT + " characters.";
+                }
+            }
+        }
+
+        List<ItemEdit.Granted> attributes = payload.attributes();
+        if (attributes != null && attributes.size() > MAX_ATTRIBUTES) {
+            return "An item carries at most " + MAX_ATTRIBUTES + " attributes.";
+        }
+        return null;
+    }
+
     private static void write(RegistryFriendlyByteBuf buf, ItemEditPayload payload) {
         buf.writeVarInt(payload.where() == null ? 0 : payload.where().ordinal());
         buf.writeVarInt(payload.containerId());

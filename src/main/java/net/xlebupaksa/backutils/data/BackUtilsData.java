@@ -44,16 +44,6 @@ public class BackUtilsData {
         effectData.initDb();
     }
 
-    public void closeAll() {
-        nameData.close();
-        chatData.close();
-        logData.close();
-        activeData.close();
-        silenceData.close();
-        musicZoneData.close();
-        effectData.close();
-    }
-
     public NameData names() { return nameData; }
     public ChatData chats() { return chatData; }
     public LogData logs() { return logData; }

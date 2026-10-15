@@ -4,7 +4,6 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -53,6 +52,12 @@ public class MusicZoneData extends DataManager {
                     "expires_at INTEGER NOT NULL DEFAULT 0, " +
                     "created_at DATETIME DEFAULT (datetime('now', 'localtime'))" +
                     ");");
+            // The one column the timed sweep asks about, twice a second on every world. Without the
+            // index that question is a full scan; with it, it is a lookup that usually finds nothing.
+            // The same treatment the effect table's expiry column gets, for the same reason: see
+            // EffectData#expired.
+            stmt.execute("CREATE INDEX IF NOT EXISTS music_zone_expiry "
+                    + "ON music_zone (expires_at);");
         } catch (SQLException e) {
             throw new RuntimeException("Could not open the music zone database", e);
         }
@@ -105,12 +110,18 @@ public class MusicZoneData extends DataManager {
         update("DELETE FROM music_zone WHERE zone_id = ?", zoneId);
     }
 
-    /** {@return the zones that have run out of time, which the caller should clean up} */
+    /**
+     * {@return the zones that have run out of time, which the caller should clean up}
+     *
+     * <p>Asked of the table rather than of every row, because this is the one query that runs on a
+     * timer: the sweep happens twice a second whether or not anything has expired, and reading the
+     * whole table to find nothing would be a full scan and a database connection per half second, for
+     * ever, on a world where a zone has not been created in weeks. The index on {@code expires_at} is
+     * what makes the question cheap. {@link EffectData#expired} is the same query over the effect
+     * table, which sweeps on the same principle.
+     */
     public List<MusicZone> expired(long nowMillis) {
-        List<MusicZone> result = new ArrayList<>();
-        for (MusicZone zone : all()) {
-            if (zone.expired(nowMillis)) result.add(zone);
-        }
-        return result;
+        return query("SELECT * FROM music_zone WHERE expires_at > 0 AND expires_at <= ?",
+                MAPPER, nowMillis);
     }
 }

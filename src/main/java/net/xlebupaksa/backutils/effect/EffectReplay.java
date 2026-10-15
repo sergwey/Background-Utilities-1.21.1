@@ -170,12 +170,19 @@ public class EffectReplay {
         if (store == null) return;
 
         String dimension = level.dimension().location().toString();
-        for (PlacedEffect effect : store.all()) {
+        // Asked of the table by chunk rather than read whole and filtered here: this runs for every
+        // chunk every player is sent, and the table is every effect on the server. What the query
+        // returns is a superset of the chunk's blocks — see EffectData.inChunk for the half block of
+        // slack that makes it one — so the test below still decides, exactly as it did.
+        for (PlacedEffect effect : store.inChunk(dimension, chunk.x, chunk.z)) {
             EffectPlacement where = effect.placement();
             if (where == null || !where.dimension().equals(dimension)) continue;
             // The block the effect is in now rather than the one its row was written at: an accurate
             // effect hangs off a display anything may move, and the effect goes with it — so the chunk
-            // that brings it back is the display's. See EffectAnchor.whereIs.
+            // that brings it back is the display's. See EffectAnchor.whereIs. A display moved clean out
+            // of the chunk the row was written in is the one case the query above cannot return, and
+            // the tracking path answers it: a display that comes back into view is tracked again, and
+            // sendFor finds the row by the identity it kept.
             Point at = EffectAnchor.whereIs(level, effect);
             if (at == null) continue;
             BlockPos block = BlockPos.containing(at.x(), at.y(), at.z());
@@ -205,7 +212,9 @@ public class EffectReplay {
 
         ServerLevel level = player.serverLevel();
         String dimension = level.dimension().location().toString();
-        for (PlacedEffect effect : store.all()) {
+        // Asked of the table by the identity the row kept, rather than read whole and filtered here:
+        // this runs every time an entity comes into a player's view, and both columns answer it.
+        for (PlacedEffect effect : store.attachedTo(dimension, targetUuid)) {
             EffectPlacement where = effect.placement();
             if (where == null || !where.dimension().equals(dimension)) continue;
             if (!targetUuid.equals(effect.targetUuid()) && !targetUuid.equals(effect.anchorUuid())) {
@@ -230,11 +239,15 @@ public class EffectReplay {
         if (where.mode() == EffectToolConfig.Mode.ENTITY
                 || where.mode() == EffectToolConfig.Mode.ENTITY_AUTO_ROTATE) {
             // An effect on a mob and no mob to name: a row written before entities were recorded by
-            // identity, or one whose mob is not in this level. Sent as nothing it would be attached to
-            // the player instead, which is a different effect in a different place — so it is not
-            // sent at all, and the row stays as it is.
-            if (effect.targetUuid() == null || effect.targetUuid().isBlank()) return;
-            Entity entity = level.getEntity(UUID.fromString(effect.targetUuid()));
+            // identity, a row whose identity is not one at all, or one whose mob is not in this level.
+            // Sent as nothing it would be attached to the player instead, which is a different effect in
+            // a different place — so it is not sent at all, and the row stays as it is. The text is read
+            // the way every other stored identity is, through the anchor's own parser: a row this cannot
+            // read names nobody, and it is left behind on its own rather than taking the replay of the
+            // rows around it down with it.
+            UUID targetId = EffectAnchor.parse(effect.targetUuid());
+            if (targetId == null) return;
+            Entity entity = level.getEntity(targetId);
             if (entity == null) return;
             target = entity.getId();
         } else if (effect.anchorUuid() != null && !effect.anchorUuid().isBlank()) {

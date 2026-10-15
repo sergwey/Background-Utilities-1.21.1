@@ -71,11 +71,6 @@ public final class FreezeState {
         return player != null && FROZEN.contains(player);
     }
 
-    /** {@return how many players are being held}, for the command that says what it did */
-    public static int held() {
-        return FROZEN.size();
-    }
-
     /** Holds a player where they stand, along with everything they could otherwise do. */
     public static void freeze(ServerPlayer player) {
         FROZEN.add(player.getUUID());

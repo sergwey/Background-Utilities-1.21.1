@@ -10,10 +10,13 @@ import com.lowdragmc.lowdraglib2.gui.ui.elements.Label;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.ScrollerView;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.TextField;
 import com.lowdragmc.lowdraglib2.gui.ui.event.UIEvents;
+import com.lowdragmc.lowdraglib2.gui.ui.rendering.GUIContext;
 import dev.vfyjxf.taffy.style.AlignItems;
 import dev.vfyjxf.taffy.style.FlexDirection;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.FormattedCharSequence;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 import net.xlebupaksa.backutils.data.MarkupUtil;
@@ -79,6 +82,43 @@ public final class AdminProfileTab {
         }
     }
 
+    /**
+     * One profile row's preview: the rows the chat line itself is drawn on, drawn the way the chat draws
+     * them.
+     *
+     * <p>A preview built as one literal per row answers differently from the chat line for a row holding
+     * nothing but tags: parsed on its own such a row has no text to format, so Ember gives up on the markup
+     * and draws the characters of the tags, where the chat's parse of the whole line spends them. The rows
+     * here are the ones vanilla's own splitter made of the chat's body — see {@link #previewRows} — and each
+     * is drawn with the call the chat draws a row with, so the two cannot come to disagree about a profile.
+     * The rows are kept, not rebuilt: the sequences drawn this frame are the ones drawn on the next.
+     */
+    private static final class PreviewLabel extends UIElement {
+
+        private final List<FormattedCharSequence> rows;
+
+        PreviewLabel(List<FormattedCharSequence> rows) {
+            this.rows = rows;
+        }
+
+        /** {@return the height needed to show every row}, which the row around it is sized from */
+        int contentHeight() {
+            return Math.max(LINE_STEP, rows.size() * LINE_STEP);
+        }
+
+        @Override
+        public void drawContents(GUIContext guiContext) {
+            Font font = Minecraft.getInstance().font;
+            float x = getPositionX();
+            float y = getPositionY();
+            for (int i = 0; i < rows.size(); i++) {
+                // The call the chat draws each of its own rows with, on the rows the same splitter made.
+                guiContext.graphics.drawString(font, rows.get(i),
+                        Math.round(x), Math.round(y + i * LINE_STEP), PLAIN, true);
+            }
+        }
+    }
+
     /** True for the Names half, false for Chat. */
     private final boolean names;
 
@@ -124,15 +164,6 @@ public final class AdminProfileTab {
     public AdminProfileTab(boolean names) {
         this.names = names;
         this.forAdmin = true;
-        build();
-    }
-
-    /** A panel fixed to one player, for the menu that has only one to show. */
-    public AdminProfileTab(boolean names, String target) {
-        this.names = names;
-        this.forAdmin = false;
-        this.fixedTarget = target == null ? "" : target;
-        this.player = this.fixedTarget;
         build();
     }
 
@@ -350,7 +381,6 @@ public final class AdminProfileTab {
         if (shown == 0) {
             list.addScrollViewChild(muted(Text.of("backutils.profiles.no.player.match")));
         }
-        setScopeText();
     }
 
     private void rebuildProfiles() {
@@ -410,6 +440,24 @@ public final class AdminProfileTab {
                 .replace(ProfileMarkup.PLAYER, player.isEmpty()
                         ? Text.of("backutils.profiles.player.placeholder") : player)
                 .replace(ProfileMarkup.MESSAGE, sample);
+    }
+
+    /**
+     * {@return the rows a profile's preview is drawn on}, which are the rows the chat line is drawn on
+     *
+     * <p>The body is the chat's own and is cut the way the chat's display cuts a line. A chat profile's text
+     * breaks where it asks to — the chat line draws vanilla's own rows — so a written {@code \n} is a real
+     * break there, the tags open across it are reopened under it and a row left holding nothing but tags has
+     * its characters carried to a row that has text, all of which {@link MarkupWrap#withLineBreaks} does; the
+     * splitter then makes the rows of it, and those rows are what is drawn. A displayed name is drawn on one
+     * row wherever the game draws it, above the player and in the tab list, so a break written in one is not
+     * a break and its text is handed over as it stands. Two rows are kept, which is the room this row has.
+     */
+    private List<FormattedCharSequence> previewRows(String text) {
+        String body = names ? text : MarkupWrap.withLineBreaks(text);
+        List<FormattedCharSequence> rows = Minecraft.getInstance().font.split(
+                Component.literal(body), Math.max(40, listWidth - 160));
+        return rows.size() > 2 ? rows.subList(0, 2) : rows;
     }
 
     // ------------------------------------------------------------------
@@ -475,12 +523,10 @@ public final class AdminProfileTab {
                 .textShadow(false).adaptiveWidth(true));
         name.layout(l -> l.widthPercent(100).height(LINE_STEP));
 
-        // Drawn through MarkupLabel, so Ember renders the format here as it will in chat; a name
-        // preview substitutes the player's own account name, which is what makes it a preview.
-        List<String> wrapped = MarkupWrap.wrapByWidth(previewOf(row), Math.max(40, listWidth - 160),
-                line -> Minecraft.getInstance().font.width(MarkupUtil.strip(line)));
-        if (wrapped.size() > 2) wrapped = wrapped.subList(0, 2);
-        MarkupLabel preview = new MarkupLabel(wrapped, LINE_STEP, PLAIN);
+        // Drawn the way the chat draws its own line, so Ember renders the format here as it will in chat; a
+        // name preview substitutes the player's own account name, which is what makes it a preview. See
+        // PreviewLabel for why the rows are the chat's own rather than one literal per row.
+        PreviewLabel preview = new PreviewLabel(previewRows(previewOf(row)));
 
         UIElement column = new UIElement();
         column.layout(l -> l.flex(1).flexDirection(FlexDirection.COLUMN));

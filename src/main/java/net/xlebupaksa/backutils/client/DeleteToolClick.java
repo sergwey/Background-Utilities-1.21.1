@@ -158,10 +158,12 @@ public final class DeleteToolClick {
         }
 
         // One answer for the whole click, taken from the picker the renderer reads as well, so the
-        // red cube on screen and the effect a click asks for cannot come apart. The partial tick is
-        // zero because a click has no fraction of a tick: the game's own pick, which this reads, was
-        // taken at the end of the last one.
-        EffectPick.Scene scene = EffectPick.scene(player, 0.0F, minecraft.hitResult);
+        // red cube on screen and the effect a click asks for cannot come apart — the moment included.
+        // A click has no fraction of a tick of its own, so it borrows the one the frame that drew that
+        // cube was drawn at: the game's own pick, which this reads, is only asked which entity the
+        // crosshair met, and that is a state rather than a moment.
+        EffectPick.Scene scene = EffectPick.scene(player,
+                EffectToolPreviewRenderer.drawnPartialTick(), minecraft.hitResult);
 
         if (scene.onEntity() && deleteOn(scene)) return;
 
