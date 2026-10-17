@@ -2,10 +2,13 @@ package net.xlebupaksa.backutils.client;
 
 import com.lowdragmc.photon.client.fx.FXRuntime;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.LoadingOverlay;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
+import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
+import net.xlebupaksa.backutils.BackUtils;
 import net.xlebupaksa.backutils.data.EffectPlacement;
 import net.xlebupaksa.backutils.item.EffectAttachment;
 import net.xlebupaksa.backutils.item.EffectToolPlacement;
@@ -16,6 +19,7 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.client.event.RegisterClientReloadListenersEvent;
 import net.neoforged.neoforge.event.level.LevelEvent;
 
 import java.util.ArrayList;
@@ -40,10 +44,13 @@ import java.util.Map;
  * <p>An entry has two states, and both are ordinary:
  *
  * <ul>
- *   <li><b>waiting</b> — the effect is wanted and could not be attached, because the display it hangs
- *       off has not reached this client yet. Effect and entity arrive on different channels and
- *       either can be first, so this is a race rather than a fault; the entry is retried for a while
- *       and then given up on.
+ *   <li><b>waiting</b> — the effect is wanted and could not be attached, either because the display it
+ *       hangs off has not reached this client yet — effect and entity arrive on different channels and
+ *       either can be first, so this is a race rather than a fault — or because this client cannot
+ *       start it at all. The wait is what tells the two apart: an anchor that has not arrived is
+ *       dropped when its budget runs out, and an effect whose anchor <em>is</em> here is kept and
+ *       retried slowly, because the row is still there and forgetting it would take the boxes and the
+ *       delete tool away from something the server still holds.
  *   <li><b>running</b> — the effect is attached, and is polled for having ended on its own. An
  *       effect with its own lifetime ends without anybody asking it to, and the server is told, so
  *       the row and the display go with it.
@@ -53,23 +60,36 @@ import java.util.Map;
 public final class PlacedEffects {
 
     /**
-     * How long an entry is retried before it is given up on.
+     * How long an entry is retried at the poll's own rate before its anchor is asked about.
      *
      * <p>Five seconds: an anchor is one entity in a chunk the player is standing in, so it arrives
      * within a tick or two of the effect, and anything still missing after five seconds is missing
-     * because it is not coming — a display somebody deleted, or a chunk that never loaded.
+     * because it is not coming — a display somebody deleted, or a chunk that never loaded. What the
+     * budget decides is only whether the <em>anchor</em> has run out; an effect whose anchor is here
+     * and which still cannot be started is not forgotten, and drops to {@link #STUCK_RETRY_TICKS}.
      */
     private static final int WAITING_TICKS = 100;
 
     /**
-     * How many times one entry may be started again after its drawing was taken away.
+     * How many times one entry is started again quickly after its drawing was taken away.
      *
      * <p>Four: three more than a level change or a mod reaching into the particle engine ever needs,
      * and few enough that an effect this client cannot keep started costs a handful of attempts rather
-     * than one every other tick for as long as the player stands there. What is given up on is not the
-     * row: the effect comes back from the server on the next chunk watch, tracking packet or arrival.
+     * than one every other tick for as long as the player stands there. It is a bound on the fast
+     * attempts and not on the entry — what comes after them is {@link #STUCK_RETRY_TICKS}, because an
+     * effect that will not keep running while its anchor is here is not a row to be forgotten.
      */
     private static final int MAX_REVIVALS = 4;
+
+    /**
+     * How long an effect whose anchor is here waits between attempts once the fast ones are spent.
+     *
+     * <p>Forty ticks: an effect that will not keep running is one this client cannot fix by trying
+     * harder, and the cost of an attempt is a definition lookup and a walk over one anchor's effects.
+     * Short enough that anything the resources settle into on their own is picked up within a couple
+     * of seconds.
+     */
+    private static final int STUCK_RETRY_TICKS = 40;
 
     /**
      * How often the list is walked.
@@ -91,6 +111,18 @@ public final class PlacedEffects {
 
         /** How many times this effect has been started again after its drawing was taken away. */
         private int revivals;
+
+        /** Whether this effect has ever been attached, which is what makes a failure worth saying. */
+        private boolean drawn;
+
+        /** Ticks left before the next attempt is made, which is what holds an attempt back. */
+        private int retryIn;
+
+        /** Whether the log has already been told that this effect will not start. */
+        private boolean complained;
+
+        /** Why the last attempt did not start it, when that reason is not an ordinary one. */
+        private String fault;
 
         private Entry(long id, EffectPlacement placement, EffectAttachment attachment,
                       int anchorEntityId) {
@@ -255,6 +287,68 @@ public final class PlacedEffects {
     }
 
     /**
+     * Stops drawing what this client holds when its resources are reloaded.
+     *
+     * <p>A reload is a {@code ResourceManager} reload, so F3+T and a resource pack being switched on
+     * are the same event — and everything an effect was built from comes out of those resources: its
+     * definition, the materials of the emitter, the shaders and samplers those materials resolve. The
+     * library's own reload listener drops the definition cache and nothing else, and the runtime this
+     * client has already started is left exactly as it was, together with the executor the library
+     * still holds for it. It is then stale rather than absent, and nothing here can tell: the
+     * library's answers about a runtime are about the particle engine (a level change, a wipe, the
+     * engine's tick) and say nothing about the resources, so an effect built from packs that have
+     * gone still reads as alive. Hence this, which is the one thing the resources cannot take away —
+     * the rows this client holds.
+     *
+     * <p>Registered on the mod bus by {@code ClientSetup}, like the client config; the event is one
+     * of the loader's, not the game's. It reaches this by construction rather than by luck: the mod
+     * bus carries it while the client is still being built, after every mod's constructor has run —
+     * mod construction is the loader's {@code gatherAndInitializeMods}, which the client reaches from
+     * its own constructor before the event is posted — so a listener added here is in time for it.
+     */
+    static void onRegisterReloadListeners(RegisterClientReloadListenersEvent event) {
+        event.registerReloadListener((ResourceManagerReloadListener) manager -> stopDrawing());
+    }
+
+    /**
+     * Takes the drawing away from everything held, and starts nothing: what replaces it is the poll's.
+     *
+     * <p>Nothing is built here, and that is the point of the split: the poll is the only place that
+     * reads a definition and starts an effect from it, and a reload is not over when its listeners
+     * run — they run once every listener has prepared, while other listeners' own passes, the particle
+     * engine's sprites and the model manager among them, are still to come, and the game swaps the
+     * resource manager for the new one only at the very end. The library's own loaders refuse to read
+     * a model in that window and retry once the reload is over, so an effect built in it is built
+     * against a half-replaced state. That is why the poll asks the loading overlay that stands for
+     * that window before it does anything at all — see {@link #tick} — and why what is left here is
+     * the rows rather than the drawing: an entry with no runtime is an entry the poll will start.
+     *
+     * <p>The drawing already started is taken away outright rather than left to the poll: a runtime
+     * left in the engine would go on ticking beside the one started in its place, and would also keep
+     * the library's executor for this anchor occupied, so the replacement could not be attached at
+     * all — the library skips starting an effect it believes is already running, and a runtime is
+     * only believed to be over once it has been destroyed or dropped by the engine.
+     *
+     * <p>An entry left without a runtime is the state {@link #tick}'s waiting half starts from, and
+     * that is the path on purpose: nothing about an anchor is in question here, and the anchor check
+     * {@link #revive} makes would forget every self effect, whose anchor is the player and which
+     * holds no entity id at all. Both budgets a start can run out of are reset, because a reload is
+     * this client's own act on its own resources rather than an effect it could not keep started:
+     * the attempt it now gets is a whole fresh one, and several reloads in one session are not
+     * several failures.
+     */
+    private static void stopDrawing() {
+        for (Entry entry : ENTRIES.values()) {
+            // Walked directly: destroying a runtime reaches the particle engine, never this list,
+            // which is private to this class and changed only by the methods below.
+            PhotonFx.destroy(entry.runtime);
+            entry.runtime = null;
+            entry.waited = 0;
+            entry.revivals = 0;
+        }
+    }
+
+    /**
      * Takes on one effect the server has said is placed.
      *
      * <p>Nothing here decides whether a placement is allowed: that was settled before the message
@@ -300,7 +394,12 @@ public final class PlacedEffects {
 
         Entry entry = new Entry(id, where, attachment, payload.targetEntityId());
         ENTRIES.put(entry.id(), entry);
-        start(entry, level, holder);
+        // Started here rather than left to the poll, because the answer to an operator using the tool
+        // is the effect appearing and not appearing a tick later — except while the game is loading
+        // resources, where the poll is the only safe place to start from: an effect built in that
+        // window is built from meshes and shaders that are being replaced, which is the same reason
+        // the reload listener above does not build anything. The entry waits a poll at most.
+        if (!(minecraft.getOverlay() instanceof LoadingOverlay)) start(entry, level, holder);
     }
 
     /**
@@ -381,6 +480,19 @@ public final class PlacedEffects {
             return;
         }
 
+        // Nothing is decided while the game is loading resources. A reload keeps a loading overlay up
+        // for the whole of it — F3+T and a resource pack being switched on are that same overlay — and
+        // the game swaps the resource manager for the new one only when it is over, so while it stands
+        // every answer about a definition, a mesh or a shader is an answer about the packs that are
+        // being replaced. It is the test the library's own model loaders make before refusing to read
+        // a mesh and asking again once the reload is done, and it is exact where a number of ticks
+        // would be a guess: the first poll after the overlay goes starts the effects again, which is
+        // at most two ticks after the reload. The window is not counted against anything either — not
+        // the wait an entry is spending on its anchor, and not the fast attempts one that was taken
+        // down gets — because a reload is this client's act on its own resources and not a failure of
+        // the effect's.
+        if (minecraft.getOverlay() instanceof LoadingOverlay) return;
+
         // Copied before walking: a pass can remove entries, and a map that is being changed under
         // its own iterator is the one way this can fail outright.
         for (Entry entry : List.copyOf(ENTRIES.values())) {
@@ -406,8 +518,48 @@ public final class PlacedEffects {
                 continue;
             }
             entry.waited += POLL_INTERVAL_TICKS;
-            if (start(entry, level, holder) || entry.waited > WAITING_TICKS) remove(entry.id());
+            if (entry.retryIn > 0) {
+                entry.retryIn -= POLL_INTERVAL_TICKS;
+                continue;
+            }
+            if (start(entry, level, holder)) continue;
+            if (entry.waited <= WAITING_TICKS) continue;
+            // Past the wait, the anchor is the only question that can still be answered. An anchor
+            // that is not here is what the budget above is for, and forgetting the entry is right:
+            // the row stays with the server and comes back with that ground or that entity. An anchor
+            // that *is* here is the opposite case — the server says an effect is placed, this client
+            // can see what it hangs off, and it cannot be started — and forgetting it would take the
+            // boxes and the delete tool away from a row that is still there, and would leave it
+            // undrawn for the rest of the session, because nothing is sent again while the player
+            // stands still. It is kept and retried slowly instead.
+            if (!entry.anchorHere(level)) {
+                remove(entry.id());
+                continue;
+            }
+            complain(entry);
+            entry.retryIn = STUCK_RETRY_TICKS;
         }
+    }
+
+    /**
+     * Says once that an effect this client was drawing cannot be started again, and stops the fast
+     * attempts at it.
+     *
+     * <p>Logged rather than silent: a row the server holds, an anchor this client can see, and an
+     * effect that will not be drawn is a fault, which is the one thing this mod writes to the log
+     * about besides its record. An entry that was never drawn says nothing — a definition this
+     * client's packs do not have is another player's effect and an ordinary event, and the owner's
+     * decision that a bad effect path stays quiet is about exactly that case. An entry that was drawn
+     * and is now refused says which of the two it is, because the library's own reason is the only
+     * thing that can tell a library holding the anchor from a pack that has lost the effect.
+     */
+    private static void complain(Entry entry) {
+        if (entry.complained || !entry.drawn) return;
+        entry.complained = true;
+        BackUtils.LOGGER.warn("the effect of row {} ({}) is placed and its anchor is here, but it can no "
+                        + "longer be started{}, so it is not being drawn; it will be retried every {} ticks",
+                entry.id, entry.attachment.location(),
+                entry.fault == null ? "" : " — " + entry.fault, STUCK_RETRY_TICKS);
     }
 
     /**
@@ -427,12 +579,15 @@ public final class PlacedEffects {
      * is left alone and the effect comes back from the server when that entity is tracked or that
      * ground is sent again, which is what {@link net.xlebupaksa.backutils.effect.EffectReplay} is for.
      *
-     * <p>Bounded by {@link #MAX_REVIVALS}: an effect this client has had to start again four times is
-     * one it cannot keep started, and the honest answer then is to stop pretending until the server
-     * says something — which it does on every chunk watch, tracking packet and arrival.
+     * <p>Bounded by {@link #MAX_REVIVALS} for the fast attempts, and by nothing at all afterwards
+     * while the anchor is here: an effect this client has had to start again four times is one it
+     * cannot keep started, and the honest answer then is not to forget the row — which is still
+     * there, and whose boxes and delete tool would go with it — but to stop trying every other tick
+     * and start again every {@link #STUCK_RETRY_TICKS} instead. Only an anchor that is not here ends
+     * the entry, because only then is the effect somewhere this client cannot reach it.
      */
     private static void revive(Entry entry, ClientLevel level) {
-        if (entry.revivals >= MAX_REVIVALS || !entry.anchorHere(level)) {
+        if (!entry.anchorHere(level)) {
             remove(entry.id());
             return;
         }
@@ -441,6 +596,13 @@ public final class PlacedEffects {
         // starts from, and the wait is reset so a fresh five seconds is spent on the new attempt.
         entry.runtime = null;
         entry.waited = 0;
+        if (entry.revivals > MAX_REVIVALS) {
+            // The fast attempts are spent. The wait is put past its budget and the retry held back, so
+            // the next poll reads this as the case it is — an effect whose anchor is here and which
+            // will not keep running — and says so once instead of trying again every other tick.
+            entry.waited = WAITING_TICKS;
+            entry.retryIn = STUCK_RETRY_TICKS;
+        }
     }
 
     /**
@@ -464,10 +626,16 @@ public final class PlacedEffects {
         BlockPos anchor = BlockPos.containing(entry.placement().x(), entry.placement().y(),
                 entry.placement().z());
 
-        FXRuntime runtime = PhotonFx.place(entry.attachment, level, holder, target, anchor);
-        if (runtime == null) return false;
+        PhotonFx.Placement placement = PhotonFx.place(entry.attachment, level, holder, target, anchor);
+        if (placement.runtime() == null) {
+            // Kept on the entry rather than said here: this is asked again every few ticks, and the
+            // reason is worth saying once, when the entry is known to be stuck.
+            entry.fault = placement.fault();
+            return false;
+        }
 
-        entry.runtime = runtime;
+        entry.runtime = placement.runtime();
+        entry.drawn = true;
         if (entry.attachment.kind() == EffectAttachment.Kind.ENTITY
                 && entry.anchorEntityId != EffectPlacedPayload.NO_ENTITY) {
             EffectBlink.flashAttached(entry.anchorEntityId);

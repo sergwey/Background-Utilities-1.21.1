@@ -26,10 +26,13 @@ import java.util.List;
  * it. It lives in the client package for that reason, and its caller sits behind the client-only
  * gate alongside the preview.
  *
- * <p>Everything a failure could do is swallowed and answered with nothing. That is the owner's
- * decision and the right one here: an effect path is typed by hand, so a typo, an effect this client
- * does not have, and a library that changed under us are all ordinary events rather than crashes, and
- * the operator sees "nothing appeared" instead of a stack trace in someone's world.
+ * <p>Everything a failure could do is answered with nothing, so that the player sees "nothing
+ * appeared" rather than a stack trace in someone's world: an effect path is typed by hand, and a
+ * typo, an effect this client does not have, and a library that changed under us are all ordinary
+ * events rather than crashes. Nothing is said to the player for any of them. The two that are not
+ * ordinary — a library that refused to start the effect, and one that threw while starting it — are
+ * handed back to the caller as a reason instead, because the caller is the side that knows whether it
+ * is worth saying: an effect that cannot be started is asked for again every few ticks.
  *
  * <p>The three kinds of attachment are the three executors Photon has. A block effect hangs off a
  * block position, and an entity effect — the holder's own included — off an entity. A free point has
@@ -41,25 +44,39 @@ public final class PhotonFx {
     private PhotonFx() {}
 
     /**
+     * One attempt at placing an effect: what it produced, and why when it produced nothing.
+     *
+     * @param runtime the effect that was started, or null when none was
+     * @param fault   why none was, in the cases that are not ordinary, and null otherwise — a path
+     *                naming nothing, an effect these packs do not have and an anchor that has not
+     *                arrived are all ordinary, and an operator who mistyped a path is told by silence
+     *                rather than by a sentence they cannot act on
+     */
+    public record Placement(FXRuntime runtime, String fault) {}
+
+    private static final Placement NOTHING = new Placement(null, null);
+
+    /**
      * Places one effect, if Photon is here and has that effect.
      *
      * @param level  the level to place into
      * @param holder the player placing it, which a self effect attaches to
      * @param target the entity aimed at, or the display a free point hangs off, or null for neither
      * @param anchor the block a block effect hangs off, or null when this is not a block effect
-     * @return the effect that was started, or null when nothing was
+     * @return the effect that was started and, when none was, whether the reason for that is worth
+     *         telling somebody — see {@link Placement#fault()}
      */
-    public static FXRuntime place(EffectAttachment attachment, Level level, Player holder,
+    public static Placement place(EffectAttachment attachment, Level level, Player holder,
                                   Entity target, BlockPos anchor) {
-        if (!available() || attachment == null || !attachment.placeable()) return null;
+        if (!available() || attachment == null || !attachment.placeable()) return NOTHING;
 
         ResourceLocation id = attachment.location();
-        if (id == null) return null;
+        if (id == null) return NOTHING;
 
         try {
             FX effect = FXHelper.getFX(id);
             // A path naming nothing is the ordinary case for a typo, and is silent by decision.
-            if (effect == null) return null;
+            if (effect == null) return NOTHING;
 
             Entity anchorEntity = target;
             FXEffectExecutor executor;
@@ -76,7 +93,7 @@ public final class PhotonFx {
                     // this player could see, would not survive a reload, and could not be found or
                     // moved by anything else. A display that has not arrived yet is not a failure —
                     // the caller waits for it rather than drawing the effect somewhere else.
-                    if (anchorEntity == null) return null;
+                    if (anchorEntity == null) return NOTHING;
                     executor = new EntityEffectExecutor(effect, level, anchorEntity,
                             photonAutoRotate(attachment));
                 }
@@ -89,11 +106,21 @@ public final class PhotonFx {
             executor.setForcedDeath(attachment.forceDeath());
             executor.setAllowMulti(attachment.allowMulti());
             executor.start();
-            return executor.getRuntime();
+            FXRuntime runtime = executor.getRuntime();
+            if (runtime == null) {
+                // The library's executors answer a start with no runtime when they believe one is
+                // already running on that anchor, which is the one way this mod is told that
+                // something it cannot see is holding the effect rather than that the effect is
+                // missing. Said by the caller rather than here, and once.
+                return new Placement(null, "the library refused to start it, which it does while it "
+                        + "still believes an effect is running on that anchor");
+            }
+            return new Placement(runtime, null);
         } catch (Throwable e) {
-            // Deliberately all of it: a library that throws in its own setup must not be able to
-            // take this mod's placing down with it, and there is nothing useful to say about it.
-            return null;
+            // Deliberately all of it: a library that throws in its own setup must not be able to take
+            // this mod's placing down with it. Answered as a reason rather than swallowed, because a
+            // start that threw leaves nothing on screen and nothing else to look at.
+            return new Placement(null, "the library threw while starting it: " + e);
         }
     }
 

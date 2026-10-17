@@ -35,6 +35,11 @@ public final class ClientSetup {
         NeoForge.EVENT_BUS.register(FrozenClient.class);
         // Space over an item in an inventory, which opens the item editor on it.
         NeoForge.EVENT_BUS.register(ItemEditorGesture.class);
+        // The resources the placed effects were built from — their definitions, materials and
+        // shaders — are rebuilt by a resource reload, so what this client is drawing has to be
+        // started again from the rows it holds. Its own listener rather than another subscriber on
+        // the common bus, and on the mod bus like the client config.
+        modEventBus.addListener(PlacedEffects::onRegisterReloadListeners);
         ClientConfigLoader.register(modEventBus);
         ChatScreenOverlayHandler.register();
         AdminCornerHandler.register();

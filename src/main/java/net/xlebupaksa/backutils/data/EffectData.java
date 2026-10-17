@@ -292,33 +292,6 @@ public class EffectData extends DataManager {
     }
 
     /**
-     * Removes every effect that sits in one block, which is what the delete tool does.
-     *
-     * @return how many were removed
-     */
-    public int removeAt(EffectPlacement where) {
-        return update("DELETE FROM placed_effect WHERE dimension = ? AND "
-                        + "CAST(FLOOR(x) AS INTEGER) = ? AND CAST(FLOOR(y) AS INTEGER) = ? AND "
-                        + "CAST(FLOOR(z) AS INTEGER) = ?",
-                where.dimension(), where.blockX(), where.blockY(), where.blockZ());
-    }
-
-    /**
-     * Removes every effect one account placed, which is what alt-clicking the delete tool does.
-     *
-     * @return how many were removed
-     */
-    public int removeOwnedBy(String ownerUuid) {
-        return update("DELETE FROM placed_effect WHERE owner_uuid = ?",
-                ownerUuid == null ? "" : ownerUuid);
-    }
-
-    /** {@return how many effects were removed}, for the command that empties the table */
-    public int removeAll() {
-        return update("DELETE FROM placed_effect");
-    }
-
-    /**
      * {@return the effects that have run out of time, which the caller should clean up}
      *
      * <p>Asked of the table rather than of every row, because this is the one query that runs on a
