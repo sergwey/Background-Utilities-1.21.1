@@ -41,7 +41,7 @@ logoFile="logo.png" #optional
 # A text field displayed in the mod UI. The one place inside the game where how this mod was made is
 # stated, so it is said plainly: the code is AI-generated under human direction, and no image in it
 # is. The README and every release note repeat it.
-credits="Code written with an AI coding agent, directed and reviewed by a human. All artwork is hand-drawn; no AI-generated images." #optional
+credits="Code written with an AI coding agent, directed and reviewed by a human. All artwork is hand-drawn; no AI-generated images. The client chest is an idea from NBT Editor by mega12345mega: github.com/mega12345mega/NBT-Editor." #optional
 
 # The authors of the mod, displayed in the mod UI (optional)
 authors="xlebupaksa"

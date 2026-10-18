@@ -19,11 +19,13 @@ from the code and are expensive to learn by breaking them.
                        # run-citresewn/: the arrangement in which RP Renames' creative tab goes missing
 ./gradlew runInline    # the client with Inline and Cloth Config, game directory run-inline/: the
                        # arrangement in which [item:diamond] is drawn in line with the text
+./gradlew runMouseTweaks # the client with Mouse Tweaks, game directory run-mousetweaks/: the
+                       # arrangement in which dragging and shift-clicking are that mod's business
 ```
 
-`run/`, `run-server/`, `run-symbolchat/`, `run-citresewn/` and `run-inline/` are separate game
+`run/`, `run-server/`, `run-symbolchat/`, `run-citresewn/`, `run-inline/` and `run-mousetweaks/` are separate game
 directories on purpose; the README explains the test server, including the address to connect to, and
-the CIT Resewn and Inline runs, including what each of them exists to reproduce.
+the CIT Resewn, Inline and Mouse Tweaks runs, including what each of them exists to reproduce.
 
 ## What "it works" has to mean
 
@@ -98,8 +100,12 @@ with it.
 
 One piece of somebody else's code ships inside the jar — sqlite-jdbc, Apache 2.0, bundled unmodified
 by `jarJar`, its licence text inside the nested jar — and the README's licence section says so. The
-mods tested alongside this one are never redistributed: the two compatibility runs install them into
-game directories that git ignores.
+mods tested alongside this one are never redistributed: the compatibility runs install them into game
+directories that git ignores.
+
+The client chest's *idea* comes from NBT Editor, which the README and the `credits` field name with
+links. No code, data or assets are taken from it, so nothing of its licence travels with this jar —
+if any ever is, that changes, and the licence section has to be read again before it is committed.
 
 RP Renames is under the Team Durt Licence, which permits use as a library or integration **provided it
 is a soft or hard dependency taken from their own sources** — which is what the reflective call in
@@ -113,7 +119,8 @@ The maintainer keeps a throwaway harness under `build/tmp/` — a compile check,
 metadata check and a set of `main()` suites: the chat markup and the literals it is drawn as, the
 profile storage and the edits made to it, the command readings for rolls and silences, items in chat,
 the settings table and the client config, the effect tool's placement and its data, the item editor,
-the tool sounds, and the HUD banner's text and placement. It is not committed,
+the tool sounds, the client chest's page files and page names, and the HUD banner's text and
+placement. It is not committed,
 because it is regenerated as the work needs it, so a fresh clone will not have it. If `build/tmp/` is
 present, run what is there before claiming a change is done; if it is not, build, run the game, and
 say what was run.

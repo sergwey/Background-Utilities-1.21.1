@@ -2,6 +2,8 @@ package net.xlebupaksa.backutils.client;
 
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.common.NeoForge;
+import net.xlebupaksa.backutils.clientchest.ChestCommand;
+import net.xlebupaksa.backutils.clientchest.ChestCreativeButton;
 import net.xlebupaksa.backutils.ui.AdminCornerHandler;
 import net.xlebupaksa.backutils.ui.ChatScreenOverlayHandler;
 
@@ -35,6 +37,10 @@ public final class ClientSetup {
         NeoForge.EVENT_BUS.register(FrozenClient.class);
         // Space over an item in an inventory, which opens the item editor on it.
         NeoForge.EVENT_BUS.register(ItemEditorGesture.class);
+        // The client chest: a library of items that follows the player between servers, the command
+        // that opens it, and the button that opens it from the creative inventory.
+        NeoForge.EVENT_BUS.register(ChestCommand.class);
+        NeoForge.EVENT_BUS.register(ChestCreativeButton.class);
         // The resources the placed effects were built from — their definitions, materials and
         // shaders — are rebuilt by a resource reload, so what this client is drawing has to be
         // started again from the rows it holds. Its own listener rather than another subscriber on

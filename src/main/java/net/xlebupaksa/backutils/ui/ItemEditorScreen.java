@@ -44,6 +44,7 @@ import net.xlebupaksa.backutils.client.EffectToolSlot;
 import net.xlebupaksa.backutils.client.LiteralDrawing;
 import net.xlebupaksa.backutils.client.SymbolChatPanel;
 import net.xlebupaksa.backutils.item.ItemEdit;
+import net.xlebupaksa.backutils.network.EffectToolConfigPayload.Where;
 import net.xlebupaksa.backutils.network.ItemEditPayload;
 import net.xlebupaksa.backutils.network.ItemEditorNetwork;
 import org.lwjgl.glfw.GLFW;
@@ -53,6 +54,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /**
  * The item editor: what an operator gets when they hover an item in an inventory and press space.
@@ -379,20 +381,55 @@ public final class ItemEditorScreen extends Screen {
      */
     private String warnedAbout;
 
+    /**
+     * The item this screen edits when it has no server slot to edit, which is a client chest's page.
+     *
+     * <p>Null for an inventory item: that one is read from the address every time it is drawn, because
+     * the server owns it and can change it while the screen is open. A page is written by this screen
+     * alone, so its stack is held here and put back when the edit is applied.
+     */
+    private final ItemStack localStack;
+    private final Consumer<ItemStack> localApply;
+    private final Supplier<Screen> localBack;
+
     private ItemEditorScreen(EffectToolSlot.Address source) {
+        this(null, null, null, source);
+    }
+
+    private ItemEditorScreen(ItemStack stack, Consumer<ItemStack> apply, Supplier<Screen> back) {
+        this(stack, apply, back, null);
+    }
+
+    private ItemEditorScreen(ItemStack stack, Consumer<ItemStack> apply, Supplier<Screen> back,
+                             EffectToolSlot.Address source) {
         super(Component.translatable("backutils.item_editor.title"));
         this.source = source;
+        this.localStack = stack;
+        this.localApply = apply;
+        this.localBack = back;
         build();
     }
 
     /**
-     * Opens the editor on one slot, or closes whatever is open when there is no item to edit.
+     * Opens the editor on one slot of a menu the server has open.
      *
      * <p>An address rather than a slot index, because the index alone means different things in the
      * client's menu and the server's, and the server is the side that will be asked to write.
      */
     public static void open(EffectToolSlot.Address source) {
         Minecraft.getInstance().setScreen(source == null ? null : new ItemEditorScreen(source));
+    }
+
+    /**
+     * Opens the editor on an item that has no server slot: a slot of the client chest.
+     *
+     * <p>The same screen, writing in place. A page is a file on this client and the server is never
+     * asked about it, so what Apply does is hand the edited stack to the caller; where the screen goes
+     * afterwards is a supplier because the chest that opened the editor is gone by then and has to be
+     * built again.
+     */
+    public static void openLocal(ItemStack stack, Consumer<ItemStack> apply, Supplier<Screen> back) {
+        Minecraft.getInstance().setScreen(new ItemEditorScreen(stack, apply, back));
     }
 
     @Override
@@ -437,7 +474,9 @@ public final class ItemEditorScreen extends Screen {
         Button close = new Button();
         text(close.text, "backutils.item_editor.button.close", 9f);
         close.layout(l -> l.width(72).height(LINE_HEIGHT));
-        close.setOnClick(e -> Minecraft.getInstance().setScreen(null));
+        // A page's editor came from the chest, and Close goes back to it rather than to the world.
+        close.setOnClick(e -> Minecraft.getInstance().setScreen(
+                localBack == null ? null : localBack.get()));
 
         // Apply stands beside the button that leaves the screen, where the way out of the editor used to be,
         // rather than at the foot of a panel that scrolls: the attribute list grows with the item, and the
@@ -1260,16 +1299,33 @@ public final class ItemEditorScreen extends Screen {
      * throw on Apply.
      */
     private void send() {
-        if (source == null) return;
-        ItemEditPayload payload = ItemEditPayload.full(source.where(), source.containerId(),
-                source.slot(), name.getText(), itemLore(), attributeList());
+        boolean local = this.localApply != null;
+        if (source == null && !local) return;
+        // The message is built even for a page, because the bounds the message and the reader keep are
+        // the same bounds: an edit past them is refused in words here, before anything is written.
+        ItemEditPayload payload = ItemEditPayload.full(
+                source == null ? Where.PLAYER : source.where(),
+                source == null ? 0 : source.containerId(),
+                source == null ? 0 : source.slot(),
+                name.getText(), itemLore(), attributeList());
         String problem = ItemEditPayload.problem(payload);
         if (problem != null) {
-            // Nothing is sent, so the item is untouched and this message is the whole of what happened.
+            // Nothing is written, so the item is untouched and this message is the whole of what happened.
             say(Component.literal(problem));
             return;
         }
-        ItemEditorNetwork.send(payload);
+        if (!local) {
+            ItemEditorNetwork.send(payload);
+            return;
+        }
+        // A page's slot is a file on this client: the same edit is applied here, by the same code the
+        // server writes an inventory's item with, and the screen the caller came from is put back.
+        ItemStack current = this.stack();
+        ItemStack edited = current == null ? ItemStack.EMPTY : current.copy();
+        ItemEditorNetwork.apply(edited, payload.name(), payload.withLore(), payload.lore(),
+                payload.withAttributes(), payload.attributes());
+        this.localApply.accept(edited);
+        Minecraft.getInstance().setScreen(this.localBack == null ? null : this.localBack.get());
     }
 
     /**
@@ -1353,6 +1409,7 @@ public final class ItemEditorScreen extends Screen {
     }
 
     private ItemStack stack() {
+        if (this.localStack != null) return this.localStack;
         Player player = Minecraft.getInstance().player;
         return player == null || source == null ? null : EffectToolSlot.stackAt(player, source);
     }

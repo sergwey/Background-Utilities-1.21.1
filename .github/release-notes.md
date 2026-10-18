@@ -1,6 +1,6 @@
 **Background Utilities** adds a witness-based action log, dice, chat and display-name profiles, two
-chat channels, and an operator's tools for placing and removing visual effects — for NeoForge
-1.21.1.
+chat channels, a client-side library of items that follows a player between servers, and an operator's
+tools for placing and removing visual effects — for NeoForge 1.21.1.
 
 ## Install
 
@@ -23,6 +23,9 @@ Everything the mod adds is documented in the [README](https://github.com/sergwey
 
 **No image in this mod is AI-generated.** Every texture, sprite, icon, model and drawing is the
 author's own work.
+
+The client chest is not this mod's idea: it comes from [NBT Editor](https://github.com/mega12345mega/NBT-Editor)
+by mega12345mega, and is rewritten here for this mod's conventions and file format.
 
 ## Reporting a problem
 

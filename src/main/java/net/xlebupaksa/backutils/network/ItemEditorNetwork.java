@@ -90,9 +90,22 @@ public final class ItemEditorNetwork {
         player.displayClientMessage(Component.translatable("backutils.item_editor.applied"), true);
     }
 
-    /** Writes the edits onto one stack, leaving out every part the message is not about. */
-    private static void apply(ItemStack stack, ItemEditPayload payload) {
-        String name = payload.name();
+    /** Writes the edits a message describes onto one stack. */
+    public static void apply(ItemStack stack, ItemEditPayload payload) {
+        apply(stack, payload.name(), payload.withLore(), payload.lore(), payload.withAttributes(),
+                payload.attributes());
+    }
+
+    /**
+     * Writes one edit onto one stack, leaving out every part the caller is not speaking about.
+     *
+     * <p>The writing half of the message, and deliberately reachable without one: a client chest's
+     * slot is a file on the client and has no server to be told about it, so the same edit is applied
+     * here instead of being sent. The two paths share this and nothing else, which is what keeps an
+     * item edited in a page and an item edited in an inventory the same item.
+     */
+    public static void apply(ItemStack stack, String name, boolean withLore, List<String> lore,
+                             boolean withAttributes, List<ItemEdit.Granted> attributes) {
         if (name == null || name.isBlank()) {
             stack.remove(DataComponents.CUSTOM_NAME);
         } else {
@@ -101,10 +114,9 @@ public final class ItemEditorNetwork {
             stack.set(DataComponents.CUSTOM_NAME, ItemEdit.line(name));
         }
 
-        // Only when the message says so: a screen that cannot show the lore has not said the item
+        // Only when the caller says so: a screen that cannot show the lore has not said the item
         // should have none, and an edit that took it away would be one nobody asked for.
-        if (payload.withLore()) {
-            List<String> lore = payload.lore();
+        if (withLore) {
             if (lore == null || lore.isEmpty()) {
                 stack.remove(DataComponents.LORE);
             } else {
@@ -114,11 +126,11 @@ public final class ItemEditorNetwork {
             }
         }
 
-        if (payload.withAttributes()) {
-            if (payload.attributes().isEmpty()) {
+        if (withAttributes) {
+            if (attributes.isEmpty()) {
                 stack.remove(DataComponents.ATTRIBUTE_MODIFIERS);
             } else {
-                stack.set(DataComponents.ATTRIBUTE_MODIFIERS, modifiers(payload.attributes()));
+                stack.set(DataComponents.ATTRIBUTE_MODIFIERS, modifiers(attributes));
             }
         }
     }

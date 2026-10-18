@@ -332,7 +332,7 @@ public final class PlacedEffects {
      * <p>An entry left without a runtime is the state {@link #tick}'s waiting half starts from, and
      * that is the path on purpose: nothing about an anchor is in question here, and the anchor check
      * {@link #revive} makes would forget every self effect, whose anchor is the player and which
-     * holds no entity id at all. Both budgets a start can run out of are reset, because a reload is
+     * this path has no reason to doubt. Both budgets a start can run out of are reset, because a reload is
      * this client's own act on its own resources rather than an effect it could not keep started:
      * the attempt it now gets is a whole fresh one, and several reloads in one session are not
      * several failures.
@@ -345,6 +345,9 @@ public final class PlacedEffects {
             entry.runtime = null;
             entry.waited = 0;
             entry.revivals = 0;
+            // The hold a stuck entry is under belongs to the attempt that failed, not to the reload: an
+            // effect being retried slowly is asked for again at the first poll after the reload.
+            entry.retryIn = 0;
         }
     }
 
@@ -465,7 +468,7 @@ public final class PlacedEffects {
     /**
      * Attaches what is waiting and notices what has ended.
      *
-     * <p>Called every tick by the client setup and walked every other one.
+     * <p>Called on every client tick by the event bus and walked every other one.
      */
     public static void tick() {
         if (ENTRIES.isEmpty()) return;
@@ -542,8 +545,7 @@ public final class PlacedEffects {
     }
 
     /**
-     * Says once that an effect this client was drawing cannot be started again, and stops the fast
-     * attempts at it.
+     * Says once that an effect this client was drawing cannot be started again.
      *
      * <p>Logged rather than silent: a row the server holds, an anchor this client can see, and an
      * effect that will not be drawn is a fault, which is the one thing this mod writes to the log
@@ -596,7 +598,7 @@ public final class PlacedEffects {
         // starts from, and the wait is reset so a fresh five seconds is spent on the new attempt.
         entry.runtime = null;
         entry.waited = 0;
-        if (entry.revivals > MAX_REVIVALS) {
+        if (entry.revivals >= MAX_REVIVALS) {
             // The fast attempts are spent. The wait is put past its budget and the retry held back, so
             // the next poll reads this as the case it is — an effect whose anchor is here and which
             // will not keep running — and says so once instead of trying again every other tick.
@@ -636,6 +638,9 @@ public final class PlacedEffects {
 
         entry.runtime = placement.runtime();
         entry.drawn = true;
+        // The last failure is not this attempt's: an effect that started once and stuck later would
+        // otherwise be reported with a reason from an attempt that has nothing to do with it.
+        entry.fault = null;
         if (entry.attachment.kind() == EffectAttachment.Kind.ENTITY
                 && entry.anchorEntityId != EffectPlacedPayload.NO_ENTITY) {
             EffectBlink.flashAttached(entry.anchorEntityId);

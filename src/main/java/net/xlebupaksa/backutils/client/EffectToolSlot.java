@@ -1,6 +1,7 @@
 package net.xlebupaksa.backutils.client;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
@@ -61,6 +62,14 @@ public final class EffectToolSlot {
         // Anything else can only be named through the menu the player has open, and the creative
         // screen's list is the one place that menu is not the server's.
         if (minecraft.screen instanceof CreativeModeInventoryScreen) return null;
+        // The other place is a screen that built a menu of its own. The client chest does, and its
+        // slot index means nothing in the menu the player actually has open: an edit named by it
+        // would be an edit of whatever that index holds, read out of and written back to a slot
+        // nobody hovered — a screen's item, reached from a chest that has no server side at all.
+        if (minecraft.screen instanceof AbstractContainerScreen<?> open
+                && open.getMenu() != player.containerMenu) {
+            return null;
+        }
         Address address = new Address(Where.OPEN_MENU, player.containerMenu.containerId, hovered.index);
         reportIfEmpty(player, hovered, address);
         return address;

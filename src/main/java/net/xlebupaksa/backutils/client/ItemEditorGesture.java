@@ -48,7 +48,15 @@ public final class ItemEditorGesture {
         if (hovered == null || !hovered.hasItem()) return;
         if (!operator(minecraft)) return;
 
-        ItemEditorScreen.open(EffectToolSlot.of(minecraft, hovered));
+        // A slot the server could not be told about is not an item this screen can edit: the creative
+        // list is a catalogue, and the client chest's slots are a file on this client. Opening the
+        // editor on nothing used to close whatever was open, so this is also the answer to a Space
+        // that should have done nothing at all — and letting the key through is what lets a screen say
+        // what Space means there, which is how the chest edits its own slots.
+        EffectToolSlot.Address address = EffectToolSlot.of(minecraft, hovered);
+        if (address == null) return;
+
+        ItemEditorScreen.open(address);
         // Taken, so whatever else listens for the key does not also act on it.
         event.setCanceled(true);
     }

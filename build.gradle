@@ -70,6 +70,13 @@ def citRunDir = file('run-citresewn')
 // installed with it.
 def inlineRunDir = file('run-inline')
 
+// Mouse Tweaks, in a fifth game directory. It changes what dragging and shift-clicking mean in a
+// container screen — a stack dragged with the button held is dropped into every slot it passes over —
+// which is exactly the interaction the client chest has to answer itself: its menu exists only on the
+// client and it never sends a click, so a mod that synthesises clicks and drags against the open menu
+// is the one thing that can break it. Client-only, and installed only here.
+def mouseTweaksRunDir = file('run-mousetweaks')
+
 // Connector will not start in a dev run until it is told where the *clean* Minecraft jar is. In
 // production it works that path out for itself, from the launcher's libraries; on a dev classpath
 // there is nothing for it to work out, and it gives up with "Could not determine clean minecraft
@@ -173,6 +180,14 @@ neoForge {
             gameDirectory = inlineRunDir
         }
 
+        // Mouse Tweaks, for the client chest's drags: two mods that both want to decide what a click
+        // in a fake container means is the arrangement worth testing, and it belongs in a game
+        // directory of its own. Its jar is put in place by installMouseTweaksMods.
+        mouseTweaks {
+            client()
+            gameDirectory = mouseTweaksRunDir
+        }
+
         // applies to all the run configs above
         configureEach {
             // Recommended logging data for a userdev environment
@@ -229,6 +244,13 @@ configurations {
     // or bundled - this is the arrangement that keeps a text-rendering mod a thing to test beside
     // this one rather than a thing this one needs.
     inlineMods {
+        canBeConsumed = false
+        canBeResolved = true
+    }
+
+    // Mouse Tweaks, installed into the mouseTweaks run alone: a drag-and-shift-click mod is a thing
+    // to test beside this one, never something it is compiled against or ships.
+    mouseTweaksMods {
         canBeConsumed = false
         canBeResolved = true
     }
@@ -292,6 +314,10 @@ dependencies {
     // the two stacks above do. Versions live in gradle.properties for the usual reason.
     inlineMods "maven.modrinth:inline:${inline_version}"
     inlineMods "maven.modrinth:cloth-config:${cloth_config_version}"
+
+    // What the mouseTweaks run installs: the drag-and-shift-click mod, which is client-only and has
+    // nothing this mod compiles against. Version in gradle.properties for the usual reason.
+    mouseTweaksMods "maven.modrinth:mouse-tweaks:${mousetweaks_version}"
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.
@@ -381,11 +407,27 @@ tasks.register('cleanInlineMods', Delete) {
     delete new File(inlineRunDir, 'mods')
 }
 
+// And again for Mouse Tweaks: the same Copy-then-clean pair, so a jar dropped in by hand survives a
+// build.
+var installMouseTweaksMods = tasks.register('installMouseTweaksMods', Copy) {
+    group = 'backutils'
+    description = 'Downloads Mouse Tweaks into the mouseTweaks run.'
+    from configurations.mouseTweaksMods
+    into new File(mouseTweaksRunDir, 'mods')
+}
+
+tasks.register('cleanMouseTweaksMods', Delete) {
+    group = 'backutils'
+    description = 'Removes the downloaded Mouse Tweaks run stack.'
+    delete new File(mouseTweaksRunDir, 'mods')
+}
+
 // configureEach rather than named, so that nothing here depends on when the run's task is registered.
 tasks.configureEach {
     if (name == 'runSymbolChat') dependsOn installCompatMods
     if (name == 'runCitResewn') dependsOn installCitMods
     if (name == 'runInline') dependsOn installInlineMods
+    if (name == 'runMouseTweaks') dependsOn installMouseTweaksMods
 }
 
 tasks.withType(JavaCompile).configureEach {

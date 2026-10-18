@@ -46,7 +46,7 @@ log, and a pair of tools for placing and removing visual effects.
   self or accurate placement, with auto-rotation, a lifetime, a delay, a scale, a rotation and an
   offset, and a preview of where it would land. It is configured by holding `W` over it in any
   inventory. The delete tool takes away what is already placed — the effect under the crosshair, the
-  effects on an entity, or every effect its holder placed. Both fire a shot their holder hears and
+  effects on an entity, or everything hanging off its holder. Both fire a shot their holder hears and
   nobody else does. Both are found in the mod's own creative tab rather than given by a command.
 - **Item editor.** Operators rewrite an item's name, lore and attributes in one screen: the name and
   the lore in the form the item will show them, with a live preview of its tooltip and its own icon,
@@ -58,6 +58,23 @@ log, and a pair of tools for placing and removing visual effects.
   who opened it, and fades it out when the menu closes. Set `menuMusic` empty for silence, and
   `menuMusicChannel` to whichever of the game's sound channels it should answer to — the player's own
   slider for that channel is the one that turns it down.
+- **Client chest.** `/clientchest` — or `/cc`, or the button in the bottom left corner of the screen —
+  opens pages of fifty-four slots kept in this player's own game directory — as many as you store,
+  a page existing once it holds something or has a name — so the same
+  library follows them from world to world and from server to server. The pages are files, not a
+  container: nothing is stored on a server and nothing is asked of one. Items move between a page and
+  the player's inventory in creative only, because that is the only place the game accepts an
+  inventory the client changed by itself; outside creative the library opens read-only, with the slots
+  it will refuse tinted, and a page can still be rearranged, since that never leaves the client. A
+  page written by another version of the game is offered as a page rather than read as items: an older
+  one can be taken on as this version or discarded, a newer one only discarded, and until then its file
+  is not written at all. A slot
+  holding an item this game cannot read — a component from a datapack or a mod this world does not
+  have — is drawn red and locked rather than dropped or taken as a reason to refuse the page, and
+  `Delete` on it forgets that item; the other fifty-three slots work. Space over a page slot opens the
+  item editor on it, and there the edit is written into the page rather than sent anywhere, so a slot
+  can be named and given lore without a server being involved. `X` empties a page after a second press,
+  and `R` reads it from disk again, which is the only way to see a page edited outside the game.
 
 ## How this mod was made
 
@@ -66,6 +83,16 @@ human.
 
 **No image is AI-generated**: every texture, sprite, icon, model and drawing in the mod is the
 author's own work.
+
+The client chest is not this mod's idea. It comes from **NBT Editor** by mega12345mega, which has a
+library of item pages on the client — a chest an item can be put into and taken out of again on another
+server — and this is the same idea rewritten for this mod:
+
+- [github.com/mega12345mega/NBT-Editor](https://github.com/mega12345mega/NBT-Editor)
+- [curseforge.com/minecraft/mc-mods/nbt-editor](https://www.curseforge.com/minecraft/mc-mods/nbt-editor)
+
+Only the idea: what is here is written for this mod, to this mod's conventions and this mod's file
+format, and the two libraries are separate.
 
 ## Requirements
 
@@ -115,8 +142,13 @@ vanilla command away from the people who have it.
 - `/profile chat|name create|edit|delete|use|list`, `reload [all|<player>]`
 - `/roll`, `/hroll` — `[players] [maximum] [reason]`, each part optional; `/hroll` hides the result
 - `/playradius`, `/playbox`, `/stopzone`, `/log <targets> <message>`
+- `/clientchest [<page>|<name>]`, `/cc [<page>|<name>]` — the client chest, pages counted from one;
+  `import` moves a library left behind by NBT Editor into this one
 
 The two effect tools are not commands: they are in the mod's own creative tab.
+
+The client chest's command is the exception to the permission line above: the client answers it, the
+server never sees it, and it therefore works on a server that has none of this mod.
 
 The banner is a server setting rather than a client one: an operator sets it once and every player is
 sent it, and a client without this mod draws none.
@@ -275,6 +307,30 @@ drawn where the banner puts them, that the lines still end against the button wh
 text, and that a banner with none of that syntax in it looks exactly as it does in `runClient`.
 
 [Inline]: https://modrinth.com/mod/inline
+
+## Testing with Mouse Tweaks
+
+[Mouse Tweaks] changes what dragging and shift-clicking mean in a container screen: a stack dragged
+with the button held is dropped into every slot it passes over, and a shift-drag fills a whole row. That
+is the one thing about the client chest that cannot be checked in the ordinary run, because the chest
+answers the clicks itself — its menu exists only on the client and no click is ever sent — so a mod
+that synthesises clicks and drags against the open menu is what its handling has to survive.
+
+It goes into a fifth game directory of its own:
+
+```
+./gradlew runMouseTweaks
+```
+
+`installMouseTweaksMods` downloads Mouse Tweaks into `run-mousetweaks/mods` the first time the run is
+used, and `cleanMouseTweaksMods` removes it again. The version is a property in `gradle.properties`.
+Nothing here is compiled against, bundled or required: it is a mod to test beside this one.
+
+What is worth checking there: that a stack dragged across a page's slots lands where Mouse Tweaks would
+put it, that a shift-drag fills a row, and that outside creative nothing crosses between a page and the
+player's inventory however it is dragged.
+
+[Mouse Tweaks]: https://modrinth.com/mod/mouse-tweaks
 
 ## Licence
 
