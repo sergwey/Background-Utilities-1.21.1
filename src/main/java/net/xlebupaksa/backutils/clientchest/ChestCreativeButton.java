@@ -14,9 +14,9 @@ import net.neoforged.neoforge.client.event.ScreenEvent;
  * The chest's button on the creative inventory screen: the bottom left corner of the screen, drawn as
  * the chest it is.
  *
- * <p>The corner rather than beside the panel, because it is the player's library and not part of the
- * creative menu: it is in the same place whatever screen is open, and the corner is the one place on
- * screen that nothing else claims.
+ * <p>The bottom left rather than beside the panel, because it is the player's library and not part of
+ * the creative menu: it is in the same place whatever screen is open, and the edge of the screen is
+ * the part of it that no menu uses — apart from the corner itself, which the item-search mods take.
  *
  * <p>A chest rather than a word. A chest is recognised at a glance, and a button this size is too
  * small for a label — which is what the label was doing before, drawn across the button beside it.
@@ -27,8 +27,17 @@ import net.neoforged.neoforge.client.event.ScreenEvent;
  */
 public final class ChestCreativeButton {
 
-    /** How far the button sits from the corner of the screen. */
-    private static final int MARGIN = 4;
+    /** How far the button sits from the bottom of the screen. */
+    private static final int BOTTOM = 4;
+
+    /**
+     * How far it sits from the left edge.
+     *
+     * <p>Not the corner itself: EMI and JEI both draw two columns of their own buttons in the bottom
+     * left, and a button in the very corner sits under them. This is further in than either of them
+     * reaches, and still the corner of the screen that nothing of the menu uses.
+     */
+    private static final int LEFT = 44;
 
     /** The button's size: half again a slot, so the chest in it reads at a glance. */
     private static final int SIZE = 30;
@@ -46,7 +55,7 @@ public final class ChestCreativeButton {
         if (!(event.getScreen() instanceof CreativeModeInventoryScreen screen)) return;
         // The bottom left of the screen rather than of the panel: the panel is centred, and the corner
         // is where a button that belongs to the player rather than to the menu belongs.
-        event.addListener(new ChestButton(MARGIN, screen.height - MARGIN - SIZE));
+        event.addListener(new ChestButton(LEFT, screen.height - BOTTOM - SIZE));
     }
 
     /** A vanilla-looking button with an item in it, and the tooltip that says what the item is for. */
