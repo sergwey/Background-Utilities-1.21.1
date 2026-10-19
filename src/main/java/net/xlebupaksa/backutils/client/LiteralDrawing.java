@@ -6,13 +6,20 @@ import net.neoforged.api.distmarker.OnlyIn;
 import java.lang.reflect.Method;
 
 /**
- * Ember's "draw this text as it is" switch, borrowed while the item editor's two fields are drawn.
+ * Ember's "read this text as it is" switch, borrowed while the item editor's two fields are drawn and
+ * while it works out what a click on them means.
  *
  * <p>The fields are widgets that draw what they hold, and what they hold is markup. The library builds a
  * literal component out of the text of a field, and Ember parses <em>any</em> literal component that
  * contains markup as it draws it — so without this the tags are consumed as they are typed and a field
  * shows the formatted words rather than the words themselves, which is exactly what an operator typing
  * markup cannot have.
+ *
+ * <p>The same switch answers the other half of a field: how wide its text is. Ember measures a string
+ * holding markup by its parsed width, so a field that draws the characters and measures the parsed words
+ * puts a caret one character late over the tags and at the end of the line past where the words end.
+ * Drawing and measuring therefore have to be under the same switch, which is why the editor holds it
+ * around its input handlers as well as around the frame.
  *
  * <p><b>Reached reflectively, deliberately.</b> The switch lives in Ember's Patchouli compatibility package,
  * which is not an API and may be moved by a release that has nothing to do with this mod. This mod requires

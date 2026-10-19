@@ -7,6 +7,8 @@ import com.lowdragmc.lowdraglib2.gui.ui.UI;
 import com.lowdragmc.lowdraglib2.gui.ui.UIElement;
 import com.lowdragmc.lowdraglib2.gui.ui.data.Horizontal;
 import com.lowdragmc.lowdraglib2.gui.ui.data.Vertical;
+import com.lowdragmc.lowdraglib2.gui.ui.data.ScrollDisplay;
+import com.lowdragmc.lowdraglib2.gui.ui.data.ScrollerMode;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.Button;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.ColorSelector;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.Label;
@@ -30,6 +32,8 @@ import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.Style;
+import java.util.Optional;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.EquipmentSlotGroup;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
@@ -54,6 +58,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
+import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
 /**
@@ -230,8 +235,13 @@ public final class ItemEditorScreen extends Screen {
     /** How far the icon is inset from the corner of the box it is drawn in. */
     private static final int ICON_PAD = 1;
 
-    /** How tall the field the lore's markup is typed in is, which is text rather than drawing. */
-    private static final int LORE_FIELD_HEIGHT = 96;
+    /**
+     * How tall the field the lore's markup is typed in is, which is text rather than drawing.
+     *
+     * <p>A slice of it is the field's own horizontal bar, which is always drawn — see the field's style in
+     * build — so the text keeps the room four lines of it take.
+     */
+    private static final int LORE_FIELD_HEIGHT = 108;
 
     /** What is painted behind the selected characters of the preview. */
     private static final int SELECTION_BG = 0x804A90D9;
@@ -271,7 +281,7 @@ public final class ItemEditorScreen extends Screen {
      */
     private int chosenFrom;
     private int chosenTo;
-    private final TextArea lore = new TextArea();
+    private final LoreArea lore = new LoreArea();
 
     /** The library's colour picker, the same component the profile editor puts on screen. */
     private final ColorSelector picker = new ColorSelector();
@@ -511,6 +521,13 @@ public final class ItemEditorScreen extends Screen {
 
         lore.setLines(List.of(""));
         lore.layout(l -> l.flex(1).height(LORE_FIELD_HEIGHT));
+        // The sideways bar is drawn whether the text needs it or not. A lore line is long by nature — the
+        // markup alone is most of it — and this field is one line high per line, so the end of one is
+        // reached by dragging that bar: a bar that appeared only when the text was wider was a bar nobody
+        // found, which left the tail of a line with no way to be seen at all.
+        lore.textAreaStyle(style -> style
+                .viewMode(ScrollerMode.BOTH)
+                .horizontalScrollDisplay(ScrollDisplay.ALWAYS));
         lore.setLinesResponder(lines -> record());
 
         UIElement loreRow = new UIElement();
@@ -1680,6 +1697,7 @@ public final class ItemEditorScreen extends Screen {
      *              line for each line the lore has
      */
     private void drawPreview(GuiGraphics graphics, UIElement area, List<String> lines, boolean title) {
+        this.refreshFieldScrollers();
         Minecraft minecraft = Minecraft.getInstance();
         int box = Math.round(area.getPositionX());
         int left = box + PREVIEW_INDENT;
@@ -1780,8 +1798,65 @@ public final class ItemEditorScreen extends Screen {
      * place in what the <em>line</em> of the item shows, which is what a selection is counted in: the row's
      * place in its line was added as the row was measured, because a click on the second row of a wrapped lore
      * line is a click on a character of that line and not on the first character of the row.
+     *
+     * <p>{@code literal} says the row is a slice of characters rather than a run: a line this editor cannot
+     * parse is previewed as what the game would show, tags and all, and its rows are cut through those tags
+     * wherever the width falls. The library parses any literal holding markup as it is drawn, so a slice that
+     * happens to hold a whole tag would come out parsed — a colour on one row and the tag it came from on
+     * the row before it — and wider than the width it was cut for. Drawing it literally is what keeps a
+     * row the characters it was measured as.
      */
-    private record Wrapped(Component component, List<Glyph> glyphs) { }
+    private record Wrapped(Component component, List<Glyph> glyphs, boolean literal) { }
+
+    /**
+     * A lore field that can be told to re-measure its own bars.
+     *
+     * <p>Only because that is not something the class does for itself when text arrives from somewhere
+     * other than its own typing — see {@link #refreshFieldScrollers}.
+     */
+    private static final class LoreArea extends TextArea {
+
+        void refreshScrollers() {
+            updateScrollers();
+        }
+
+        /**
+         * Measure the room a bar needs against the characters the field draws.
+         *
+         * <p>The bar's range comes from how wide the text is, and that is one more measurement the library
+         * makes: taken with the markup parsed away it is short, and the end of a long line is the part the
+         * bar cannot reach.
+         */
+        @Override
+        protected void updateScrollers() {
+            LiteralDrawing.begin();
+            try {
+                super.updateScrollers();
+            } finally {
+                LiteralDrawing.end();
+            }
+        }
+    }
+
+    /** The lore text the field's bars were last measured for, so that a change is noticed once. */
+    private List<String> scrolledFor = List.of();
+
+    /**
+     * Gives the field's bars the text that is in it now.
+     *
+     * <p>A field measures how wide its content is when something tells it the text changed, and a paste
+     * is text arriving without that: the sideways bar kept the width of what was there before, so the end
+     * of a pasted line had nothing to scroll to — the bar only grew when the screen was opened again
+     * and the field was built from the text. Looking at the text here costs a comparison per frame and
+     * makes the paste behave like typing.
+     */
+    private void refreshFieldScrollers() {
+        List<String> lines = this.lore.getLines();
+        if (lines.equals(this.scrolledFor)) return;
+        this.scrolledFor = List.copyOf(lines);
+        this.lore.refreshScrollers();
+    }
+
 
     /**
      * The rows one half of the preview was last wrapped into, and the text, the width and the font they were
@@ -1878,22 +1953,48 @@ public final class ItemEditorScreen extends Screen {
             if (end < shown.length() && space > start) end = space + 1;
             if (end == start) end = Math.min(start + 1, shown.length());
 
-            String characters = shown.substring(start, end);
+            // Built, measured and shortened until it fits: the cut above is chosen on plain advances, and
+            // a bold glyph is a wider glyph, so a row can come out wider than the room it has and be cut
+            // off at the box's edge — which nothing scrolls to. Shortening by a character at a time keeps
+            // every character of the line on screen, which is the whole reason for wrapping it.
             Component row;
-            if (asWritten) {
-                row = Component.literal(characters).withStyle(ItemEdit.DEFAULT_STYLE);
-            } else {
-                int[] range = ItemEdit.shownRange(markup, shown, start, end);
-                // The run with the tags over it written round it, and not a slice of the markup: a colour
-                // written round a whole line reaches over the ends of every row it wraps into, and a slice
-                // would leave the row drawn in whatever the hover gives unstyled text — which is how a
-                // coloured name came out white.
-                row = ItemEdit.line(ItemEdit.marked(markup, range[0], range[1]));
+            List<Glyph> drawn;
+            while (true) {
+                String characters = shown.substring(start, end);
+                if (asWritten) {
+                    row = Component.literal(characters).withStyle(ItemEdit.DEFAULT_STYLE);
+                } else {
+                    int[] range = ItemEdit.shownRange(markup, shown, start, end);
+                    // The run with the tags over it written round it, and not a slice of the markup: a colour
+                    // written round a whole line reaches over the ends of every row it wraps into, and a slice
+                    // would leave the row drawn in whatever the hover gives unstyled text — which is how a
+                    // coloured name came out white.
+                    row = ItemEdit.line(ItemEdit.marked(markup, range[0], range[1]));
+                }
+                // The characters' own styles, so that a bold one is measured as the wider glyph it is drawn
+                // as; a literal row is drawn in one style and needs none.
+                drawn = glyphs(font, characters, start, asWritten ? null : styles(row));
+                if (drawn.isEmpty() || end - start <= 1) break;
+                Glyph last = drawn.get(drawn.size() - 1);
+                if (last.x() + last.width() <= width) break;
+                end = shrink(shown, start, end);
             }
-            out.add(new Wrapped(row, glyphs(font, characters, start)));
+            out.add(new Wrapped(row, drawn, asWritten));
             start = end;
         }
         return out;
+    }
+
+    /**
+     * {@return the end of a row shortened by one character}, never at or before its start
+     *
+     * <p>A surrogate pair is one character and loses both halves at once: half of an emoji is not a shorter
+     * line, it is a different one.
+     */
+    private static int shrink(String shown, int start, int end) {
+        int at = end - 1;
+        while (at > start && Character.isLowSurrogate(shown.charAt(at))) at--;
+        return Math.max(start + 1, at);
     }
 
     /**
@@ -1911,17 +2012,43 @@ public final class ItemEditorScreen extends Screen {
      * window is resized — while the distance between two of its characters does not. Whoever draws or measures
      * the row adds its left edge, so a row that has moved takes every character with it.
      */
-    private static List<Glyph> glyphs(Font font, String shown, int from) {
+    private static List<Glyph> glyphs(Font font, String shown, int from, List<Style> styles) {
         List<Glyph> out = new ArrayList<>();
         int pen = 0;
+        int index = 0;
         for (int i = 0; i < shown.length(); ) {
             int codepoint = shown.codePointAt(i);
-            int width = font.width(new String(Character.toChars(codepoint)));
+            String character = new String(Character.toChars(codepoint));
+            // Measured in the style it is drawn in: a bold glyph is a different glyph and a wider one, and a
+            // row measured plain puts the selection and the caret short of the letters they are over — by a
+            // pixel per bold character, which is what makes selecting already-formatted text awkward.
+            Style style = styles == null || index >= styles.size() ? Style.EMPTY : styles.get(index);
+            int width = font.width(Component.literal(character).withStyle(style));
             int length = Character.charCount(codepoint);
             out.add(new Glyph(pen, width, from + i, from + i + length));
             pen += width;
             i += length;
+            index++;
         }
+        return out;
+    }
+
+    /**
+     * {@return the style of each character of a component}, in the order the characters are drawn
+     *
+     * <p>One walk rather than a look-up per character: what the row is drawn with is a component, and the
+     * only way to know which of its characters are bold is to ask it.
+     */
+    private static List<Style> styles(Component component) {
+        List<Style> out = new ArrayList<>();
+        component.visit((style, text) -> {
+            for (int i = 0; i < text.length(); ) {
+                int codepoint = text.codePointAt(i);
+                out.add(style);
+                i += Character.charCount(codepoint);
+            }
+            return Optional.empty();
+        }, Style.EMPTY);
         return out;
     }
 
@@ -1949,7 +2076,12 @@ public final class ItemEditorScreen extends Screen {
         // on the item. The colour given here is only the last resort the game uses for text with none of its
         // own, which the line's default style always gives it. The component is the row's own rather than one
         // built here, which is what gives an effect in it somewhere to keep its state: see {@link DrawnRows}.
+        // A row of characters is drawn with the library's parsing out of the way: nothing in it is markup
+        // this line can use, and letting a slice that happens to hold a whole tag be parsed would draw it as
+        // something the item will not show, and wider than the width it was cut for.
+        if (line.literal()) LiteralDrawing.begin();
         graphics.drawString(font, line.component(), left, y, 0xFFFFFF);
+        if (line.literal()) LiteralDrawing.end();
         drawn.add(new Line(field, y, left, line.glyphs()));
     }
 
@@ -2074,7 +2206,31 @@ public final class ItemEditorScreen extends Screen {
     }
 
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        return literalInput(() -> handleClick(mouseX, mouseY, button));
+    }
+
+    /**
+     * Runs one input handler with the library's literal switch held, and answers what it answered.
+     *
+     * <p>The switch is what makes a field measure the characters it draws. Without it Ember's markup
+     * parsing answers the measurement too: it spends the tags while measuring, so the same line measures
+     * shorter than it is drawn — a click over the tags lands a character late, and a click past where
+     * the parsed text ends is clamped to the end of the line. Drawing has been under this switch since the
+     * fields were added; this is the same scope for the input that decides where the caret goes, which is
+     * the pattern the profile editor already uses for the same reason.
+     */
+    private boolean literalInput(BooleanSupplier body) {
+        LiteralDrawing.begin();
+        try {
+            return body.getAsBoolean();
+        } finally {
+            LiteralDrawing.end();
+        }
+    }
+
+    /** The body of {@link #mouseClicked}, run with the library measuring what it draws. */
+    private boolean handleClick(double mouseX, double mouseY, int button) {
         // The menu is asked before anything else, because it is drawn over the panel and the panel takes
         // every click that lands anywhere on it: a menu asked second never sees one, which is why none of
         // its symbols could be pressed.
@@ -2122,7 +2278,12 @@ public final class ItemEditorScreen extends Screen {
     }
 
     @Override
-    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+        return literalInput(() -> handleDrag(mouseX, mouseY, button, dragX, dragY));
+    }
+
+    /** The body of {@link #mouseDragged}, run with the library measuring what it draws. */
+    private boolean handleDrag(double mouseX, double mouseY, int button, double dragX, double dragY) {
         if (menuOpen() && symbols.mouseDragged(mouseX, mouseY, button, dragX, dragY)) {
             return true;
         }
@@ -2135,7 +2296,12 @@ public final class ItemEditorScreen extends Screen {
     }
 
     @Override
-    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        return literalInput(() -> handleRelease(mouseX, mouseY, button));
+    }
+
+    /** The body of {@link #mouseReleased}, run with the library measuring what it draws. */
+    private boolean handleRelease(double mouseX, double mouseY, int button) {
         boolean menu = menuOpen() && symbols.mouseReleased(mouseX, mouseY, button);
         dragging = false;
         // Letting go of the picker is what applies its colour: the words are selected, a colour is
@@ -2149,7 +2315,12 @@ public final class ItemEditorScreen extends Screen {
     }
 
     @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        return literalInput(() -> handleScroll(mouseX, mouseY, scrollX, scrollY));
+    }
+
+    /** The body of {@link #mouseScrolled}, run with the library measuring what it draws. */
+    private boolean handleScroll(double mouseX, double mouseY, double scrollX, double scrollY) {
         // The menu scrolls its list of symbols, and the panel under it would take the wheel first.
         if (menuOpen() && symbols.mouseScrolled(mouseX, mouseY, scrollX, scrollY)) {
             return true;
@@ -2158,7 +2329,12 @@ public final class ItemEditorScreen extends Screen {
     }
 
     @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        return literalInput(() -> handleKey(keyCode, scanCode, modifiers));
+    }
+
+    /** The body of {@link #keyPressed}, run with the library measuring what it draws. */
+    private boolean handleKey(int keyCode, int scanCode, int modifiers) {
         // The undo and redo chords are taken here: before anything with the focus is asked, and whether or
         // not there is a step to go to. Both halves matter. The library's own text fields keep an undo
         // apiece — see TextField's history — and it answers these very chords, so one that reached the
@@ -2186,7 +2362,12 @@ public final class ItemEditorScreen extends Screen {
     }
 
     @Override
-    public boolean charTyped(char character, int modifiers) {
+public boolean charTyped(char character, int modifiers) {
+        return literalInput(() -> handleChar(character, modifiers));
+    }
+
+    /** The body of {@link #charTyped}, run with the library measuring what it draws. */
+    private boolean handleChar(char character, int modifiers) {
         if (menuOpen() && symbols.isFocused() && symbols.charTyped(character, modifiers)) {
             return true;
         }
