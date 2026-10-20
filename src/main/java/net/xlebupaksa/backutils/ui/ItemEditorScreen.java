@@ -1190,9 +1190,21 @@ public final class ItemEditorScreen extends Screen {
         record();
     }
 
-    /** {@return a number as the box should show it}, without a trailing zero on a whole number */
+    /**
+     * {@return a number as the box should show it}, without a trailing zero on a whole number
+     *
+     * <p>A modifier's amount arrives as a {@code double} that began as a {@code float}, because that is what
+     * an item's own attributes are written with: a diamond sword's attack speed is {@code -2.4f}, and the
+     * double that is made of it prints in full as {@code -2.4000000953674316} — a number that overruns the
+     * box and tells an operator nothing. Written as the float it was, it reads {@code -2.4} again. An amount
+     * that is not a float's value keeps every digit it has rather than being rounded to one it never was.
+     */
     private static String whole(double amount) {
-        return amount == Math.rint(amount) ? String.valueOf((long) amount) : String.valueOf(amount);
+        if (amount == Math.rint(amount)) return String.valueOf((long) amount);
+        float asFloat = (float) amount;
+        // A float promoted back to a double has exactly the value the float had, so this compares the amount
+        // with itself written the shorter way, and nothing is lost when it does not match.
+        return Double.compare(asFloat, amount) == 0 ? String.valueOf(asFloat) : String.valueOf(amount);
     }
 
     /** {@return what a box holds as a number}, or the value it had when it does not read as one */
