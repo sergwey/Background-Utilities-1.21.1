@@ -1,6 +1,7 @@
 **Background Utilities** adds a witness-based action log, dice, chat and display-name profiles, two
-chat channels, a client-side library of items that follows a player between servers, and an operator's
-tools for placing and removing visual effects — for NeoForge 1.21.1.
+chat channels, a client-side library of items that follows a player between servers, an operator's
+tools for placing and removing visual effects, and control over player names — the tags above their
+heads, and whether a name is listed at all — for NeoForge 1.21.1.
 
 ## Install
 
