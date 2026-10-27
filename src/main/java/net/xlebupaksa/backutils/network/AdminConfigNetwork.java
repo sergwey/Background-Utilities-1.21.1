@@ -114,6 +114,12 @@ public final class AdminConfigNetwork {
             // text: the window that asked is answered the way it always was, and everybody else is
             // told as well, or the one operator who edited it would be the only one who saw it.
             BannerTextNetwork.broadcast();
+            // And a batch may have moved the name-tag setting, which is the same kind of thing: the
+            // server's answer about what every client draws. Sent on every batch rather than only
+            // when that key changed, because a client that is told the answer it already has does
+            // nothing with it, and one that is not told is a tag that stays on everybody's screen
+            // until they rejoin.
+            NameTagNetwork.broadcast();
 
             feedback(player, true, saved(checked));
             sendSettings(player);

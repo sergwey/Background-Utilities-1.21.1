@@ -23,10 +23,10 @@ public final class ClientNametagHandler {
     public static void onRenderNameTag(RenderNameTagEvent event) {
         if (!(event.getEntity() instanceof Player player)) return;
 
-        // Asked before the profile is, because a client that has chosen to read no tags has not
-        // chosen to read a nicer one: the answer is refused outright rather than blanked, which is
-        // the same answer the renderer would have given for an entity with no name at all.
-        if (BackUtilsClientConfig.hidesPlayerNameTags()) {
+        // Asked before the profile is, because a server that has asked for no tags has not asked for a
+        // nicer one: the answer is refused outright rather than blanked, which is the same answer the
+        // renderer would have given for an entity with no name at all.
+        if (NameTags.hidden()) {
             event.setCanRender(TriState.FALSE);
             return;
         }

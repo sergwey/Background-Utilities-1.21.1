@@ -188,6 +188,13 @@ public final class BackUtilsSettings {
                     BackUtilsConfig.BANNER_TEXT, BackUtilsConfig::getBannerText,
                     BackUtilsConfig::setBannerText, BackUtilsSettings::checkBanner),
 
+            // The tags above players' heads, beside the banner because they are the same kind of
+            // setting: a rule about what the world looks like, which only a client can carry out and
+            // which is therefore the server's to make and every client's to be told.
+            yesNo("hidePlayerNameTags", "Hide player name tags", Group.MENU,
+                    BackUtilsConfig.HIDE_PLAYER_NAME_TAGS, BackUtilsConfig::hidesPlayerNameTags,
+                    BackUtilsConfig::setHidePlayerNameTags),
+
             number("rollMax", "Default maximum", Group.ROLLS,
                     BackUtilsConfig.ROLL_MAX, () -> (double) BackUtilsConfig.getRollMax(),
                     value -> BackUtilsConfig.setRollMax((int) Math.round(value))),

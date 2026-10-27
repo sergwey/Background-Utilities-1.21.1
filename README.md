@@ -116,10 +116,11 @@ Optional, each one switching a feature off rather than breaking anything:
 Server settings live in `config/backutils-server.toml` and can also be changed from the
 administrator menu's Config tab — the banner's text among them, since it is the server's text that
 every player's client draws, and the palette of profile sounds, which is edited there a row to an
-entry alongside the `/backutils typing_sounds` commands that do the same; the purely client display
-settings, including the operator alert's sound, volume, pitch and icon, are in
-`config/backutils-client.toml` — and so is `hidePlayerNameTags`, which leaves every player's tag
-undrawn in the world while the tab list, the chat and the log keep their names. The mod's databases
+entry alongside the `/backutils typing_sounds` commands that do the same. `hidePlayerNameTags` is a
+server setting too, and among the menu's rows: what is drawn above a player's head is the server's
+rule about the world, so an operator sets it once and every client is sent it, while the tab list, the
+chat and the log keep their names. The purely client display settings, including the operator alert's
+sound, volume, pitch and icon, are in `config/backutils-client.toml`. The mod's databases
 are SQLite files under `serverconfig/backutils/` in the directory a server runs in: the game directory
 for a client's integrated server, and the dedicated server's own directory for a real one.
 

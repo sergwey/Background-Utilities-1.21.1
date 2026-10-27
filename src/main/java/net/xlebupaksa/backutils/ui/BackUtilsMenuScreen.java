@@ -493,12 +493,6 @@ public final class BackUtilsMenuScreen extends Screen {
         scroll.addScrollViewChild(sliderRow(built, "backutils.menu.setting.backdrop_opacity", 0f, 1f,
                 BackUtilsClientConfig::getMenuBackgroundOpacity, "", false,
                 v -> BackUtilsClientConfig.setMenuBackgroundOpacity(v)));
-        // The tags above other players' heads. Here rather than in the server's settings because it is
-        // this player's own screen: one reads them as clutter and another as the only name in the
-        // world, and neither reading is the server's to decide.
-        scroll.addScrollViewChild(toggleRow(built, "backutils.menu.setting.hide_name_tags",
-                BackUtilsClientConfig::hidesPlayerNameTags,
-                BackUtilsClientConfig::setHidePlayerNameTags));
 
         // The operator alert is client-side: the sound is played here, and only ever by the player
         // who chose it, so none of this belongs in the server's config.

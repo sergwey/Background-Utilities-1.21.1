@@ -252,6 +252,27 @@ public final class BackUtilsConfig {
             .define("bannerText", "");
 
     // ------------------------------------------------------------------
+    // Player name tags
+    // ------------------------------------------------------------------
+
+    /**
+     * Whether the tag above a player's head is drawn at all.
+     *
+     * <p>The server's answer rather than the player's, which is the opposite of where this started: a
+     * name tag is the one thing a roleplay server cannot hide from a client that has decided to draw
+     * it, and "you cannot read who that is from across the square" is a rule about the world, not a
+     * preference about one's own screen. So the value lives here, an operator sets it from the menu,
+     * and every client is told — see {@code NameTagNetwork}.
+     *
+     * <p>Only the tag. The tab list, the chat and the log keep their names, and a name an operator has
+     * hidden with {@code /tabhide} is a different thing again: that one is not drawn anywhere.
+     */
+    public static final ModConfigSpec.IntValue HIDE_PLAYER_NAME_TAGS = BUILDER
+            .comment("Whether the tag above a player's head is drawn. 0 = drawn, 1 = hidden.",
+                    "The tag only: the tab list, the chat and the log keep their names.")
+            .defineInRange("hidePlayerNameTags", 0, 0, 1);
+
+    // ------------------------------------------------------------------
     // Typewriter effect for log entries
     // ------------------------------------------------------------------
 
@@ -689,6 +710,24 @@ public final class BackUtilsConfig {
     public static void setBannerText(String value) {
         BANNER_TEXT.set(value == null ? "" : value);
         BANNER_TEXT.save();
+    }
+
+    // ------------------------------------------------------------------
+    // Player name tags
+    // ------------------------------------------------------------------
+
+    /** {@return true when the tags above players' heads are not to be drawn} */
+    public static boolean hidesPlayerNameTags() {
+        try {
+            return HIDE_PLAYER_NAME_TAGS.get() != 0;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public static void setHidePlayerNameTags(boolean hidden) {
+        HIDE_PLAYER_NAME_TAGS.set(hidden ? 1 : 0);
+        HIDE_PLAYER_NAME_TAGS.save();
     }
 
     // ------------------------------------------------------------------
