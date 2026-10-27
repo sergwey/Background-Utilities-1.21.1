@@ -118,9 +118,10 @@ administrator menu's Config tab — the banner's text among them, since it is th
 every player's client draws, and the palette of profile sounds, which is edited there a row to an
 entry alongside the `/backutils typing_sounds` commands that do the same; the purely client display
 settings, including the operator alert's sound, volume, pitch and icon, are in
-`config/backutils-client.toml`. The mod's databases are SQLite
-files under `serverconfig/backutils/` in the directory a server runs in: the game directory for a
-client's integrated server, and the dedicated server's own directory for a real one.
+`config/backutils-client.toml` — and so is `hidePlayerNameTags`, which leaves every player's tag
+undrawn in the world while the tab list, the chat and the log keep their names. The mod's databases
+are SQLite files under `serverconfig/backutils/` in the directory a server runs in: the game directory
+for a client's integrated server, and the dedicated server's own directory for a real one.
 
 ## Commands
 
@@ -133,6 +134,9 @@ vanilla command away from the people who have it.
   chat profile may name: `add <name> <sound id>` stores `name=soundid` in the server's config, a bare
   name in that list stays what Ember's own preset table resolves, and `list` shows what each name plays
 - `/freeze`, `/unfreeze` — hold a player still, or let them go; naming nobody is yourself
+- `/tabhide <player> true|false` — keeps a player's name out of the tab list and the social
+  interactions screen, for everyone, while leaving the player themselves in the world; `/tabhide list`
+  says who is hidden. Kept in memory, so a restart shows every name again
 - `/backutils banner` — the text every player draws beside the log, shown as it was typed;
   `set <text>` sets it in chat's own markup (`\n` starts a new line) and `clear` draws nothing
 - `/chat radius`, `global`, `local`, `separator local|global`, `silence <names...> [<kind> [<true|false>]]`
