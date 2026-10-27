@@ -14,6 +14,7 @@ import net.xlebupaksa.backutils.BackUtilsConfig;
 import net.xlebupaksa.backutils.BackUtilsSettings;
 import net.xlebupaksa.backutils.data.MarkupUtil;
 import net.xlebupaksa.backutils.freeze.FreezeState;
+import net.xlebupaksa.backutils.moderation.TabHidden;
 import net.xlebupaksa.backutils.network.AdminAlerts;
 import net.xlebupaksa.backutils.network.AdminNetwork;
 import net.xlebupaksa.backutils.network.BannerTextNetwork;
@@ -32,8 +33,8 @@ import java.util.List;
  * administrator menu's Log tab, because they describe how the log is drawn rather than what any
  * player may choose.
  *
- * <p>The chat separators live under {@code /chat}; {@code /freeze} and {@code /unfreeze} are roots of
- * their own, registered beside this one.
+ * <p>The chat separators live under {@code /chat}; {@code /freeze}, {@code /unfreeze} and
+ * {@code /tabhide} are roots of their own, registered beside this one.
  */
 public class BackUtilsCommands {
 
@@ -57,6 +58,17 @@ public class BackUtilsCommands {
                 .executes(this::unfreezeSelf)
                 .then(Commands.argument("player", EntityArgument.player())
                         .executes(this::unfreezeTarget)));
+
+        // /tabhide <player> true|false, and /tabhide list - keeping a player's name out of the tab
+        // list. A root of its own beside /freeze: it is reached for in the same moments, and the name
+        // an operator has to get right is the short one. One switch over one player rather than two
+        // commands, and `list` to ask what is hidden without having to remember for whom.
+        d.register(Commands.literal("tabhide")
+                .requires(s -> s.hasPermission(ProfileLoader.PROFILE_PERMISSION_LEVEL))
+                .then(Commands.literal("list").executes(this::tabHiddenList))
+                .then(Commands.argument("player", EntityArgument.player())
+                        .then(Commands.literal("true").executes(ctx -> tabHide(ctx, true)))
+                        .then(Commands.literal("false").executes(ctx -> tabHide(ctx, false)))));
 
         d.register(Commands.literal("backutils")
                 .requires(s -> s.hasPermission(ProfileLoader.PROFILE_PERMISSION_LEVEL))
@@ -199,6 +211,50 @@ public class BackUtilsCommands {
     private static int failed(CommandContext<CommandSourceStack> ctx, Exception e) {
         ctx.getSource().sendFailure(Component.literal("Error: " + e.getMessage()));
         return 0;
+    }
+
+    /**
+     * Hides a player's tab-list name, or puts it back.
+     *
+     * <p>The state is asked for before it is set, the way holding somebody asks: hiding a name that is
+     * already hidden is not an event, and an operator told "hidden" twice cannot tell whether the
+     * first one took. Both answers name the player, because an operator may be acting on somebody
+     * standing in another room.
+     */
+    private int tabHide(CommandContext<CommandSourceStack> ctx, boolean hide) {
+        try {
+            return tabHide(ctx.getSource(), EntityArgument.getPlayer(ctx, "player"), hide);
+        } catch (Exception e) {
+            return failed(ctx, e);
+        }
+    }
+
+    private static int tabHide(CommandSourceStack source, ServerPlayer player, boolean hide) {
+        String name = player.getName().getString();
+        boolean was = TabHidden.hidden(player.getUUID());
+
+        if (hide == was) {
+            source.sendSuccess(() -> Component.literal(name
+                    + (hide ? " is already hidden in the tab list."
+                            : " already has a name in the tab list.")), true);
+            return 0;
+        }
+
+        if (hide) TabHidden.hide(player);
+        else TabHidden.show(player);
+
+        source.sendSuccess(() -> Component.literal(
+                (hide ? "Hid " : "Showed ") + name + " in the tab list."), true);
+        return 1;
+    }
+
+    /** {@return the names being kept out of the tab list}, or a line saying there are none */
+    private int tabHiddenList(CommandContext<CommandSourceStack> ctx) {
+        String names = TabHidden.names();
+        ctx.getSource().sendSuccess(() -> Component.literal(names.isEmpty()
+                ? "Nobody is hidden in the tab list."
+                : "Hidden in the tab list: " + names + "."), false);
+        return names.isEmpty() ? 0 : 1;
     }
 
     private int summary(CommandContext<CommandSourceStack> ctx) {

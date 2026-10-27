@@ -52,8 +52,13 @@ Mod adding multiple utilities for background administration on roleplay-based se
 '''
 
 # The [[mixins]] block allows you to declare your mixin config to FML so that it gets loaded.
-#[[mixins]]
-#config="${mod_id}.mixins.json"
+#
+# The one thing this mod mixes into: the two player lists the client draws — the tab list and the
+# social interactions screen — so that a name an operator has hidden is left out of them. Both are
+# drawn on the client from the client's own records of who is online, and no message can take a row
+# out of a list the client builds for itself.
+[[mixins]]
+config="${mod_id}.mixins.json"
 
 # The [[accessTransformers]] block allows you to declare where your AT file is.
 # If this block is omitted, a fallback attempt will be made to load an AT from META-INF/accesstransformer.cfg

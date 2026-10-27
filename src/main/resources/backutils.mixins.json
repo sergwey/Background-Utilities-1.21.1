@@ -1,0 +1,14 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "net.xlebupaksa.backutils.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "PlayerTabOverlayMixin",
+    "SocialInteractionsPlayerListMixin",
+    "SocialInteractionsScreenMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

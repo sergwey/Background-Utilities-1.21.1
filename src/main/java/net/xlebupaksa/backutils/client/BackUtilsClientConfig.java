@@ -72,6 +72,23 @@ public final class BackUtilsClientConfig {
             .defineInRange("menuBackgroundOpacity", 0.5D, 0.0D, 1.0D);
 
     // ------------------------------------------------------------------
+    // Name tags
+    // ------------------------------------------------------------------
+
+    /**
+     * Hides the tag drawn above other players' heads in the world.
+     *
+     * <p>Only the tag: the tab list, chat and the roleplay log keep their names, because a name in a
+     * list is read on purpose and the tag above a head is what a roleplay server often does not want
+     * read at a glance. Whatever the server draws on that tag goes with it, a scoreboard team's prefix
+     * and suffix among them, since they are drawn as part of it.
+     */
+    public static final ModConfigSpec.BooleanValue HIDE_PLAYER_NAME_TAGS = BUILDER
+            .comment("Hide the name drawn above other players in the world.",
+                    "Only the tag above the player: the tab list, chat and the log keep their names.")
+            .define("hidePlayerNameTags", false);
+
+    // ------------------------------------------------------------------
     // Background administrator alerts (per player and client-side: nothing here affects what the
     // server records or who may read it)
     // ------------------------------------------------------------------
@@ -226,6 +243,14 @@ public final class BackUtilsClientConfig {
         }
     }
 
+    public static boolean hidesPlayerNameTags() {
+        try {
+            return HIDE_PLAYER_NAME_TAGS.get();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     // ------------------------------------------------------------------
     // Writing back (each setter persists, then tells the overlay: saving raises no reload event)
     // ------------------------------------------------------------------
@@ -284,6 +309,10 @@ public final class BackUtilsClientConfig {
 
     public static void setMenuBackgroundOpacity(double value) {
         apply(MENU_BACKGROUND_OPACITY, value);
+    }
+
+    public static void setHidePlayerNameTags(boolean value) {
+        apply(HIDE_PLAYER_NAME_TAGS, value);
     }
 
     // ------------------------------------------------------------------

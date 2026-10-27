@@ -29,6 +29,7 @@ import net.xlebupaksa.backutils.log.RoleplayLogTicker;
 import net.xlebupaksa.backutils.effect.EffectReplay;
 import net.xlebupaksa.backutils.effect.EffectTicker;
 import net.xlebupaksa.backutils.freeze.FreezeState;
+import net.xlebupaksa.backutils.moderation.TabHidden;
 import net.xlebupaksa.backutils.music.MusicZoneTicker;
 import net.xlebupaksa.backutils.profile.PlayerProfileEvents;
 import net.xlebupaksa.backutils.profile.TabListNameHandler;
@@ -79,6 +80,8 @@ public class BackUtils {
         NeoForge.EVENT_BUS.register(new EffectReplay());
         // Holding a player still, and refusing what they would otherwise do while held.
         NeoForge.EVENT_BUS.register(new FreezeState());
+        // The names kept out of the tab list, and the moments a new tab list has to hear about them.
+        NeoForge.EVENT_BUS.register(new TabHidden());
 
         modContainer.registerConfig(ModConfig.Type.SERVER, BackUtilsConfig.SPEC);
 

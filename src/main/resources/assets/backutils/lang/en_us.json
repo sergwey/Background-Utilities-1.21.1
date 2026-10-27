@@ -187,6 +187,7 @@
   "backutils.menu.setting.backdrop_opacity": "Backdrop opacity",
   "backutils.menu.setting.fade": "Fade",
   "backutils.menu.setting.font_size": "Font size",
+  "backutils.menu.setting.hide_name_tags": "Hide player name tags",
   "backutils.menu.setting.line_lifetime": "Line lifetime",
   "backutils.menu.setting.lines_kept": "Lines kept",
   "backutils.menu.setting.log": "Show roleplay log",

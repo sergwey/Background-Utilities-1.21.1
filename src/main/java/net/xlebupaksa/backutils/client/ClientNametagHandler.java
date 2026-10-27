@@ -5,6 +5,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.scores.PlayerTeam;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.client.event.RenderNameTagEvent;
+import net.neoforged.neoforge.common.util.TriState;
 import net.xlebupaksa.backutils.data.ModAttachments;
 import net.xlebupaksa.backutils.data.ProfileSnapshot;
 import net.xlebupaksa.backutils.profile.ProfileText;
@@ -21,6 +22,14 @@ public final class ClientNametagHandler {
     @SubscribeEvent
     public static void onRenderNameTag(RenderNameTagEvent event) {
         if (!(event.getEntity() instanceof Player player)) return;
+
+        // Asked before the profile is, because a client that has chosen to read no tags has not
+        // chosen to read a nicer one: the answer is refused outright rather than blanked, which is
+        // the same answer the renderer would have given for an entity with no name at all.
+        if (BackUtilsClientConfig.hidesPlayerNameTags()) {
+            event.setCanRender(TriState.FALSE);
+            return;
+        }
 
         ProfileSnapshot snapshot = player.getData(ModAttachments.PROFILE.get());
         if (snapshot == null || snapshot.nameProfileId() == 0L) return;

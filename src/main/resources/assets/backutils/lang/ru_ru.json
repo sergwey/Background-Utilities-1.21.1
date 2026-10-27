@@ -187,6 +187,7 @@
   "backutils.menu.setting.backdrop_opacity": "Прозрачность",
   "backutils.menu.setting.fade": "Затухание",
   "backutils.menu.setting.font_size": "Размер шрифта",
+  "backutils.menu.setting.hide_name_tags": "Скрыть ники над игроками",
   "backutils.menu.setting.line_lifetime": "Время жизни",
   "backutils.menu.setting.lines_kept": "Хранимых строк",
   "backutils.menu.setting.log": "Журнал рп",
