@@ -133,13 +133,20 @@ public final class ZoneMusicPlayer {
         return SoundSource.MUSIC;
     }
 
-    /** One zone's loop: the engine re-reads a ticking instance's volume every tick, so mutating the
-     * field in {@link #tick()} is all a fade needs. */
+    /**
+     * One zone's loop: the engine re-reads a ticking instance's volume and pitch every tick, so
+     * mutating those fields in {@link #tick()} is all a fade needs.
+     *
+     * <p>Pitch is the inherited field and must stay that way. This class used to declare a
+     * {@code float pitch} of its own, which shadowed the one {@code AbstractSoundInstance} answers
+     * {@code getPitch()} from: every loop was created and retuned with the pitch the server sent and
+     * then played at 1.0, so {@code /playradius} and {@code /playbox} took a pitch and did nothing
+     * with it.
+     */
     private static final class Loop extends AbstractSoundInstance implements TickableSoundInstance {
 
         private float target;
         private float step;
-        private float pitch;
         private boolean stopped;
 
         Loop(ResourceLocation location, SoundSource source) {
