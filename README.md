@@ -35,9 +35,11 @@ log, and a pair of tools for placing and removing visual effects.
   log and in the administrator menu; it is never dressed and never sounds an extreme, since either
   would say which number came up.
 - **Chat channels.** A plain message goes to local chat, which reaches the players around you; a
-  leading `!` sends it to global chat. Each channel has its own separator and can be open to
-  everyone or restricted to staff, and a player can be silenced in local chat, in global chat, for
-  actions, or for private messages.
+  leading `!` sends it to global chat. Staff read every local line wherever they are — an operator in
+  another world is still the person a complaint about a line is made to — while everyone else hears
+  only what is said near them. Each channel has its own separator and can be open to everyone or
+  restricted to staff, and a player can be silenced in local chat, in global chat, for actions, or for
+  private messages.
 - **Profiles.** Players write their own chat formats — colour, weight, gradients, animations, an
   optional typing sound — in the corner menu. Operators write display names and manage any player's
   profiles from the administrator menu. A player's markup is checked against an allow-list; an

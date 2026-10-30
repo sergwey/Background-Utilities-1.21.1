@@ -47,6 +47,12 @@ public class ChatHandler {
     /** Prefixes are single characters so they cannot collide with each other. */
     private static final String GLOBAL_PREFIX = "!";
 
+    /**
+     * The permission level that makes a player staff here: the level the commands and the menus ask
+     * for, so "staff" means one thing in this mod rather than two.
+     */
+    private static final int STAFF_LEVEL = 2;
+
     /** What a raw chat message turns into. */
     public enum Route { GLOBAL_CHAT, ACTION, SILENT_ACTION, LOCAL_CHAT }
 
@@ -262,7 +268,7 @@ public class ChatHandler {
         boolean staffOnly = global
                 ? BackUtilsConfig.isGlobalChatStaffOnly()
                 : BackUtilsConfig.isLocalChatStaffOnly();
-        if (staffOnly && !player.hasPermissions(2)) {
+        if (staffOnly && !player.hasPermissions(STAFF_LEVEL)) {
             player.sendSystemMessage(notice(Component.translatable("backutils.chat.staff_only",
                     channelName)), false);
             return false;
@@ -302,8 +308,10 @@ public class ChatHandler {
     }
 
     /**
-     * {@return everyone who should receive this message: the sender always, and for local chat the players in the same
-     * dimension within the configured radius.
+     * {@return everyone who should receive this message}
+     *
+     * <p>Global chat is every player, because it is global. Local chat is the sender, the staff, and
+     * the players near enough — see {@link #hearsLocal}, which is where that rule is written down.
      */
     private static List<ServerPlayer> audience(MinecraftServer server, ServerPlayer sender,
                                                boolean global) {
@@ -313,15 +321,34 @@ public class ChatHandler {
         double radius = BackUtilsConfig.getLocalChatRadius();
         double limit = radius * radius;
 
-        List<ServerPlayer> nearby = new ArrayList<>();
+        List<ServerPlayer> audience = new ArrayList<>();
         for (ServerPlayer candidate : list) {
-            // The sender always hears their own line.
-            if (candidate == sender || (sameLevel(candidate, sender)
-                    && candidate.distanceToSqr(sender) <= limit)) {
-                nearby.add(candidate);
+            if (hearsLocal(candidate == sender, candidate.hasPermissions(STAFF_LEVEL),
+                    sameLevel(candidate, sender), candidate.distanceToSqr(sender), limit)) {
+                audience.add(candidate);
             }
         }
-        return nearby;
+        return audience;
+    }
+
+    /**
+     * {@return true when this player is to hear a local line} — the whole of who hears one, in one
+     * place rather than three clauses inside a loop.
+     *
+     * <p>The sender always hears their own line. Staff hear every local line wherever they are, and
+     * that is the point of the exception: a local line is most of what a roleplay server says, and
+     * the people who have to be able to read it are the ones who are not standing in it — an operator
+     * in the next building, or in another world, is still the person a complaint about that line is
+     * made to. Everyone else hears what is said in their own dimension, near enough to hear it, which
+     * is what makes it local rather than global.
+     *
+     * <p>The facts rather than the players, because they are what the rule is about and because a
+     * check can then state all four answers without a server to stand players in.
+     */
+    static boolean hearsLocal(boolean isSender, boolean isStaff, boolean sameDimension,
+                              double distanceSqr, double radiusSqr) {
+        if (isSender || isStaff) return true;
+        return sameDimension && distanceSqr <= radiusSqr;
     }
 
     /**
