@@ -6,8 +6,7 @@ import net.minecraft.world.entity.HumanoidArm;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
-import net.xlebupaksa.backutils.item.DeleteToolItem;
-import net.xlebupaksa.backutils.item.EffectToolItem;
+import net.xlebupaksa.backutils.item.ToolItems;
 import com.mojang.blaze3d.vertex.PoseStack;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -36,7 +35,7 @@ public class ItemInHandLayerMixin {
                                               ItemDisplayContext context, HumanoidArm arm,
                                               PoseStack poses, MultiBufferSource buffers, int light,
                                               CallbackInfo ci) {
-        if (stack.getItem() instanceof EffectToolItem || stack.getItem() instanceof DeleteToolItem) {
+        if (ToolItems.isTool(stack)) {
             ci.cancel();
         }
     }
