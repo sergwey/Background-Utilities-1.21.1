@@ -361,5 +361,6 @@ Licence. The second is the whole of this mod's Sable support — the compatibili
 wiki points a third-party mod at, whose calls answer "no sub-level" when Sable is not installed. Sable
 itself is under PolyForm Shield, is neither compiled against nor bundled here, and no code from it is
 copied. Nothing else here is bundled, and the mods this one is tested alongside — ldlib2, Photon,
-Ember's Text API, Connector, the Forgified Fabric API, Symbol Chat, RP Renames, CIT Resewn and
-CITResewnNeoPatcher — are separate downloads that are never redistributed by this project.
+Sable, Ember's Text API, Connector, the Forgified Fabric API, Symbol Chat, RP Renames, CIT Resewn and
+CITResewnNeoPatcher — are separate downloads that are never redistributed by this project. Sable is
+downloaded into the two default runs and nowhere else, and those folders are ignored by git.
