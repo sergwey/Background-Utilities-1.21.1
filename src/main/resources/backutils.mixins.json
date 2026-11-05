@@ -4,6 +4,7 @@
   "package": "net.xlebupaksa.backutils.mixin",
   "compatibilityLevel": "JAVA_21",
   "client": [
+    "ItemInHandLayerMixin",
     "PlayerTabOverlayMixin",
     "SocialInteractionsPlayerListMixin",
     "SocialInteractionsScreenMixin"
