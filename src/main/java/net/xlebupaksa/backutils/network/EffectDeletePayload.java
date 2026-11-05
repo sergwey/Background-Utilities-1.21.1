@@ -42,10 +42,13 @@ import java.util.List;
  * @param subLevel the moving structure the block is on, or empty for the world; the coordinates above
  *                 are then the structure's own, and a block of the same numbers on another structure
  *                 is another place
+ * @param face the surface a block-side effect hangs off, or empty when the whole block is meant; a
+ *             block-side effect's place is that surface and not the block, so two of them on two
+ *             faces are two places
  * @param effectIds the rows to remove, for {@link Kind#EFFECTS} and empty otherwise
  */
 public record EffectDeletePayload(Kind kind, double x, double y, double z, String subLevel,
-                                  List<Long> effectIds)
+                                  String face, List<Long> effectIds)
         implements CustomPacketPayload {
 
     /**
@@ -99,51 +102,84 @@ public record EffectDeletePayload(Kind kind, double x, double y, double z, Strin
     /** The longest sub-level identity a claim may carry, which is the width of one with room to spare. */
     private static final int MAX_SUB_LEVEL = 64;
 
+    /** The longest face name a claim may carry, which is the width of the name of a face. */
+    private static final int MAX_FACE_NAME = 16;
+
     public static final CustomPacketPayload.Type<EffectDeletePayload> TYPE =
             new CustomPacketPayload.Type<>(
                     ResourceLocation.fromNamespaceAndPath(BackUtils.MOD_ID, "effect_delete"));
 
+    /**
+     * Written out rather than composed: {@code StreamCodec.composite} takes at most six pairs and this
+     * record has seven values, and nesting two of them to reach it would need a holder type that exists
+     * only to be taken apart again.
+     */
     public static final StreamCodec<RegistryFriendlyByteBuf, EffectDeletePayload> STREAM_CODEC =
-            StreamCodec.composite(
-                    ByteBufCodecs.VAR_INT.map(Kind::byId, Kind::ordinal), EffectDeletePayload::kind,
-                    ByteBufCodecs.DOUBLE, EffectDeletePayload::x,
-                    ByteBufCodecs.DOUBLE, EffectDeletePayload::y,
-                    ByteBufCodecs.DOUBLE, EffectDeletePayload::z,
-                    ByteBufCodecs.stringUtf8(MAX_SUB_LEVEL), EffectDeletePayload::subLevel,
-                    ByteBufCodecs.VAR_LONG.apply(ByteBufCodecs.list(MAX_EFFECTS)),
-                    EffectDeletePayload::effectIds,
-                    EffectDeletePayload::new);
+            new StreamCodec<>() {
+                @Override
+                public EffectDeletePayload decode(RegistryFriendlyByteBuf buf) {
+                    return new EffectDeletePayload(
+                            Kind.byId(buf.readVarInt()),
+                            buf.readDouble(), buf.readDouble(), buf.readDouble(),
+                            buf.readUtf(MAX_SUB_LEVEL),
+                            buf.readUtf(MAX_FACE_NAME),
+                            // Read through the capped list codec rather than straight off the buffer,
+                            // so a claim cannot carry more rows than one click can name.
+                            ByteBufCodecs.VAR_LONG.apply(ByteBufCodecs.list(MAX_EFFECTS)).decode(buf));
+                }
+
+                @Override
+                public void encode(RegistryFriendlyByteBuf buf, EffectDeletePayload payload) {
+                    buf.writeVarInt(payload.kind().ordinal());
+                    buf.writeDouble(payload.x());
+                    buf.writeDouble(payload.y());
+                    buf.writeDouble(payload.z());
+                    buf.writeUtf(payload.subLevel(), MAX_SUB_LEVEL);
+                    buf.writeUtf(payload.face(), MAX_FACE_NAME);
+                    ByteBufCodecs.VAR_LONG.apply(ByteBufCodecs.list(MAX_EFFECTS))
+                            .encode(buf, payload.effectIds());
+                }
+            };
 
     /** A payload built by hand is corrected here rather than at every use of it. */
     public EffectDeletePayload {
         kind = kind == null ? Kind.NONE : kind;
         subLevel = subLevel == null ? "" : subLevel.trim();
+        face = face == null ? "" : face.trim();
         effectIds = effectIds == null ? List.of() : List.copyOf(effectIds);
     }
 
     /** {@return a claim that one block be emptied} */
     public static EffectDeletePayload atBlock(double x, double y, double z) {
-        return new EffectDeletePayload(Kind.BLOCK, x, y, z, "", List.of());
+        return new EffectDeletePayload(Kind.BLOCK, x, y, z, "", "", List.of());
     }
 
     /**
-     * {@return a claim that one block of a moving structure be emptied}
+     * {@return a claim that one surface of a block be emptied}
      *
-     * <p>The numbers are the structure's own, which is what its rows hold: a click names the place the
-     * cube is drawn on, and the row for it is written in the space that cube was placed in.
+     * <p>A block-side effect's place is the face it hangs off, so a click on its cube names that face:
+     * three effects on three faces of one block are three places, and each is taken away on its own.
+     * The face is left empty for a whole block, which is what a block placement's cube means — the
+     * coordinates and the structure are the ones every block claim carries.
      */
-    public static EffectDeletePayload atBlock(double x, double y, double z, String subLevel) {
-        return new EffectDeletePayload(Kind.BLOCK, x, y, z, subLevel, List.of());
+    public static EffectDeletePayload atBlock(double x, double y, double z, String subLevel,
+                                              String face) {
+        return new EffectDeletePayload(Kind.BLOCK, x, y, z, subLevel, face, List.of());
     }
 
     /** {@return a claim that the given rows be removed} */
     public static EffectDeletePayload effects(List<Long> effectIds) {
-        return new EffectDeletePayload(Kind.EFFECTS, 0.0D, 0.0D, 0.0D, "", effectIds);
+        return new EffectDeletePayload(Kind.EFFECTS, 0.0D, 0.0D, 0.0D, "", "", effectIds);
     }
 
     /** {@return true when this claim names a place on a moving structure rather than in the world} */
     public boolean onSubLevel() {
         return !subLevel.isEmpty();
+    }
+
+    /** {@return true when this claim names one surface rather than a whole block} */
+    public boolean onSurface() {
+        return !face.isEmpty();
     }
 
     @Override

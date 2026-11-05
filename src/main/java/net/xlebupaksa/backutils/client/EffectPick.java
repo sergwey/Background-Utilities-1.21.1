@@ -20,6 +20,7 @@ import net.xlebupaksa.backutils.item.EffectToolPlacement.Cube;
 import net.xlebupaksa.backutils.item.EffectToolPlacement.Point;
 import net.xlebupaksa.backutils.network.EffectPlacedPayload;
 import net.xlebupaksa.backutils.network.EffectToolNetwork;
+import org.joml.Quaternionf;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -250,6 +251,23 @@ final class EffectPick {
         if (display == null) return effectAt(entry.attachment());
         Vec3 at = display.getEyePosition(partialTick);
         return entry.attachment().at(at.x, at.y, at.z);
+    }
+
+    /**
+     * {@return the turn of the hull an effect is on, or null for a place in the world}
+     *
+     * <p>A cube is drawn aligned to the world, which is right for a block that is aligned to it: the
+     * box's faces then match the block's. On a hull that is turned they do not, and a box lying across
+     * the middle of a face reads as a box in the wrong place however exactly its centre is worked out.
+     * So the box is turned with the hull, and the preview turns with it for the same reason.
+     */
+    static Quaternionf hullRotation(PlacedEffects.Entry entry, float partialTick) {
+        if (!entry.placement().onSubLevel()) return null;
+        ClientLevel level = Minecraft.getInstance().level;
+        SubLevelAccess subLevel = level == null ? null : entry.subLevel(level);
+        return subLevel == null
+                ? null
+                : SableSubLevels.worldRotation(subLevel, partialTick, new Quaternionf());
     }
 
     /**

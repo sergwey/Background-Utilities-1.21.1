@@ -8,6 +8,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.InteractionHand;
 import net.xlebupaksa.backutils.data.EffectPlacement;
 import net.xlebupaksa.backutils.item.DeleteToolItem;
+import net.xlebupaksa.backutils.item.EffectToolConfig;
 import net.xlebupaksa.backutils.network.EffectDeletePayload;
 import net.xlebupaksa.backutils.network.EffectToolNetwork;
 import net.neoforged.api.distmarker.Dist;
@@ -176,11 +177,18 @@ public final class DeleteToolClick {
         // A block on a moving structure is named in that structure's own space, because that is what
         // its rows hold. The cube is drawn wherever the hull has carried it, so the world block under
         // the crosshair is not a place any row was written at: the row's own block and hull are.
+        //
+        // A block-side effect's place is the face it hangs off, so the face is named too: three effects
+        // on three faces of one block are three places, and a click is about one of them. A block
+        // placement has no face of its own and still empties the whole block, which is what its cube
+        // has always said it would.
         EffectPlacement where = scene.hit().placement();
+        boolean side = where.mode() == EffectToolConfig.Mode.BLOCK_SIDE;
         EffectToolNetwork.sendDeletion(where.onSubLevel()
                 ? EffectDeletePayload.atBlock(where.blockX(), where.blockY(), where.blockZ(),
-                        where.subLevel())
-                : EffectDeletePayload.atBlock(block.getX(), block.getY(), block.getZ()));
+                        where.subLevel(), side ? where.face().name() : "")
+                : EffectDeletePayload.atBlock(block.getX(), block.getY(), block.getZ(), "",
+                        side ? where.face().name() : ""));
     }
 
     /**

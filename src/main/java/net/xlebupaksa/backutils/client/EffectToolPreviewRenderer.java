@@ -25,6 +25,7 @@ import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import dev.ryanhcode.sable.companion.SubLevelAccess;
 import net.xlebupaksa.backutils.compat.SableSubLevels;
 import net.xlebupaksa.backutils.data.EffectPlacement;
+import org.joml.Quaternionf;
 import net.xlebupaksa.backutils.item.DeleteToolItem;
 import net.xlebupaksa.backutils.item.EffectAttachment;
 import net.xlebupaksa.backutils.item.EffectToolConfig;
@@ -285,7 +286,8 @@ public final class EffectToolPreviewRenderer {
             // so it is projected out of that space before it is drawn — with the pose the hull itself
             // is drawn with, which is the only thing that keeps the two together while a ship turns.
             Cube drawn = project(look.subLevel(), cube);
-            drawCube(poses, buffers, drawn, level, cameraPos, GREEN);
+            drawCube(poses, buffers, drawn, level, cameraPos, GREEN,
+                    hullRotation(look.subLevel(), partialTick));
             if (EffectToolPlacement.showsDirection(config)) {
                 Segment toHand = EffectToolPlacement.directionLine(
                         handOf(look.eye(), look.direction()), drawn);
@@ -406,7 +408,8 @@ public final class EffectToolPreviewRenderer {
             // hangs off, and a block-side cube is drawn outside the block it belongs to.
             boolean deleted = flashing.contains(EffectPick.blockOf(entry, partialTick).asLong());
             if (deleted && !lit) continue;
-            drawCube(poses, buffers, cube, level, camera, hovered || deleted ? RED : PINK);
+            drawCube(poses, buffers, cube, level, camera, hovered || deleted ? RED : PINK,
+                    EffectPick.hullRotation(entry, partialTick));
         }
 
         // A place whose effects have all gone has nothing left to draw a cube from, so the flash is
@@ -537,6 +540,18 @@ public final class EffectToolPreviewRenderer {
      */
     private static void drawCube(PoseStack poses, MultiBufferSource.BufferSource buffers, Cube cube,
                                  Level level, Vec3 camera, Rgb colour) {
+        drawCube(poses, buffers, cube, level, camera, colour, null);
+    }
+
+    /**
+     * Draws one cube, optionally turned about its own middle.
+     *
+     * <p>The turn is applied about the cube's centre rather than about its corner: a box bolted to a
+     * turned hull has to turn where it stands, and turning a corner-anchored one would swing it off the
+     * face by half its width — which is the misalignment the turn is there to remove.
+     */
+    private static void drawCube(PoseStack poses, MultiBufferSource.BufferSource buffers, Cube cube,
+                                 Level level, Vec3 camera, Rgb colour, Quaternionf rotation) {
         boolean insideBlock = occludes(level, cube.centre());
         boolean[] buried = new boolean[Face.ALL.size()];
         for (int i = 0; i < Face.ALL.size(); i++) {
@@ -544,8 +559,16 @@ public final class EffectToolPreviewRenderer {
         }
 
         poses.pushPose();
-        poses.translate(cube.min().x() - camera.x(), cube.min().y() - camera.y(),
-                cube.min().z() - camera.z());
+        if (rotation == null) {
+            poses.translate(cube.min().x() - camera.x(), cube.min().y() - camera.y(),
+                    cube.min().z() - camera.z());
+        } else {
+            double half = cube.size() / 2.0D;
+            poses.translate(cube.centre().x() - camera.x(), cube.centre().y() - camera.y(),
+                    cube.centre().z() - camera.z());
+            poses.mulPose(rotation);
+            poses.translate(-half, -half, -half);
+        }
         PoseStack.Pose pose = poses.last();
 
         // The cube's own colour on the faces that are not inside anything, and blue on the faces that
@@ -830,6 +853,13 @@ public final class EffectToolPreviewRenderer {
         Point centre = project(subLevel, cube.centre());
         return new Cube(centre.plus(-cube.size() / 2.0D, -cube.height() / 2.0D,
                 -cube.depth() / 2.0D), cube.size(), cube.height(), cube.depth());
+    }
+
+    /** {@return the turn of a hull's own space in the world, or null for a place in the world} */
+    private static Quaternionf hullRotation(SubLevelAccess subLevel, float partialTick) {
+        return subLevel == null
+                ? null
+                : SableSubLevels.worldRotation(subLevel, partialTick, new Quaternionf());
     }
 
     /** {@return true when the block at a probe point is one that hides what is behind it} */

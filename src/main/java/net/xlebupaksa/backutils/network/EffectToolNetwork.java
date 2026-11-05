@@ -350,10 +350,14 @@ public final class EffectToolNetwork {
         MinecraftServer server = player.getServer();
         switch (payload.kind()) {
             case BLOCK -> {
-                EffectPlacement where = new EffectPlacement(Mode.BLOCK,
+                EffectPlacement where = new EffectPlacement(
+                        payload.onSurface() ? Mode.BLOCK_SIDE : Mode.BLOCK,
                         player.level().dimension().location().toString(),
                         payload.x(), payload.y(), payload.z(), 0.0F, 0.0F,
-                        EffectToolPlacement.Face.UP, payload.subLevel());
+                        payload.onSurface()
+                                ? EffectToolPlacement.Face.byName(payload.face())
+                                : EffectToolPlacement.Face.UP,
+                        payload.subLevel());
                 // A place is named by coordinates, which is the one thing here the server cannot
                 // derive: the mode, the settings and the rows all come from the table. What bounds it
                 // is the same thing that bounds a placement — the crosshair a click was made with
@@ -418,7 +422,11 @@ public final class EffectToolNetwork {
         if (row == null || !row.dimension().equals(level.dimension().location().toString())) {
             return false;
         }
-        if (effect.sameBlockAs(where)) return true;
+        if (effect.samePlaceAs(where)) return true;
+        // A block placement is also emptied by asking for the block an effect has been carried into,
+        // which is the case the anchor of an accurate effect needs. A block-side place is a surface,
+        // and a surface that moves is not one this can answer for.
+        if (where.mode() == Mode.BLOCK_SIDE) return false;
 
         EffectToolPlacement.Point now = EffectAnchor.whereIs(level, effect);
         if (now == null) return false;

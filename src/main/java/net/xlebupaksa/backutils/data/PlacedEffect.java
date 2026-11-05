@@ -105,6 +105,21 @@ public record PlacedEffect(
                 && placement.blockZ() == other.blockZ();
     }
 
+    /**
+     * {@return true when this effect sits in the same place as the given one}
+     *
+     * <p>A place is the whole block for a block placement and <b>one surface of it</b> for a
+     * block-side one. A block-side effect hangs off the face it was aimed at, so two of them on two
+     * faces of one block are in two places: clicking one cube must take that one away and leave the
+     * other standing, which is not what reading the place as the block does.
+     */
+    public boolean samePlaceAs(EffectPlacement other) {
+        if (!sameBlockAs(other)) return false;
+        if (other.mode() != EffectToolConfig.Mode.BLOCK_SIDE) return true;
+        return placement.mode() == EffectToolConfig.Mode.BLOCK_SIDE
+                && placement.face() == other.face();
+    }
+
     /** {@return a short description, for command output} */
     public String describe() {
         String life = permanent() ? "permanent" : "ends at " + expiresAtMillis;
