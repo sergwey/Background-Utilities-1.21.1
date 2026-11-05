@@ -98,8 +98,7 @@ final class EffectPick {
             // decided, so the drawn cube and the picked one cannot be two different boxes. The point
             // is read for a moment rather than taken from the row, because an accurate effect follows
             // the display it hangs off and that display can be moved — see anchorAt.
-            Point at = markerCentre(entry.anchor(partialTick), entry.placement().mode(),
-                    entry.placement().face());
+            Point at = markerAt(entry, partialTick);
             return new Cube(at.plus(-ITEM_SIZE / 2.0D, -ITEM_SIZE / 2.0D, -ITEM_SIZE / 2.0D),
                     ITEM_SIZE);
         }
@@ -118,9 +117,11 @@ final class EffectPick {
      * of it stands in front of the surface: a nudge of the drawn cube's size and not of the old
      * block-sized half, which would move it far more than the surface it is meant to clear.
      *
-     * <p>The normal is the face's own, in world axes, read from the same place
+     * <p>The normal is the face's own, read from the same place
      * {@link net.xlebupaksa.backutils.item.EffectAttachment#offsetOf} reads the half-block that puts
-     * the effect on the surface. The effect's own rotation is deliberately not applied: this is where
+     * the effect on the surface. In the axes of the <em>block</em> rather than of the world, which is
+     * why a block on a moving structure has its push applied before the pose — see {@link #markerAt}.
+     * The effect's own rotation is deliberately not applied: this is where
      * a cube is drawn, not where the effect points, and a rotated effect must not drag the box off
      * the surface it hangs from.
      *
@@ -136,6 +137,36 @@ final class EffectPick {
         Point normal = face == null ? EffectToolPlacement.Face.UP.normal() : face.normal();
         double out = ITEM_SIZE / 2.0D + SURFACE_CLEARANCE;
         return anchor.plus(normal.x() * out, normal.y() * out, normal.z() * out);
+    }
+
+    /**
+     * {@return the point a placed effect's cube is centred on, in the world}
+     *
+     * <p>The clearance above is a push <b>out of the face</b>, and a face belongs to whatever the
+     * block belongs to. On a block in the world that is the same thing as a world direction, but on a
+     * block of a moving structure it is not: the push has to be made in the structure's own space,
+     * before its pose, or a turned hull sends the cube sideways across the face instead of out of it.
+     * Half a cube's worth of sideways is enough to put the box at the edge of the block the effect is
+     * on, which is exactly what an operator reads as a box that is not where the effect is.
+     *
+     * <p>The preview already works this way — it builds its cube from the aim, which is in the
+     * structure's space, and projects the result — so this is also what keeps the cube seen before a
+     * click and the one left behind by it in the same place.
+     */
+    static Point markerAt(PlacedEffects.Entry entry, float partialTick) {
+        EffectPlacement where = entry.placement();
+        if (!where.onSubLevel()) {
+            return markerCentre(entry.anchor(partialTick), where.mode(), where.face());
+        }
+
+        Point local = markerCentre(entry.attachment().at(), where.mode(), where.face());
+        ClientLevel level = Minecraft.getInstance().level;
+        SubLevelAccess subLevel = level == null ? null : entry.subLevel(level);
+        // The structure is not here, so neither the push nor the pose has anywhere to go. The
+        // unprojected point is what an entry with no hull answers with everywhere else as well.
+        if (subLevel == null) return local;
+        Vec3 world = SableSubLevels.worldPoint(subLevel, partialTick, local.x(), local.y(), local.z());
+        return new Point(world.x, world.y, world.z);
     }
 
     /**
