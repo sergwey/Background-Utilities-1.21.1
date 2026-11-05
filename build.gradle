@@ -89,6 +89,11 @@ def inlineRunDir = file('run-inline')
 // is the one thing that can break it. Client-only, and installed only here.
 def mouseTweaksRunDir = file('run-mousetweaks')
 
+// The default runs' game directories, named here because Sable is installed into both and into no
+// other run. The server's is the same one its run configuration names below.
+def runDir = file('run')
+def serverRunDir = file('run-server')
+
 // Connector will not start in a dev run until it is told where the *clean* Minecraft jar is. In
 // production it works that path out for itself, from the launcher's libraries; on a dev classpath
 // there is nothing for it to work out, and it gives up with "Could not determine clean minecraft
@@ -266,6 +271,18 @@ configurations {
         canBeConsumed = false
         canBeResolved = true
     }
+
+    // Sable, installed into the default client and server runs and into no other. It is the opposite
+    // of the four above: those exist to see what this mod does with them loaded, where Sable is what
+    // the effect tool's sub-level support is *for* — without it the companion answers "no sub-level"
+    // and there is nothing to test. It stays a configuration of its own rather than a runtime
+    // dependency for the same reason: it is intrusive (block clipping, particles, entity movement),
+    // so it belongs in the two runs where the whole mod is exercised, and not in the compatibility
+    // runs, whose point is that this mod behaves without it.
+    sableMods {
+        canBeConsumed = false
+        canBeResolved = true
+    }
 }
 
 dependencies {
@@ -338,10 +355,15 @@ dependencies {
     // the two stacks above do. Versions live in gradle.properties for the usual reason.
     inlineMods "maven.modrinth:inline:${inline_version}"
     inlineMods "maven.modrinth:cloth-config:${cloth_config_version}"
-
     // What the mouseTweaks run installs: the drag-and-shift-click mod, which is client-only and has
     // nothing this mod compiles against. Version in gradle.properties for the usual reason.
     mouseTweaksMods "maven.modrinth:mouse-tweaks:${mousetweaks_version}"
+
+    // Sable, for the default client and server. Fetched from the same maven their download pages use;
+    // version in gradle.properties, which is where the companion's is too. Nothing here compiles
+    // against it — the build compiles against the MIT companion — and it is installed into game
+    // directories git ignores, so no part of it is distributed with this mod.
+    sableMods "maven.modrinth:sable:${sable_version}"
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.
@@ -446,12 +468,46 @@ tasks.register('cleanMouseTweaksMods', Delete) {
     delete new File(mouseTweaksRunDir, 'mods')
 }
 
+// Sable, into the two default runs. Two tasks rather than one because a client and a server have a
+// game directory each and a jar in one is not in the other; the client's is also the folder the
+// hand-run dedicated server is fed from on this machine, so a copy there reaches both.
+//
+// Copy rather than Sync, as for every other stack: a jar put into these folders by hand must survive a
+// build. That matters more here than elsewhere — run/mods is the ordinary run's own folder, and it
+// already holds the two mods this mod needs at runtime to be worth looking at.
+var installSableMods = tasks.register('installSableMods', Copy) {
+    group = 'backutils'
+    description = 'Downloads Sable into the default client run.'
+    from configurations.sableMods
+    into new File(runDir, 'mods')
+}
+
+var installSableServerMods = tasks.register('installSableServerMods', Copy) {
+    group = 'backutils'
+    description = 'Downloads Sable into the default dedicated server run.'
+    from configurations.sableMods
+    into new File(serverRunDir, 'mods')
+}
+
+// The two clean tasks remove Sable alone rather than the folders: these are the default runs' mods
+// folders, and the jars beside it are this mod's own runtime and must not go with it.
+tasks.register('cleanSableMods', Delete) {
+    group = 'backutils'
+    description = 'Removes the downloaded Sable from the default runs.'
+    delete fileTree(new File(runDir, 'mods')) { include 'sable-*.jar' }
+    delete fileTree(new File(serverRunDir, 'mods')) { include 'sable-*.jar' }
+}
+
 // configureEach rather than named, so that nothing here depends on when the run's task is registered.
 tasks.configureEach {
     if (name == 'runSymbolChat') dependsOn installCompatMods
     if (name == 'runCitResewn') dependsOn installCitMods
     if (name == 'runInline') dependsOn installInlineMods
     if (name == 'runMouseTweaks') dependsOn installMouseTweaksMods
+    // The default runs get Sable, and only they do: it is what the sub-level support is for, and it
+    // is intrusive enough not to belong in the runs that exist to test this mod beside other things.
+    if (name == 'runClient') dependsOn installSableMods
+    if (name == 'runServer') dependsOn installSableServerMods
 }
 
 tasks.withType(JavaCompile).configureEach {

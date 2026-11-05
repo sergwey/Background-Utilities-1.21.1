@@ -12,8 +12,10 @@ from the code and are expensive to learn by breaking them.
 
 ```
 ./gradlew build        # the whole build
-./gradlew runClient    # a dev client, game directory run/
-./gradlew runServer    # a dedicated server in run-server/, meant to run beside a client
+./gradlew runClient    # a dev client, game directory run/, with Sable installed so the effect tool's
+                       # sub-level support can be exercised
+./gradlew runServer    # a dedicated server in run-server/, meant to run beside a client, with the same
+                       # Sable: a server without it answers every sub-level placement with nothing
 ./gradlew runSymbolChat # the client with Sinytra Connector and Symbol Chat, game directory run-symbolchat/
 ./gradlew runCitResewn # the client with Connector, CIT Resewn, its NeoForge patcher and RP Renames, in
                        # run-citresewn/: the arrangement in which RP Renames' creative tab goes missing
@@ -26,6 +28,12 @@ from the code and are expensive to learn by breaking them.
 `run/`, `run-server/`, `run-symbolchat/`, `run-citresewn/`, `run-inline/` and `run-mousetweaks/` are separate game
 directories on purpose; the README explains the test server, including the address to connect to, and
 the CIT Resewn, Inline and Mouse Tweaks runs, including what each of them exists to reproduce.
+
+Sable is installed into the two default runs by `installSableMods` and `installSableServerMods`, which
+`runClient` and `runServer` depend on, and into no other run: it is what the sub-level support is for,
+and the compatibility runs exist to test this mod beside other things rather than beside the one mod
+that rewrites block clipping, particles and entity movement. `./gradlew cleanSableMods` removes it
+from both, and removes nothing else — those folders also hold this mod's own runtime mods.
 
 ## What "it works" has to mean
 
@@ -99,9 +107,12 @@ GPL-3.0-compatible licence, and code must not be copied from a project whose lic
 with it.
 
 One piece of somebody else's code ships inside the jar — sqlite-jdbc, Apache 2.0, bundled unmodified
-by `jarJar`, its licence text inside the nested jar — and the README's licence section says so. The
-mods tested alongside this one are never redistributed: the compatibility runs install them into game
-directories that git ignores.
+by `jarJar`, its licence text inside the nested jar — and a second does since sub-levels: Sable
+Companion, MIT, likewise bundled whole with its licence inside it, and likewise named in the README's
+licence section. Sable itself is PolyForm Shield and is neither compiled against nor bundled; the
+build compiles against the companion, which is MIT and is Sable's own answer to a third-party mod
+wanting to support it. The mods tested alongside this one are never redistributed: the runs install
+them into game directories that git ignores.
 
 The client chest's *idea* comes from NBT Editor, which the README and the `credits` field name with
 links. No code, data or assets are taken from it, so nothing of its licence travels with this jar —

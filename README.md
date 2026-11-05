@@ -235,7 +235,11 @@ simply there. So the `server` run is a game directory of its own, `run-server/`,
 ./gradlew runClient      # in another, then: Multiplayer -> Direct Connection -> 127.0.0.1:25566
 ```
 
-The server listens on `127.0.0.1:25566` and nowhere else. Connect with that literal address rather
+The server listens on `127.0.0.1:25566` and nowhere else. Both runs have Sable installed — the client
+and the server — because the sub-level support needs it on both sides: the client draws an effect on a
+hull, and the server is what knows that the hull is there and refuses a placement whose hull it cannot
+find. Sable is put in place by `installSableMods` and `installSableServerMods`, which those two runs
+depend on, and `./gradlew cleanSableMods` removes it again. Connect with that literal address rather
 than with `localhost`: `localhost` resolves to the IPv6 address first, this server is bound to IPv4,
 and on some machines — this one included — an IPv6 socket is refused outright, which arrives as
 `java.net.SocketException: Permission denied: getsockopt` and looks like the server's fault when it
