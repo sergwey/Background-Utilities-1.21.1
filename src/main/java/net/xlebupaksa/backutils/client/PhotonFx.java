@@ -6,11 +6,13 @@ import com.lowdragmc.photon.client.fx.FX;
 import com.lowdragmc.photon.client.fx.FXEffectExecutor;
 import com.lowdragmc.photon.client.fx.FXHelper;
 import com.lowdragmc.photon.client.fx.FXRuntime;
+import dev.ryanhcode.sable.companion.SubLevelAccess;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
+import net.xlebupaksa.backutils.compat.SableSubLevels;
 import net.xlebupaksa.backutils.item.EffectAttachment;
 
 import java.util.ArrayList;
@@ -63,11 +65,12 @@ public final class PhotonFx {
      * @param holder the player placing it, which a self effect attaches to
      * @param target the entity aimed at, or the display a free point hangs off, or null for neither
      * @param anchor the block a block effect hangs off, or null when this is not a block effect
+     * @param subLevelId the moving structure a sub-level effect is on, or empty for every other kind
      * @return the effect that was started and, when none was, whether the reason for that is worth
      *         telling somebody — see {@link Placement#fault()}
      */
     public static Placement place(EffectAttachment attachment, Level level, Player holder,
-                                  Entity target, BlockPos anchor) {
+                                  Entity target, BlockPos anchor, String subLevelId) {
         if (!available() || attachment == null || !attachment.placeable()) return NOTHING;
 
         ResourceLocation id = attachment.location();
@@ -82,6 +85,17 @@ public final class PhotonFx {
             FXEffectExecutor executor;
             switch (attachment.kind()) {
                 case BLOCK -> executor = new BlockEffectExecutor(effect, level, anchor);
+                case SUBLEVEL -> {
+                    // Found by where it is and checked by its identity, the same way the renderer finds
+                    // it every frame — see SableSubLevels.named. A hull that is not here answers with
+                    // nothing, which is the ordinary "the anchor has not arrived" case and not a
+                    // failure: the caller retries, and the effect is not drawn anywhere else.
+                    SubLevelAccess subLevel = SableSubLevels.named(level, subLevelId,
+                            attachment.x(), attachment.y(), attachment.z());
+                    if (subLevel == null) return NOTHING;
+                    executor = new SubLevelEffectExecutor(effect, level, subLevelId,
+                            attachment.x(), attachment.y(), attachment.z());
+                }
                 case ENTITY, SELF -> {
                     if (anchorEntity == null) anchorEntity = holder;
                     executor = new EntityEffectExecutor(effect, level, anchorEntity,
@@ -108,6 +122,11 @@ public final class PhotonFx {
             executor.start();
             FXRuntime runtime = executor.getRuntime();
             if (runtime == null) {
+                // A hull that went away between the lookup above and the executor's own is the same
+                // ordinary answer as one that was not there to begin with: the caller waits for it,
+                // and nothing is said. Only the library's own refusal is worth saying, and only for
+                // the kinds whose anchor it owns.
+                if (attachment.onSubLevel()) return NOTHING;
                 // The library's executors answer a start with no runtime when they believe one is
                 // already running on that anchor, which is the one way this mod is told that
                 // something it cannot see is holding the effect rather than that the effect is

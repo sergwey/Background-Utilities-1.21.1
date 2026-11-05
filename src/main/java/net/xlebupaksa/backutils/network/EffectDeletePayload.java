@@ -39,9 +39,13 @@ import java.util.List;
  * </ul>
  *
  * @param x the block's low corner, for {@link Kind#BLOCK} and meaningless otherwise
+ * @param subLevel the moving structure the block is on, or empty for the world; the coordinates above
+ *                 are then the structure's own, and a block of the same numbers on another structure
+ *                 is another place
  * @param effectIds the rows to remove, for {@link Kind#EFFECTS} and empty otherwise
  */
-public record EffectDeletePayload(Kind kind, double x, double y, double z, List<Long> effectIds)
+public record EffectDeletePayload(Kind kind, double x, double y, double z, String subLevel,
+                                  List<Long> effectIds)
         implements CustomPacketPayload {
 
     /**
@@ -92,6 +96,9 @@ public record EffectDeletePayload(Kind kind, double x, double y, double z, List<
      */
     private static final int MAX_EFFECTS = 256;
 
+    /** The longest sub-level identity a claim may carry, which is the width of one with room to spare. */
+    private static final int MAX_SUB_LEVEL = 64;
+
     public static final CustomPacketPayload.Type<EffectDeletePayload> TYPE =
             new CustomPacketPayload.Type<>(
                     ResourceLocation.fromNamespaceAndPath(BackUtils.MOD_ID, "effect_delete"));
@@ -102,6 +109,7 @@ public record EffectDeletePayload(Kind kind, double x, double y, double z, List<
                     ByteBufCodecs.DOUBLE, EffectDeletePayload::x,
                     ByteBufCodecs.DOUBLE, EffectDeletePayload::y,
                     ByteBufCodecs.DOUBLE, EffectDeletePayload::z,
+                    ByteBufCodecs.stringUtf8(MAX_SUB_LEVEL), EffectDeletePayload::subLevel,
                     ByteBufCodecs.VAR_LONG.apply(ByteBufCodecs.list(MAX_EFFECTS)),
                     EffectDeletePayload::effectIds,
                     EffectDeletePayload::new);
@@ -109,17 +117,33 @@ public record EffectDeletePayload(Kind kind, double x, double y, double z, List<
     /** A payload built by hand is corrected here rather than at every use of it. */
     public EffectDeletePayload {
         kind = kind == null ? Kind.NONE : kind;
+        subLevel = subLevel == null ? "" : subLevel.trim();
         effectIds = effectIds == null ? List.of() : List.copyOf(effectIds);
     }
 
     /** {@return a claim that one block be emptied} */
     public static EffectDeletePayload atBlock(double x, double y, double z) {
-        return new EffectDeletePayload(Kind.BLOCK, x, y, z, List.of());
+        return new EffectDeletePayload(Kind.BLOCK, x, y, z, "", List.of());
+    }
+
+    /**
+     * {@return a claim that one block of a moving structure be emptied}
+     *
+     * <p>The numbers are the structure's own, which is what its rows hold: a click names the place the
+     * cube is drawn on, and the row for it is written in the space that cube was placed in.
+     */
+    public static EffectDeletePayload atBlock(double x, double y, double z, String subLevel) {
+        return new EffectDeletePayload(Kind.BLOCK, x, y, z, subLevel, List.of());
     }
 
     /** {@return a claim that the given rows be removed} */
     public static EffectDeletePayload effects(List<Long> effectIds) {
-        return new EffectDeletePayload(Kind.EFFECTS, 0.0D, 0.0D, 0.0D, effectIds);
+        return new EffectDeletePayload(Kind.EFFECTS, 0.0D, 0.0D, 0.0D, "", effectIds);
+    }
+
+    /** {@return true when this claim names a place on a moving structure rather than in the world} */
+    public boolean onSubLevel() {
+        return !subLevel.isEmpty();
     }
 
     @Override

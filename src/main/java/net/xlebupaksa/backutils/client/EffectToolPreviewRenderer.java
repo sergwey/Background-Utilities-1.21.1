@@ -22,6 +22,8 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
+import dev.ryanhcode.sable.companion.SubLevelAccess;
+import net.xlebupaksa.backutils.compat.SableSubLevels;
 import net.xlebupaksa.backutils.data.EffectPlacement;
 import net.xlebupaksa.backutils.item.DeleteToolItem;
 import net.xlebupaksa.backutils.item.EffectAttachment;
@@ -278,11 +280,15 @@ public final class EffectToolPreviewRenderer {
             // while the placement itself still snaps to the block grid: the owner asked for a cube
             // the size of an item's hitbox, aimed at where the effect goes rather than at the whole
             // block it goes into.
-            Cube cube = previewCube(look.aim(), config, reach);
-            drawCube(poses, buffers, cube, level, cameraPos, GREEN);
+            Cube cube = previewCube(look, config, reach);
+            // A cube aimed at a hull is built in the hull's own space, like the placement it promises,
+            // so it is projected out of that space before it is drawn — with the pose the hull itself
+            // is drawn with, which is the only thing that keeps the two together while a ship turns.
+            Cube drawn = project(look.subLevel(), cube);
+            drawCube(poses, buffers, drawn, level, cameraPos, GREEN);
             if (EffectToolPlacement.showsDirection(config)) {
                 Segment toHand = EffectToolPlacement.directionLine(
-                        handOf(look.eye(), look.direction()), cube);
+                        handOf(look.eye(), look.direction()), drawn);
                 drawLine(poses, buffers, toHand, cameraPos, GREEN);
             }
             if (EffectToolPlacement.showsUpLine(config)) {
@@ -290,7 +296,7 @@ public final class EffectToolPreviewRenderer {
                 // up when the placement is in open air. It starts at the small cube's own middle,
                 // which is where the effect would be.
                 Segment up = EffectToolPlacement.upLine(look.aim(), config, cube.centre());
-                drawLine(poses, buffers, up, cameraPos, GREEN);
+                drawLine(poses, buffers, project(look.subLevel(), up), cameraPos, GREEN);
             }
         } else if (EffectToolPlacement.previewsEntity(config)) {
             Entity entity = look.target();
@@ -769,8 +775,9 @@ public final class EffectToolPreviewRenderer {
      * <p>A block-side placement is pushed out of the block it is attached to — see
      * {@link EffectPick#markerCentre} for why, and read it from there so that the two drawings agree.
      */
-    private static Cube previewCube(EffectToolPlacement.Aim aim, EffectToolConfig config,
+    private static Cube previewCube(EffectToolAim.Look look, EffectToolConfig config,
                                     double reach) {
+        EffectToolPlacement.Aim aim = look.aim();
         Point planned = EffectToolPlacement.placement(aim, config, reach);
         // The placement the real one will be written as, built here rather than remembered: the tool's
         // own mode, the block that was aimed at, and the face when there was one. Only the face and
@@ -796,6 +803,33 @@ public final class EffectToolPreviewRenderer {
     private static Cube cubeAt(Point centre) {
         double half = EffectPick.ITEM_SIZE / 2.0D;
         return new Cube(centre.plus(-half, -half, -half), EffectPick.ITEM_SIZE);
+    }
+
+    /**
+     * {@return a drawing of a hull's own space in the world}
+     *
+     * <p>Nothing for a look that met the world, because the world already is the space everything is
+     * drawn in. For a hull, the marker is built where the effect will be stored — in the hull's
+     * coordinates — and has to be projected out with the pose the hull itself is drawn with, or the
+     * cube would sit in a plot thousands of blocks away and never be seen.
+     */
+    private static Point project(SubLevelAccess subLevel, Point point) {
+        if (subLevel == null) return point;
+        Vec3 world = SableSubLevels.worldPoint(subLevel, framePartialTick, point.x(), point.y(),
+                point.z());
+        return new Point(world.x, world.y, world.z);
+    }
+
+    private static Segment project(SubLevelAccess subLevel, Segment segment) {
+        if (subLevel == null) return segment;
+        return new Segment(project(subLevel, segment.from()), project(subLevel, segment.to()));
+    }
+
+    private static Cube project(SubLevelAccess subLevel, Cube cube) {
+        if (subLevel == null) return cube;
+        Point centre = project(subLevel, cube.centre());
+        return new Cube(centre.plus(-cube.size() / 2.0D, -cube.height() / 2.0D,
+                -cube.depth() / 2.0D), cube.size(), cube.height(), cube.depth());
     }
 
     /** {@return true when the block at a probe point is one that hides what is behind it} */

@@ -189,6 +189,19 @@ public class EffectReplay {
             if (block.getX() >> 4 != chunk.x || block.getZ() >> 4 != chunk.z) continue;
             sendOne(player, level, store, effect);
         }
+
+        // An effect on a moving structure is not in the chunk its row names, and cannot be: its
+        // coordinates are the structure's own, in a plot no player is ever sent a chunk of. So the
+        // structures' rows are read by dimension and each is projected out of its hull, which is the
+        // same question — is this effect in the chunk that has just arrived — asked in world space.
+        for (PlacedEffect effect : store.subLevels(dimension)) {
+            if (effect.placement() == null) continue;
+            Point at = EffectAnchor.whereIs(level, effect);
+            if (at == null) continue;
+            BlockPos block = BlockPos.containing(at.x(), at.y(), at.z());
+            if (block.getX() >> 4 != chunk.x || block.getZ() >> 4 != chunk.z) continue;
+            sendOne(player, level, store, effect);
+        }
     }
 
     /**
@@ -262,7 +275,7 @@ public class EffectReplay {
 
         EffectToolNetwork.sendPlaced(player, new EffectPlacedPayload(effect.id(),
                 where.x(), where.y(), where.z(), where.yaw(), where.pitch(), target,
-                where.face(), effect.config()));
+                where.face(), where.subLevel(), effect.config()));
     }
 
     /**

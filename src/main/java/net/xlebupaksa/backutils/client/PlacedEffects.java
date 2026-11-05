@@ -1,6 +1,7 @@
 package net.xlebupaksa.backutils.client;
 
 import com.lowdragmc.photon.client.fx.FXRuntime;
+import dev.ryanhcode.sable.companion.SubLevelAccess;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.LoadingOverlay;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -9,6 +10,7 @@ import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.xlebupaksa.backutils.BackUtils;
+import net.xlebupaksa.backutils.compat.SableSubLevels;
 import net.xlebupaksa.backutils.data.EffectPlacement;
 import net.xlebupaksa.backutils.item.EffectAttachment;
 import net.xlebupaksa.backutils.item.EffectToolPlacement;
@@ -234,8 +236,14 @@ public final class PlacedEffects {
          * one is attached to. A missing entity and unloaded ground are deliberately the same answer,
          * because they are the same state: the effect is not lost, it is waiting for something that has
          * not arrived, and starting it against nothing is what the library refuses to do.
+         *
+         * <p>A sub-level is the fourth and is answered the same way: a hull this client has not been
+         * sent, or one that has been taken apart and whose plot now holds another, is not here.
          */
         boolean anchorHere(ClientLevel level) {
+            if (attachment.kind() == EffectAttachment.Kind.SUBLEVEL) {
+                return subLevel(level) != null;
+            }
             if (attachment.kind() == EffectAttachment.Kind.BLOCK) {
                 return level.isLoaded(BlockPos.containing(placement.x(), placement.y(),
                         placement.z()));
@@ -243,6 +251,20 @@ public final class PlacedEffects {
             if (anchorEntityId == EffectPlacedPayload.NO_ENTITY) return false;
             Entity entity = level.getEntity(anchorEntityId);
             return entity != null && entity.isAlive();
+        }
+
+        /**
+         * {@return the moving structure this effect is bolted to, or null when it is not here}
+         *
+         * <p>Resolved rather than remembered, every time it is asked: a ship can be taken apart and a
+         * plot reused, so a handle kept from a previous frame would go on drawing an effect on a hull
+         * that no longer exists. Sable answers which sub-level holds a position, and the identity the
+         * row kept decides whether it is still the same one.
+         */
+        SubLevelAccess subLevel(ClientLevel level) {
+            if (!placement.onSubLevel()) return null;
+            return SableSubLevels.named(level, placement.subLevel(), placement.centreX(),
+                    placement.centreY(), placement.centreZ());
         }
 
         /** {@return the entity this effect hangs off}, or {@link EffectPlacedPayload#NO_ENTITY} */
@@ -391,7 +413,7 @@ public final class PlacedEffects {
 
         EffectPlacement where = new EffectPlacement(payload.mode(), dimension(level),
                 payload.x(), payload.y(), payload.z(), payload.yaw(), payload.pitch(),
-                payload.face());
+                payload.face(), payload.subLevel());
         EffectAttachment attachment = EffectAttachment.of(payload.config(), where);
         if (!attachment.placeable() || attachment.location() == null) return;
 
@@ -628,7 +650,8 @@ public final class PlacedEffects {
         BlockPos anchor = BlockPos.containing(entry.placement().x(), entry.placement().y(),
                 entry.placement().z());
 
-        PhotonFx.Placement placement = PhotonFx.place(entry.attachment, level, holder, target, anchor);
+        PhotonFx.Placement placement = PhotonFx.place(entry.attachment, level, holder, target, anchor,
+                entry.placement().subLevel());
         if (placement.runtime() == null) {
             // Kept on the entry rather than said here: this is asked again every few ticks, and the
             // reason is worth saying once, when the entry is known to be stuck.

@@ -1,5 +1,6 @@
 package net.xlebupaksa.backutils.client;
 
+import dev.ryanhcode.sable.companion.SubLevelAccess;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
@@ -10,6 +11,7 @@ import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
+import net.xlebupaksa.backutils.compat.SableSubLevels;
 import net.xlebupaksa.backutils.data.EffectPlacement;
 import net.xlebupaksa.backutils.item.EffectAttachment;
 import net.xlebupaksa.backutils.item.EffectToolConfig;
@@ -200,6 +202,19 @@ final class EffectPick {
      * effect will be once the display arrives.
      */
     static Point anchorAt(PlacedEffects.Entry entry, float partialTick) {
+        if (entry.placement().onSubLevel()) {
+            // A hull's own point is not the world's, so it is transformed before anything is drawn:
+            // the box the operator sees and the delete tool they click are both in world space, and
+            // the rendered pose is the one the hull itself is drawn with — nothing else keeps the two
+            // together while a ship is turning.
+            ClientLevel level = Minecraft.getInstance().level;
+            SubLevelAccess subLevel = level == null ? null : entry.subLevel(level);
+            if (subLevel == null) return effectAt(entry.attachment());
+            Point local = entry.attachment().at();
+            Vec3 world = SableSubLevels.worldPoint(subLevel, partialTick, local.x(), local.y(),
+                    local.z());
+            return new Point(world.x, world.y, world.z);
+        }
         Entity display = displayOf(entry);
         if (display == null) return effectAt(entry.attachment());
         Vec3 at = display.getEyePosition(partialTick);

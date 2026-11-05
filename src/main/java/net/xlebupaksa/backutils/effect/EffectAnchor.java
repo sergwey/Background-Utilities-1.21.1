@@ -8,6 +8,8 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.phys.Vec3;
+import dev.ryanhcode.sable.companion.SubLevelAccess;
+import net.xlebupaksa.backutils.compat.SableSubLevels;
 import net.xlebupaksa.backutils.data.EffectPlacement;
 import net.xlebupaksa.backutils.data.PlacedEffect;
 import net.xlebupaksa.backutils.item.EffectAttachment;
@@ -259,6 +261,19 @@ public final class EffectAnchor {
     public static EffectToolPlacement.Point whereIs(ServerLevel level, PlacedEffect effect) {
         EffectPlacement where = effect.placement();
         if (where == null) return null;
+
+        // A row on a sub-level is not anywhere in the world until its hull is: its coordinates are the
+        // hull's own, and the world point is that pose applied to them. A hull this server has not got
+        // answers null, which every caller already reads as "nothing to do about this row yet" — and
+        // is also what keeps the distance below from being the distance to a plot.
+        if (where.onSubLevel()) {
+            SubLevelAccess subLevel = SableSubLevels.named(level, where.subLevel(),
+                    where.centreX(), where.centreY(), where.centreZ());
+            if (subLevel == null) return null;
+            EffectToolPlacement.Point local = EffectAttachment.of(effect.config(), where).at();
+            Vec3 world = SableSubLevels.worldPoint(subLevel, 0.0F, local.x(), local.y(), local.z());
+            return new EffectToolPlacement.Point(world.x, world.y, world.z);
+        }
 
         EffectToolPlacement.Point planned =
                 new EffectToolPlacement.Point(where.centreX(), where.centreY(), where.centreZ());

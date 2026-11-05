@@ -29,7 +29,8 @@ public class EffectData extends DataManager {
                 rs.getString("dimension"),
                 rs.getDouble("x"), rs.getDouble("y"), rs.getDouble("z"),
                 rs.getFloat("yaw"), rs.getFloat("pitch"),
-                EffectToolPlacement.Face.byName(rs.getString("face")));
+                EffectToolPlacement.Face.byName(rs.getString("face")),
+                rs.getString("sub_level"));
         return new PlacedEffect(
                 rs.getLong("effect_id"),
                 placement,
@@ -41,7 +42,8 @@ public class EffectData extends DataManager {
                 rs.getString("target_uuid"),
                 rs.getLong("created_at"),
                 rs.getLong("expires_at"),
-                rs.getInt("duration_ticks"));
+                rs.getInt("duration_ticks"),
+                rs.getString("sub_level"));
     };
 
     /**
@@ -90,6 +92,7 @@ public class EffectData extends DataManager {
                     "config_nbt TEXT NOT NULL DEFAULT '', " +
                     "anchor_uuid TEXT NOT NULL DEFAULT '', " +
                     "target_uuid TEXT NOT NULL DEFAULT '', " +
+                    "sub_level TEXT NOT NULL DEFAULT '', " +
                     "created_at INTEGER NOT NULL DEFAULT 0, " +
                     "expires_at INTEGER NOT NULL DEFAULT 0, " +
                     "duration_ticks INTEGER NOT NULL DEFAULT 0" +
@@ -106,6 +109,7 @@ public class EffectData extends DataManager {
         addColumn("face", "TEXT NOT NULL DEFAULT 'UP'");
         addColumn("anchor_uuid", "TEXT NOT NULL DEFAULT ''");
         addColumn("target_uuid", "TEXT NOT NULL DEFAULT ''");
+        addColumn("sub_level", "TEXT NOT NULL DEFAULT ''");
         createReplayIndexes();
     }
 
@@ -134,6 +138,11 @@ public class EffectData extends DataManager {
                     + "ON placed_effect (anchor_uuid, dimension);");
             stmt.execute("CREATE INDEX IF NOT EXISTS placed_effect_place "
                     + "ON placed_effect (dimension, x);");
+            // The question the chunk-watch replay has to ask in addition to the one above: an effect
+            // on a sub-level is never in the chunk its stored coordinates name, because those
+            // coordinates are the sub-level's own. See subLevels.
+            stmt.execute("CREATE INDEX IF NOT EXISTS placed_effect_sub_level "
+                    + "ON placed_effect (dimension, sub_level);");
         } catch (SQLException e) {
             throw new RuntimeException("Could not index the placed effect table", e);
         }
@@ -243,8 +252,8 @@ public class EffectData extends DataManager {
         long id = insertAndGetId(
                 "INSERT INTO placed_effect (mode, dimension, x, y, z, yaw, pitch, face, " +
                         "owner_uuid, owner_name, effect_path, config_nbt, anchor_uuid, target_uuid, " +
-                        "created_at, expires_at, duration_ticks) " +
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        "sub_level, created_at, expires_at, duration_ticks) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 placement.mode().name(), placement.dimension(),
                 placement.x(), placement.y(), placement.z(), placement.yaw(), placement.pitch(),
                 placement.face().name(),
@@ -252,12 +261,12 @@ public class EffectData extends DataManager {
                 ownerName == null ? "" : ownerName,
                 effectPath == null ? "" : effectPath,
                 config == null ? "" : config.toStoredText(),
-                anchor, target, createdAtMillis, expiresAtMillis,
+                anchor, target, placement.subLevel(), createdAtMillis, expiresAtMillis,
                 config == null ? 0 : config.lifetimeTicks());
 
         return new PlacedEffect(id, placement, ownerUuid, ownerName, effectPath,
                 config == null ? "" : config.toStoredText(), anchor, target, createdAtMillis,
-                expiresAtMillis, config == null ? 0 : config.lifetimeTicks());
+                expiresAtMillis, config == null ? 0 : config.lifetimeTicks(), placement.subLevel());
     }
 
     /**
@@ -303,5 +312,23 @@ public class EffectData extends DataManager {
     public List<PlacedEffect> expired(long nowMillis) {
         return query("SELECT * FROM placed_effect WHERE expires_at > 0 AND expires_at <= ?",
                 MAPPER, nowMillis);
+    }
+
+    /**
+     * {@return every stored effect in one dimension that sits on a sub-level}
+     *
+     * <p>Asked by the replay when a player is sent a chunk, because the chunk query beside it cannot
+     * answer for these: an effect on a ship is stored in the ship's own coordinates, which name a plot
+     * far from any chunk a player is sent. The caller projects each row out of its sub-level and asks
+     * whether the world position falls in the chunk that has just arrived, which is the question the
+     * chunk query asks of a world-space row directly.
+     *
+     * <p>One dimension rather than all of them, for the reason the rest of the replay reads one: a
+     * client draws what it is told about in the level it is standing in, and a row from another
+     * dimension names coordinates that mean nothing here.
+     */
+    public List<PlacedEffect> subLevels(String dimension) {
+        return query("SELECT * FROM placed_effect WHERE dimension = ? AND sub_level <> ''",
+                MAPPER, dimension);
     }
 }

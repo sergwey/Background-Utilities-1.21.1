@@ -59,7 +59,17 @@ public record EffectAttachment(
         /** An entity, named by the entity it was aimed at rather than by a position. */
         ENTITY,
         /** A free point in the world, which is what an accurate placement uses. */
-        POINT
+        POINT,
+        /**
+         * A place on a moving structure, which the effect follows.
+         *
+         * <p>Not a fourth kind of anchor so much as a statement about the space the other two are
+         * measured in: the point and the rotation are the operator's own, read against the hull, and
+         * the world position and heading they become are recomputed from the hull's pose every frame.
+         * That is why this is a kind rather than a flag on the others — it is the thing that decides
+         * which executor is built, and the executor is what keeps the effect on the hull.
+         */
+        SUBLEVEL
     }
 
     /**
@@ -118,12 +128,17 @@ public record EffectAttachment(
      */
     public static EffectAttachment of(EffectToolConfig config, EffectPlacement placement) {
         EffectToolConfig.Mode mode = config.mode();
-        Kind kind = switch (mode) {
-            case BLOCK, BLOCK_SIDE -> Kind.BLOCK;
-            case ENTITY, ENTITY_AUTO_ROTATE -> Kind.ENTITY;
-            case SELF, SELF_AUTO_ROTATE -> Kind.SELF;
-            default -> Kind.POINT;
-        };
+        // A placement on a sub-level is the one thing that outranks the mode: the mode says what the
+        // operator aimed at, and this says what space that was in. Two block-side effects a metre
+        // apart, one on a wall and one on a hull, are the same mode and need different executors.
+        Kind kind = placement != null && placement.onSubLevel()
+                ? Kind.SUBLEVEL
+                : switch (mode) {
+                    case BLOCK, BLOCK_SIDE -> Kind.BLOCK;
+                    case ENTITY, ENTITY_AUTO_ROTATE -> Kind.ENTITY;
+                    case SELF, SELF_AUTO_ROTATE -> Kind.SELF;
+                    default -> Kind.POINT;
+                };
 
         double x = placement == null ? 0.0D : placement.centreX();
         double y = placement == null ? 0.0D : placement.centreY();
@@ -166,6 +181,11 @@ public record EffectAttachment(
      */
     public boolean placeable() {
         return effectPath != null && !effectPath.isBlank() && kind != null;
+    }
+
+    /** {@return true when the position and rotation are the sub-level's rather than the world's} */
+    public boolean onSubLevel() {
+        return kind == Kind.SUBLEVEL;
     }
 
     /**

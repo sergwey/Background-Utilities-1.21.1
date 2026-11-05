@@ -6,6 +6,7 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.InteractionHand;
+import net.xlebupaksa.backutils.data.EffectPlacement;
 import net.xlebupaksa.backutils.item.DeleteToolItem;
 import net.xlebupaksa.backutils.network.EffectDeletePayload;
 import net.xlebupaksa.backutils.network.EffectToolNetwork;
@@ -172,8 +173,14 @@ public final class DeleteToolClick {
         if (block == null) return;
 
         EffectBlink.flashPlace(block.asLong());
-        EffectToolNetwork.sendDeletion(EffectDeletePayload.atBlock(
-                block.getX(), block.getY(), block.getZ()));
+        // A block on a moving structure is named in that structure's own space, because that is what
+        // its rows hold. The cube is drawn wherever the hull has carried it, so the world block under
+        // the crosshair is not a place any row was written at: the row's own block and hull are.
+        EffectPlacement where = scene.hit().placement();
+        EffectToolNetwork.sendDeletion(where.onSubLevel()
+                ? EffectDeletePayload.atBlock(where.blockX(), where.blockY(), where.blockZ(),
+                        where.subLevel())
+                : EffectDeletePayload.atBlock(block.getX(), block.getY(), block.getZ()));
     }
 
     /**

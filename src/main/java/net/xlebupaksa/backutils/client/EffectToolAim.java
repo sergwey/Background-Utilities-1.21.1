@@ -11,11 +11,13 @@ import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
+import net.xlebupaksa.backutils.compat.SableSubLevels;
 import net.xlebupaksa.backutils.item.EffectToolConfig;
 import net.xlebupaksa.backutils.item.EffectToolPlacement;
 import net.xlebupaksa.backutils.item.EffectToolPlacement.Aim;
 import net.xlebupaksa.backutils.item.EffectToolPlacement.Face;
 import net.xlebupaksa.backutils.item.EffectToolPlacement.Point;
+import dev.ryanhcode.sable.companion.SubLevelAccess;
 
 import java.util.Locale;
 
@@ -51,8 +53,13 @@ public final class EffectToolAim {
      *                  none
      * @param eye       the eye the look started from
      * @param direction the unit direction the look travels in
+     * @param subLevel  the moving structure the aimed block is part of, or null when it is part of the
+     *                  world; when it is here, every position in {@code aim} is in that structure's own
+     *                  space and has to be projected out of it before it is drawn or measured against
+     *                  anything in the world
      */
-    public record Look(Aim aim, Entity target, Point eye, Point direction) {
+    public record Look(Aim aim, Entity target, Point eye, Point direction,
+                       SubLevelAccess subLevel) {
 
         /** {@return the low corner of the block this look places a block-mode effect in} */
         public Point placement(EffectToolConfig config, double reach) {
@@ -92,10 +99,22 @@ public final class EffectToolAim {
                 && hit.getType() == HitResult.Type.BLOCK ? hit : null;
 
         Aim aim;
+        SubLevelAccess subLevel = null;
         if (block == null) {
             aim = new Aim.IntoAir(eye, direction);
         } else {
             Point at = pointOf(block.getBlockPos());
+            // Only the two grid modes are attributed to a hull, because only they attach to a surface
+            // and a surface is the whole of what a ship can be aimed at. An accurate placement ignores
+            // blocks by design — its point is the eye carried along its own direction — so it stays a
+            // point in the world and is not claimed for a hull it was never read against.
+            if (config.mode() == EffectToolConfig.Mode.BLOCK
+                    || config.mode() == EffectToolConfig.Mode.BLOCK_SIDE) {
+                // Sable answers the game's own block clip in the plot's coordinates, so a block hit on
+                // a hull is already a position inside the hull's space and needs no transforming to be
+                // read as one. What it does need is to be recognised as such, which is this.
+                subLevel = SableSubLevels.at(player.level(), at.x(), at.y(), at.z());
+            }
             // Only the block-side mode is placed by the face, so only it is told which one was met:
             // a face nothing reads is a face that would have to be invented for the others.
             aim = config.mode() == EffectToolConfig.Mode.BLOCK_SIDE
@@ -103,7 +122,8 @@ public final class EffectToolAim {
                     : new Aim.AtBlock(at);
         }
 
-        return new Look(aim, targetOf(player, partialTick, config, crosshair), eye, direction);
+        return new Look(aim, targetOf(player, partialTick, config, crosshair), eye, direction,
+                subLevel);
     }
 
     /**

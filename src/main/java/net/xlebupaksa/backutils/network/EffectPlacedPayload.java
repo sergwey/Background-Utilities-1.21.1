@@ -23,6 +23,9 @@ import net.xlebupaksa.backutils.item.EffectToolPlacement.Face;
  *
  * @param targetEntityId the entity to attach to, or {@link #NO_ENTITY} for a placement in the world
  * @param face           the block face the effect hangs off, and up for every other mode
+ * @param subLevel       the sub-level the position is in, or empty for the world; the client resolves
+ *                       it itself, because a sub-level is a thing both sides have by identity and not
+ *                       an entity either of them could attach to
  * @param effectId       the row this effect came from, so a client can tell two of them apart
  */
 public record EffectPlacedPayload(
@@ -31,6 +34,7 @@ public record EffectPlacedPayload(
         float yaw, float pitch,
         int targetEntityId,
         Face face,
+        String subLevel,
         EffectToolConfig config
 ) implements CustomPacketPayload {
 
@@ -39,6 +43,9 @@ public record EffectPlacedPayload(
 
     /** The longest face name this message may carry, matching the claim a client may send. */
     private static final int MAX_FACE_NAME = 16;
+
+    /** The longest sub-level identity this message may carry, matching the claim beside it. */
+    private static final int MAX_SUB_LEVEL = 64;
 
     public static final CustomPacketPayload.Type<EffectPlacedPayload> TYPE =
             new CustomPacketPayload.Type<>(
@@ -58,6 +65,7 @@ public record EffectPlacedPayload(
                             buf.readFloat(), buf.readFloat(),
                             buf.readVarInt(),
                             Face.byName(buf.readUtf(MAX_FACE_NAME)),
+                            buf.readUtf(MAX_SUB_LEVEL),
                             EffectToolConfig.STREAM_CODEC.decode(buf));
                 }
 
@@ -71,6 +79,7 @@ public record EffectPlacedPayload(
                     buf.writeFloat(payload.pitch());
                     buf.writeVarInt(payload.targetEntityId());
                     buf.writeUtf(payload.face().name(), MAX_FACE_NAME);
+                    buf.writeUtf(payload.subLevel(), MAX_SUB_LEVEL);
                     EffectToolConfig.STREAM_CODEC.encode(buf, payload.config());
                 }
             };
@@ -79,6 +88,13 @@ public record EffectPlacedPayload(
     public EffectPlacedPayload {
         config = config == null ? EffectToolConfig.BLANK : config.sanitised();
         face = face == null ? Face.UP : face;
+        subLevel = subLevel == null ? "" : subLevel.trim();
+    }
+
+    /** An effect placed in the world, which is every effect that names no sub-level. */
+    public EffectPlacedPayload(long effectId, double x, double y, double z, float yaw, float pitch,
+                               int targetEntityId, Face face, EffectToolConfig config) {
+        this(effectId, x, y, z, yaw, pitch, targetEntityId, face, "", config);
     }
 
     /** {@return the mode the effect this describes should be placed with} */

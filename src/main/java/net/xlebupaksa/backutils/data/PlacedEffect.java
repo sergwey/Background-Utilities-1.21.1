@@ -26,6 +26,10 @@ import net.xlebupaksa.backutils.item.EffectToolConfig;
  *                   this entity" — a placement records where an entity stood, not which entity it was
  * @param expiresAtMillis when the effect is removed, or {@link #PERMANENT}
  * @param durationTicks the lifetime as it was configured, kept for display
+ * @param subLevel the sub-level the placement's coordinates belong to, or empty for the world; see
+ *                 {@link EffectPlacement}, which carries the same answer and is what every renderer
+ *                 reads. Kept here as well because a row is asked "which effects are on a ship" the
+ *                 way it is asked about a chunk, and that question is answered from the row
  */
 public record PlacedEffect(
         long id,
@@ -38,8 +42,14 @@ public record PlacedEffect(
         String targetUuid,
         long createdAtMillis,
         long expiresAtMillis,
-        int durationTicks
+        int durationTicks,
+        String subLevel
 ) {
+
+    /** A row written before sub-levels existed, and one written since that names none. */
+    public PlacedEffect {
+        subLevel = subLevel == null ? "" : subLevel.trim();
+    }
 
     /**
      * An effect that hangs off a place rather than off an entity.
@@ -51,7 +61,12 @@ public record PlacedEffect(
                         String effectPath, String configNbt, String anchorUuid,
                         long createdAtMillis, long expiresAtMillis, int durationTicks) {
         this(id, placement, ownerUuid, ownerName, effectPath, configNbt, anchorUuid, "",
-                createdAtMillis, expiresAtMillis, durationTicks);
+                createdAtMillis, expiresAtMillis, durationTicks, "");
+    }
+
+    /** {@return true when this effect sits on a sub-level rather than in the world} */
+    public boolean onSubLevel() {
+        return placement != null ? placement.onSubLevel() : !subLevel.isEmpty();
     }
 
     /** Sentinel for "this effect never expires on its own". */
@@ -75,10 +90,16 @@ public record PlacedEffect(
      *
      * <p>What the delete tool asks: clicking a pink cube removes everything in that place, so two
      * effects that share a block are neighbours however differently they were configured.
+     *
+     * <p>A block on a moving structure is compared with the structure as well, and not only with the
+     * numbers: a hull's coordinates are its own, so the same three numbers on another hull are another
+     * place — and a plot that has been given to a new structure is a place no effect on the old one is
+     * in any more.
      */
     public boolean sameBlockAs(EffectPlacement other) {
         return placement != null && other != null
                 && placement.dimension().equals(other.dimension())
+                && placement.subLevel().equals(other.subLevel())
                 && placement.blockX() == other.blockX()
                 && placement.blockY() == other.blockY()
                 && placement.blockZ() == other.blockZ();

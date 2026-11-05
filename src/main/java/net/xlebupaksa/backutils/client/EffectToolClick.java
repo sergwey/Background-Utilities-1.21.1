@@ -157,8 +157,17 @@ public final class EffectToolClick {
 
         // The face is the aim's own: it is which surface was met for a block-side placement, and up
         // for every other mode, which is the direction none of them turns away from.
+        //
+        // The sub-level is the aim's own, and it is what makes the coordinates above mean something:
+        // the game's block clip answers in a hull's own space when it meets a hull, so the position
+        // sent is the hull's point and this says which hull. A server that cannot find that hull
+        // holding that point refuses the claim; see EffectToolNetwork.onPlace.
+        String subLevel = "";
+        if (look.subLevel() != null && look.subLevel().getUniqueId() != null) {
+            subLevel = look.subLevel().getUniqueId().toString();
+        }
         EffectToolNetwork.sendPlacement(new EffectPlacePayload(x, y, z, player.getYRot(),
-                player.getXRot(), target, look.face(), config));
+                player.getXRot(), target, look.face(), subLevel, config));
         return true;
     }
 

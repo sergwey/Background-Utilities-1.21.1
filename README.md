@@ -46,7 +46,9 @@ log, and a pair of tools for placing and removing visual effects.
   operator's is held to its shape only.
 - **Effect and delete tools.** The effect tool places a Photon effect: block, block side, entity,
   self or accurate placement, with auto-rotation, a lifetime, a delay, a scale, a rotation and an
-  offset, and a preview of where it would land. It is configured by holding `W` over it in any
+  offset, and a preview of where it would land. A block aimed at part of a moving structure — a ship,
+  with Sable installed — is stored in that structure's own space, and the effect follows it with the
+  position and rotation it was placed with. It is configured by holding `W` over it in any
   inventory. The delete tool takes away what is already placed — the effect under the crosshair, the
   effects on an entity, or everything hanging off its holder. Both fire a shot their holder hears and
   nobody else does. Both are found in the mod's own creative tab rather than given by a command.
@@ -107,11 +109,16 @@ Optional, each one switching a feature off rather than breaking anything:
 
 - Photon 2.2.7 — the particles the effect tool places. Without it the tool still configures and
   previews, and nothing is placed.
+- [Sable] 2.0.6 — the moving structures a block placement can be attached to, so that an effect on a
+  hull follows it. Sable itself is never compiled against and never bundled: this mod builds against
+  Sable's own MIT-licensed companion library, which travels inside the jar and answers "no sub-level"
+  when Sable is absent, so every other feature behaves exactly as it does without it.
 - Symbol Chat 1.2.8 — the item editor's symbol button. It is a Fabric mod, so it needs Sinytra
   Connector and the Forgified Fabric API to load on NeoForge at all.
 
 [ldlib2]: https://github.com/Low-Drag-MC/LDLib2
 [Ember's Text API]: https://github.com/TysonTheEmber/EmbersTextAPI
+[Sable]: https://modrinth.com/mod/sable
 
 ## Configuration
 
@@ -343,9 +350,12 @@ player's inventory however it is dragged.
 
 GPL-3.0-only, copyright (C) 2026 xlebupaksa. The full text is in [LICENSE](LICENSE).
 
-The released jar carries one piece of somebody else's code inside it: sqlite-jdbc,
-copyright the Xerial project, under the Apache License 2.0, bundled whole and unmodified by `jarJar`.
-Its licence text travels with it, inside the nested jar. Nothing else here is bundled, and the mods
-this one is tested alongside — ldlib2, Photon, Ember's Text API, Connector, the Forgified Fabric API,
-Symbol Chat, RP Renames, CIT Resewn and CITResewnNeoPatcher — are separate downloads that are never
-redistributed by this project.
+The released jar carries two pieces of somebody else's code inside it, both bundled whole and
+unmodified by `jarJar`, with their licence texts inside the nested jars: sqlite-jdbc, copyright the
+Xerial project, under the Apache License 2.0; and Sable Companion, copyright RyanHCode, under the MIT
+Licence. The second is the whole of this mod's Sable support — the compatibility library Sable's own
+wiki points a third-party mod at, whose calls answer "no sub-level" when Sable is not installed. Sable
+itself is under PolyForm Shield, is neither compiled against nor bundled here, and no code from it is
+copied. Nothing else here is bundled, and the mods this one is tested alongside — ldlib2, Photon,
+Ember's Text API, Connector, the Forgified Fabric API, Symbol Chat, RP Renames, CIT Resewn and
+CITResewnNeoPatcher — are separate downloads that are never redistributed by this project.

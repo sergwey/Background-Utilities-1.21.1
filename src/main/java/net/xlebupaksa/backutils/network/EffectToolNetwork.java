@@ -14,7 +14,9 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
+import dev.ryanhcode.sable.companion.SubLevelAccess;
 import net.xlebupaksa.backutils.BackUtils;
+import net.xlebupaksa.backutils.compat.SableSubLevels;
 import net.xlebupaksa.backutils.data.EffectData;
 import net.xlebupaksa.backutils.data.EffectPlacement;
 import net.xlebupaksa.backutils.data.PlacedEffect;
@@ -239,12 +241,30 @@ public final class EffectToolNetwork {
         boolean self = mode == Mode.SELF || mode == Mode.SELF_AUTO_ROTATE;
         if (!EffectPlacement.storable(mode) && !self) return;
         if (payload.config().effectPath().isBlank()) return;
-        if (outOfReach(player, payload)) return;
+
+        // A claim on a place inside a moving structure is settled in the structure's own terms: does
+        // this server have a hull of that identity holding that point, and was the operator near
+        // enough to have aimed at it. The point is the hull's own, so the reach is measured to where
+        // the hull actually is — the plain check below would read the plot's coordinates and refuse a
+        // click made from a metre away. Only the two grid modes attach to a surface, so only they may
+        // name a hull; a claim that says otherwise is refused rather than reinterpreted.
+        if (payload.onSubLevel()) {
+            if (mode != Mode.BLOCK && mode != Mode.BLOCK_SIDE) return;
+            SubLevelAccess hull = SableSubLevels.named(player.serverLevel(), payload.subLevel(),
+                    payload.x(), payload.y(), payload.z());
+            if (hull == null) return;
+            Vec3 world = SableSubLevels.worldPoint(hull, 0.0F, payload.x(), payload.y(),
+                    payload.z());
+            if (!withinReach(player, world.x, world.y, world.z)) return;
+        } else if (outOfReach(player, payload)) {
+            return;
+        }
 
         String dimension = player.level().dimension().location().toString();
         EffectPlacement where = self ? null
                 : new EffectPlacement(mode, dimension, payload.x(), payload.y(),
-                        payload.z(), payload.yaw(), payload.pitch(), payload.face());
+                        payload.z(), payload.yaw(), payload.pitch(), payload.face(),
+                        payload.subLevel());
 
         int targetId = payload.targetEntityId();
         if (self) {
@@ -302,7 +322,7 @@ public final class EffectToolNetwork {
 
         EffectPlacedPayload out = new EffectPlacedPayload(stored.id(), payload.x(), payload.y(),
                 payload.z(), payload.yaw(), payload.pitch(), targetId, payload.face(),
-                payload.config());
+                payload.subLevel(), payload.config());
         for (ServerPlayer witness : player.serverLevel().players()) {
             send(witness, out);
         }
@@ -330,15 +350,26 @@ public final class EffectToolNetwork {
         MinecraftServer server = player.getServer();
         switch (payload.kind()) {
             case BLOCK -> {
-                EffectPlacement where = EffectPlacement.atBlock(
+                EffectPlacement where = new EffectPlacement(Mode.BLOCK,
                         player.level().dimension().location().toString(),
-                        payload.x(), payload.y(), payload.z());
+                        payload.x(), payload.y(), payload.z(), 0.0F, 0.0F,
+                        EffectToolPlacement.Face.UP, payload.subLevel());
                 // A place is named by coordinates, which is the one thing here the server cannot
                 // derive: the mode, the settings and the rows all come from the table. What bounds it
                 // is the same thing that bounds a placement — the crosshair a click was made with
                 // only reaches as far as the player can — so a block named from further off than
-                // that is not one the tool could have been pointed at.
-                if (!withinReach(player, payload.x(), payload.y(), payload.z())) return;
+                // that is not one the tool could have been pointed at. A block of a moving structure
+                // is the structure's own, so the reach is measured to where the structure is.
+                if (payload.onSubLevel()) {
+                    SubLevelAccess hull = SableSubLevels.named(player.serverLevel(),
+                            payload.subLevel(), payload.x(), payload.y(), payload.z());
+                    if (hull == null) return;
+                    Vec3 world = SableSubLevels.worldPoint(hull, 0.0F, payload.x(), payload.y(),
+                            payload.z());
+                    if (!withinReach(player, world.x, world.y, world.z)) return;
+                } else if (!withinReach(player, payload.x(), payload.y(), payload.z())) {
+                    return;
+                }
                 ServerLevel level = player.serverLevel();
                 forgetWhere(server, store, effect -> inPlace(level, effect, where));
             }

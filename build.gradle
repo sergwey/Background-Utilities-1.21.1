@@ -39,6 +39,18 @@ repositories {
         url = 'https://api.modrinth.com/maven'
         content { includeGroup 'maven.modrinth' }
     }
+    // Sable Companion, whose README this build follows: its own repository, filtered to its own group.
+    // The filter is not tidiness. The same host publishes Sable's common code under dev.ryanhcode.sable,
+    // and that artefact must never be resolvable here — see the licence note in the README.
+    exclusiveContent {
+        forRepository {
+            maven {
+                url = 'https://maven.ryanhcode.dev/releases'
+                name = 'RyanHCode Maven'
+            }
+        }
+        filter { includeGroup 'dev.ryanhcode.sable-companion' }
+    }
 }
 
 base {
@@ -291,6 +303,18 @@ dependencies {
     // runtimeOnly rather than additionalRuntimeClasspath, which ModDevGradle reserves for libraries
     // that declare no FMLModType and rejects game mods from.
     runtimeOnly "com.lowdragmc.photon:photon-neoforge-${minecraft_version}:${photon_version}"
+
+    // Sable Companion, packaged inside the jar as its own README instructs. This is the whole of the
+    // Sable integration and it is deliberately not Sable: the companion is MIT and carries a safe
+    // default implementation that answers "no sub-level" for every call, so this mod behaves the same
+    // whether Sable is installed or not, and no part of a PolyForm-licensed mod is compiled against,
+    // bundled or copied. Pinned to the version Sable 2.0.6 nests, so the two jars do not disagree.
+    jarJar(implementation("dev.ryanhcode.sable-companion:sable-companion-common-${minecraft_version}:${sable_companion_version}")) {
+        version {
+            strictly "[${sable_companion_version},)"
+            prefer "${sable_companion_version}"
+        }
+    }
 
     // The newest builds published for 1.21.1, each named in gradle.properties so a version that the
     // symbolChat run rejects can be corrected without touching this file. Symbol Chat itself is pinned

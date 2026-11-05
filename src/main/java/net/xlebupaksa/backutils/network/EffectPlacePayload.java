@@ -28,12 +28,16 @@ import net.xlebupaksa.backutils.item.EffectToolPlacement.Face;
  * @param targetEntityId the entity aimed at, or {@link #NO_ENTITY} when the mode names no entity
  * @param face           the block face a block-side placement hangs off, and up for every other
  *                       mode; the surface the configured rotation is read against
+ * @param subLevel       the sub-level the position is in, or empty for the world; a claim like every
+ *                       other field here, and one the server checks by asking whether that sub-level
+ *                       is really the one holding that place
  */
 public record EffectPlacePayload(
         double x, double y, double z,
         float yaw, float pitch,
         int targetEntityId,
         Face face,
+        String subLevel,
         EffectToolConfig config
 ) implements CustomPacketPayload {
 
@@ -45,6 +49,12 @@ public record EffectPlacePayload(
      * longer is not one, and the cap is what keeps a claim from being a document.
      */
     private static final int MAX_FACE_NAME = 16;
+
+    /**
+     * The longest sub-level identity a client may send. An identity is thirty-six characters, so the
+     * cap is its own width with room to spare rather than a document's.
+     */
+    private static final int MAX_SUB_LEVEL = 64;
 
     public static final CustomPacketPayload.Type<EffectPlacePayload> TYPE =
             new CustomPacketPayload.Type<>(
@@ -64,6 +74,7 @@ public record EffectPlacePayload(
                             buf.readFloat(), buf.readFloat(),
                             buf.readVarInt(),
                             Face.byName(buf.readUtf(MAX_FACE_NAME)),
+                            buf.readUtf(MAX_SUB_LEVEL),
                             EffectToolConfig.STREAM_CODEC.decode(buf));
                 }
 
@@ -76,6 +87,7 @@ public record EffectPlacePayload(
                     buf.writeFloat(payload.pitch());
                     buf.writeVarInt(payload.targetEntityId());
                     buf.writeUtf(payload.face().name(), MAX_FACE_NAME);
+                    buf.writeUtf(payload.subLevel(), MAX_SUB_LEVEL);
                     EffectToolConfig.STREAM_CODEC.encode(buf, payload.config());
                 }
             };
@@ -84,6 +96,18 @@ public record EffectPlacePayload(
     public EffectPlacePayload {
         config = config == null ? EffectToolConfig.BLANK : config.sanitised();
         face = face == null ? Face.UP : face;
+        subLevel = subLevel == null ? "" : subLevel.trim();
+    }
+
+    /** A claim on a place in the world, which is every claim that names no sub-level. */
+    public EffectPlacePayload(double x, double y, double z, float yaw, float pitch,
+                              int targetEntityId, Face face, EffectToolConfig config) {
+        this(x, y, z, yaw, pitch, targetEntityId, face, "", config);
+    }
+
+    /** {@return true when this claim is about a place on a sub-level rather than in the world} */
+    public boolean onSubLevel() {
+        return !subLevel.isEmpty();
     }
 
     /** {@return the mode this placement is for}, which is the configuration's own */
