@@ -43,13 +43,25 @@ final class SubLevelEffectExecutor extends FXEffectExecutor {
     /** The hull's identity, kept as text because that is what a row and a payload carry. */
     private final String subLevelId;
 
-    /** Where on the hull the effect is, in the hull's own space and without the effect's offset. */
-    private final Vector3f local;
+    /**
+     * Where on the hull the effect is, in the hull's own space and without the effect's offset.
+     *
+     * <p><b>Doubles, and that is not tidiness.</b> A hull's own coordinates are millions of blocks
+     * out — a plot is a place nobody walks to — and a 32-bit float only separates values by whole
+     * blocks once it is past sixteen million. Held as a {@code Vector3f}, the half block that centres
+     * an effect on the block it was attached to is rounded away, and the effect lands on a corner of
+     * that block instead. The offset is small enough for a float and is converted on use; this is not.
+     */
+    private final double localX;
+    private final double localY;
+    private final double localZ;
 
     SubLevelEffectExecutor(FX fx, Level level, String subLevelId, double x, double y, double z) {
         super(fx, level);
         this.subLevelId = subLevelId;
-        this.local = new Vector3f((float) x, (float) y, (float) z);
+        this.localX = x;
+        this.localY = y;
+        this.localZ = z;
     }
 
     /**
@@ -91,7 +103,7 @@ final class SubLevelEffectExecutor extends FXEffectExecutor {
 
     /** {@return the hull this effect is on}, or null when it is not here */
     private SubLevelAccess subLevel() {
-        return SableSubLevels.named(level, subLevelId, local.x, local.y, local.z);
+        return SableSubLevels.named(level, subLevelId, localX, localY, localZ);
     }
 
     /**
@@ -99,12 +111,17 @@ final class SubLevelEffectExecutor extends FXEffectExecutor {
      *
      * <p>The offset is added in the hull's space rather than to the transformed point, because it is a
      * nudge along the surface the operator aimed at: adding it after the transform would push the
-     * effect along the world's axes instead of along the hull.
+     * effect along the world's axes instead of along the hull. It is added here rather than kept in
+     * the field for the reason the field's own comment gives — this sum is still in plot
+     * coordinates, which only a double can hold to the half block.
      */
     private void rootAt(SubLevelAccess subLevel, float partialTicks) {
-        Vector3f at = new Vector3f(local).add(offset);
-        Vec3 world = SableSubLevels.worldPoint(subLevel, partialTicks, at.x, at.y, at.z);
+        Vec3 world = SableSubLevels.worldPoint(subLevel, partialTicks,
+                localX + offset.x, localY + offset.y, localZ + offset.z);
         IFXObject root = runtime.getRoot();
+        // The world point is the only one small enough to be a float: it stands near the hull, which
+        // is where the player is, not out in the plot. Photon's own API takes a Vector3f and has the
+        // same limit for a world built far from the origin.
         root.updatePos(new Vector3f((float) world.x, (float) world.y, (float) world.z));
         root.updateRotation(SableSubLevels.worldRotation(subLevel, partialTicks, rotation));
     }
