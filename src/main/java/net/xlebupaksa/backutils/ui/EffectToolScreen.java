@@ -96,6 +96,12 @@ public final class EffectToolScreen extends Screen {
     private static final int WARNING = 0xFFFF8080;
     private static final int GOOD = 0xFF8FD98F;
 
+    /** The two words the distance field shows at the ends of its slider. */
+    private static final String RENDER_DISTANCE_UNLIMITED =
+            "backutils.effect_tool.render_distance.unlimited";
+    private static final String RENDER_DISTANCE_PERSONAL =
+            "backutils.effect_tool.render_distance.personal";
+
     private static EffectToolScreen instance;
 
     /** Everything built once, kept so {@link #init} can write the held tool's values into it. */
@@ -307,12 +313,25 @@ public final class EffectToolScreen extends Screen {
         built.renderDistanceValue = new TextField();
         built.renderDistanceValue.layout(l -> l.width(92).height(14));
         built.renderDistanceValue.setText("", false);
+        // ldlib2's own error state: a validator that refuses the text paints it in the error colour —
+        // red by default, the same red the Photon editor uses — and, which is the half that matters,
+        // does not adopt it. Text the field has not adopted is text Apply cannot read, so a typo is
+        // shown as a typo instead of quietly becoming the last value that happened to be valid.
+        built.renderDistanceValue.setTextValidator(EffectToolScreen::acceptableDistance);
         built.renderDistanceValue.setTextResponder(text -> {
             // A typed number moves the handle without rewriting the text, so the cursor does not jump
-            // while the field is being written in. A word is what the two ends show, and the slider
-            // already holds the value behind it.
-            int typed = numberOr(text, -1);
-            if (typed >= 0) built.renderDistance.setValue((float) typed, false);
+            // while the field is being written in. A word is one of the two ends, and typing it moves
+            // the slider there rather than leaving the handle where it was.
+            if (word(RENDER_DISTANCE_UNLIMITED, text)) {
+                built.renderDistance.setValue(
+                        (float) EffectToolConfig.UNLIMITED_RENDER_DISTANCE, false);
+            } else if (word(RENDER_DISTANCE_PERSONAL, text)) {
+                built.renderDistance.setValue(
+                        (float) EffectToolConfig.PERSONAL_RENDER_DISTANCE, false);
+            } else {
+                int typed = numberOr(text, -1);
+                if (typed >= 0) built.renderDistance.setValue((float) typed, false);
+            }
             if (instance != null) instance.refreshStatus();
         });
 
@@ -425,11 +444,11 @@ public final class EffectToolScreen extends Screen {
     private static void writeRenderDistance(Built built, int distance) {
         if (built.renderDistanceValue == null) return;
         if (distance >= EffectToolConfig.UNLIMITED_RENDER_DISTANCE) {
-            built.renderDistanceValue.setText(Component.translatable(
-                    "backutils.effect_tool.render_distance.unlimited").getString(), false);
+            built.renderDistanceValue.setText(
+                    Component.translatable(RENDER_DISTANCE_UNLIMITED).getString(), false);
         } else if (distance <= EffectToolConfig.PERSONAL_RENDER_DISTANCE) {
-            built.renderDistanceValue.setText(Component.translatable(
-                    "backutils.effect_tool.render_distance.personal").getString(), false);
+            built.renderDistanceValue.setText(
+                    Component.translatable(RENDER_DISTANCE_PERSONAL).getString(), false);
         } else {
             built.renderDistanceValue.setText(String.valueOf(distance), false);
         }
@@ -681,6 +700,38 @@ public final class EffectToolScreen extends Screen {
     }
 
     /**
+     * {@return true when the distance field may hold this text}
+     *
+     * <p>Handed to the field rather than asked afterwards. ldlib2 validates as the player types,
+     * paints text it refuses in the field's error colour — red by default, which is the red the
+     * Photon editor shows for a value it cannot use — and, the half that matters, does not adopt it.
+     * An unreadable entry therefore cannot be what {@link #readRenderDistance} or Apply reads, which
+     * is what stops a mistyped word counting as the previous value.
+     *
+     * <p>Blank is allowed: a field being cleared on the way to another number is not a mistake, and
+     * Apply reads the slider while the field holds nothing.
+     */
+    private static boolean acceptableDistance(String text) {
+        if (text == null || text.isBlank()) return true;
+        if (word(RENDER_DISTANCE_UNLIMITED, text) || word(RENDER_DISTANCE_PERSONAL, text)) {
+            return true;
+        }
+        try {
+            int value = Integer.parseInt(text.trim());
+            return value >= EffectToolConfig.PERSONAL_RENDER_DISTANCE
+                    && value <= EffectToolConfig.UNLIMITED_RENDER_DISTANCE;
+        } catch (NumberFormatException notAWholeNumber) {
+            return false;
+        }
+    }
+
+    /** {@return true when the text is the word one of the distance keys names} */
+    private static boolean word(String key, String text) {
+        return text != null
+                && text.trim().equalsIgnoreCase(Component.translatable(key).getString());
+    }
+
+    /**
      * {@return the distance the row holds}, typed into the field when it is a number, and the slider's
      * own value while it is a word
      */
@@ -718,9 +769,17 @@ public final class EffectToolScreen extends Screen {
         int distance = on(built.reach)
                 ? EffectToolConfig.PLAYER_REACH
                 : whole(built.distance.getText(), old.maxDistance(), kept);
-        // The slider and the field are one setting: a number typed into the field is the answer, and
-        // a word in it is one of the two ends, whose value the slider already holds.
-        int renderDistance = readRenderDistance(built);
+        // The distance field is allowed to say no: it validates its own text as it is typed, and a
+        // text it refuses is a text it never adopted — reading the last value it did adopt would be
+        // reading a prefix of a typo. The tool's own value is the honest answer there, and the red
+        // the field is already drawing is the explanation.
+        int renderDistance;
+        if (built.renderDistanceValue.isError()) {
+            renderDistance = old.renderDistance();
+            kept[0] = true;
+        } else {
+            renderDistance = readRenderDistance(built);
+        }
 
         EffectToolConfig wanted = EffectToolConfig.of(
                 chosenMode,
