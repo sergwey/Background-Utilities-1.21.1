@@ -9,10 +9,12 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.Vec3;
 import net.xlebupaksa.backutils.BackUtils;
 import net.xlebupaksa.backutils.compat.SableSubLevels;
 import net.xlebupaksa.backutils.data.EffectPlacement;
 import net.xlebupaksa.backutils.item.EffectAttachment;
+import net.xlebupaksa.backutils.item.EffectToolConfig;
 import net.xlebupaksa.backutils.item.EffectToolPlacement;
 import net.xlebupaksa.backutils.network.EffectEndedPayload;
 import net.xlebupaksa.backutils.network.EffectPlacedPayload;
@@ -123,6 +125,9 @@ public final class PlacedEffects {
         /** Whether the log has already been told that this effect will not start. */
         private boolean complained;
 
+        /** Whether this effect is not drawn because the player is outside its render distance. */
+        private boolean culled;
+
         /** Why the last attempt did not start it, when that reason is not an ordinary one. */
         private String fault;
 
@@ -158,6 +163,18 @@ public final class PlacedEffects {
         /** {@return true once this effect is attached and running} */
         public boolean running() {
             return runtime != null;
+        }
+
+        /**
+         * {@return true when this effect is left undrawn because the player is too far from it}
+         *
+         * <p>Not the same as waiting: a waiting entry is one whose anchor has not arrived, and this
+         * one is an effect whose anchor is here and whose distance the player is outside. Both are
+         * started by the poll when their reason goes away, and neither is reported to the server as
+         * ended, because neither says anything about the row.
+         */
+        public boolean culled() {
+            return culled;
         }
 
         /**
@@ -451,7 +468,10 @@ public final class PlacedEffects {
     public static List<Entry> places() {
         List<Entry> found = new ArrayList<>();
         for (Entry entry : ENTRIES.values()) {
-            if (entry.placed()) found.add(entry);
+            // A culled effect is one the player is too far from to be drawn, so its cube is not drawn
+            // either: a box on an effect that is not there would be a place the delete tool offered and
+            // the server refused, and a cube nobody can see the effect under.
+            if (entry.placed() && !entry.culled()) found.add(entry);
         }
         return found;
     }
@@ -521,6 +541,35 @@ public final class PlacedEffects {
         // Copied before walking: a pass can remove entries, and a map that is being changed under
         // its own iterator is the one way this can fail outright.
         for (Entry entry : List.copyOf(ENTRIES.values())) {
+            // The render distance is asked before anything else, because it outranks every other
+            // question: an effect the player is too far from is not drawn, whether it was running,
+            // waiting or already culled. The runtime is taken down rather than hidden — Photon's own
+            // visibility flag is not read by the path that draws an object, and a runtime left running
+            // would go on emitting particles and ticking for nobody. Coming back in range starts it
+            // again, which is the only cost this has: an effect that is re-entered begins its own
+            // timeline from the start.
+            if (outOfRange(entry, level, holder)) {
+                if (entry.runtime != null) {
+                    PhotonFx.destroy(entry.runtime);
+                    entry.runtime = null;
+                    // None of this was a failure: the effect is the same one, the player is simply
+                    // too far from it, and the budgets a failed start spends are not spent here.
+                    entry.waited = 0;
+                    entry.retryIn = 0;
+                    entry.revivals = 0;
+                    entry.complained = false;
+                }
+                entry.culled = true;
+                continue;
+            }
+            if (entry.culled) {
+                // Back in range, and the normal path below is what starts it: the budgets are reset so
+                // the first attempt is a fresh one rather than one held back by the time it spent out
+                // of sight.
+                entry.culled = false;
+                entry.waited = 0;
+                entry.retryIn = 0;
+            }
             if (entry.running()) {
                 if (!PhotonFx.finished(entry.runtime)) continue;
                 // Three ways to be over, and the third is the one that means the row goes. An effect
@@ -564,6 +613,70 @@ public final class PlacedEffects {
             complain(entry);
             entry.retryIn = STUCK_RETRY_TICKS;
         }
+    }
+
+    /**
+     * {@return true when the player is outside the distance this effect may be drawn at}
+     *
+     * <p>Two settings are never a distance: a personal effect is the placer's own wherever they go,
+     * and an unlimited one is left to the client's own view, which is what every tool written before
+     * the slider existed holds. Both answer false here, which is what keeps an old tool drawing exactly
+     * as it did.
+     *
+     * <p>The point is asked of {@link #anchorNow} rather than of the row, for the reason the boxes are:
+     * an accurate effect follows the display it hangs off, a sub-level effect follows its hull, and an
+     * entity effect follows the entity. A point this client cannot work out is not treated as far away
+     * — a hull that has not arrived and a display that has not been sent are what the waiting side of
+     * the poll is for, and reading either as a distance would cull a ship's effects while its plot is
+     * a frame late.
+     */
+    private static boolean outOfRange(Entry entry, ClientLevel level, Player player) {
+        if (entry.attachment.kind() == EffectAttachment.Kind.SELF) return false;
+        int distance = entry.attachment.renderDistance();
+        if (distance <= EffectToolConfig.PERSONAL_RENDER_DISTANCE
+                || distance >= EffectToolConfig.UNLIMITED_RENDER_DISTANCE) {
+            return false;
+        }
+        EffectToolPlacement.Point at = anchorNow(entry, level);
+        if (at == null) return false;
+        double limit = (double) distance * distance;
+        Vec3 eye = player.getEyePosition();
+        double dx = at.x() - eye.x;
+        double dy = at.y() - eye.y;
+        double dz = at.z() - eye.z;
+        return dx * dx + dy * dy + dz * dz > limit;
+    }
+
+    /**
+     * {@return where an effect is now, or null when this client cannot say}
+     *
+     * <p>Answered from the attachment's own sum, which is the one the library works from: an offset is
+     * measured to the anchor's middle for a block and to the entity's own position for an entity, and
+     * the display an accurate effect hangs off may have been moved since it was placed.
+     */
+    private static EffectToolPlacement.Point anchorNow(Entry entry, ClientLevel level) {
+        return switch (entry.attachment.kind()) {
+            case SELF -> null;
+            case SUBLEVEL -> {
+                SubLevelAccess subLevel = entry.subLevel(level);
+                if (subLevel == null) yield null;
+                EffectToolPlacement.Point local = entry.attachment.at();
+                Vec3 world = SableSubLevels.worldPoint(subLevel, 1.0F, local.x(), local.y(),
+                        local.z());
+                yield new EffectToolPlacement.Point(world.x, world.y, world.z);
+            }
+            case ENTITY -> {
+                Entity entity = level.getEntity(entry.anchorEntityId);
+                if (entity == null) yield null;
+                yield entry.attachment.at(entity.getX(), entity.getY(), entity.getZ());
+            }
+            case BLOCK, POINT -> {
+                Entity display = EffectPick.displayOf(entry);
+                if (display == null) yield entry.attachment.at();
+                Vec3 eye = display.getEyePosition(1.0F);
+                yield entry.attachment.at(eye.x, eye.y, eye.z);
+            }
+        };
     }
 
     /**
@@ -645,6 +758,15 @@ public final class PlacedEffects {
      * entity alone.
      */
     private static boolean start(Entry entry, ClientLevel level, Player holder) {
+        // Out of range is not a failure to start, and must not be reported as one: the effect is
+        // wanted, the player is simply too far from it, and the poll starts it when they are back.
+        // Answered here as well as in the poll because a placement is started from `accept` before
+        // the first poll runs, and an effect placed beyond its own distance would otherwise show for
+        // one frame.
+        if (outOfRange(entry, level, holder)) {
+            entry.culled = true;
+            return false;
+        }
         Entity target = entry.anchorEntityId == EffectPlacedPayload.NO_ENTITY
                 ? null : level.getEntity(entry.anchorEntityId);
         BlockPos anchor = BlockPos.containing(entry.placement().x(), entry.placement().y(),

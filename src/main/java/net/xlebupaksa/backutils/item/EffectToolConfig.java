@@ -25,6 +25,11 @@ import java.util.Locale;
  * <p>The two sentinels share the value {@code -1}: {@link #INFINITE_LIFETIME} where a lifetime is
  * expected and {@link #PLAYER_REACH} where a distance is. Each field reads the one that belongs to
  * it, so the same number means two different things without ever being ambiguous.
+ *
+ * <p>{@link #renderDistance} is the third distance in the record and the only one the drawing side
+ * reads: how far from the effect a player may stand and still have it drawn. Its own two sentinels
+ * are the ends of its slider, not {@code -1} — see {@link #PERSONAL_RENDER_DISTANCE} and
+ * {@link #UNLIMITED_RENDER_DISTANCE}.
  */
 public record EffectToolConfig(
         Mode mode,
@@ -36,7 +41,8 @@ public record EffectToolConfig(
         Triplet rotation,
         Triplet offset,
         boolean forceDeath,
-        int delayTicks) {
+        int delayTicks,
+        int renderDistance) {
 
     /** The shortest and longest lifetime a tool may ask for, in ticks. */
     public static final int MIN_LIFETIME = 1;
@@ -48,6 +54,20 @@ public record EffectToolConfig(
     public static final int MAX_DISTANCE = 100;
     /** Written in place of a distance: the effect lands where the player can reach. */
     public static final int PLAYER_REACH = -1;
+
+    /**
+     * The bottom of the render-distance slider: the effect is the placer's own and nobody else's.
+     *
+     * <p>Read as a flag rather than as a distance. A zero that meant "within zero blocks" would hide
+     * the placer's own effect as soon as they stepped back from it, which is the opposite of what a
+     * personal effect — a screen shader, most of the time — is for.
+     */
+    public static final int PERSONAL_RENDER_DISTANCE = 0;
+    /**
+     * The top of the slider: no distance of our own, so the client's own view decides, as it did
+     * before this setting existed. The slider shows this as "unlimited" rather than as a number.
+     */
+    public static final int UNLIMITED_RENDER_DISTANCE = 9999;
 
     public static final int MIN_DELAY = 0;
     public static final int MAX_DELAY = 72_000;
@@ -85,7 +105,12 @@ public record EffectToolConfig(
                     TRIPLET_CODEC.fieldOf("rotation").forGetter(EffectToolConfig::rotation),
                     TRIPLET_CODEC.fieldOf("offset").forGetter(EffectToolConfig::offset),
                     Codec.BOOL.fieldOf("force_death").forGetter(EffectToolConfig::forceDeath),
-                    Codec.INT.fieldOf("delay").forGetter(EffectToolConfig::delayTicks))
+                    Codec.INT.fieldOf("delay").forGetter(EffectToolConfig::delayTicks),
+                    // Optional for the reason the auto-rotation is: tools and stored rows written
+                    // before this existed carry no such field, and a required one would refuse the
+                    // whole component, turning every tool already in a world too blank to use.
+                    Codec.INT.optionalFieldOf("render_distance", UNLIMITED_RENDER_DISTANCE)
+                            .forGetter(EffectToolConfig::renderDistance))
             .apply(instance, EffectToolConfig::of));
 
     /**
@@ -98,7 +123,8 @@ public record EffectToolConfig(
     /** The tool as it is given out: nothing chosen, and to be configured before it is used. */
     public static final EffectToolConfig BLANK = new EffectToolConfig(
             Mode.NONE, AutoRotate.DEFAULT, INFINITE_LIFETIME, PLAYER_REACH, "",
-            Triplet.ONE, Triplet.ZERO, Triplet.ZERO, false, MIN_DELAY);
+            Triplet.ONE, Triplet.ZERO, Triplet.ZERO, false, MIN_DELAY,
+            UNLIMITED_RENDER_DISTANCE);
 
     /**
      * {@return the configuration with every value inside its range, and no auto-rotation chosen}
@@ -127,6 +153,22 @@ public record EffectToolConfig(
                                       String effectPath,
                                       Triplet scale, Triplet rotation, Triplet offset,
                                       boolean forceDeath, int delayTicks) {
+        return of(mode, autoRotate, lifetimeTicks, maxDistance, effectPath, scale, rotation, offset,
+                forceDeath, delayTicks, UNLIMITED_RENDER_DISTANCE);
+    }
+
+    /**
+     * {@return the configuration with every value inside its range}, render distance included
+     *
+     * <p>Separate from the overload above because most callers have no opinion about the drawing
+     * distance: every stored tool and every row written before it existed is unlimited, and only the
+     * screen and the tests that care say otherwise.
+     */
+    public static EffectToolConfig of(Mode mode, AutoRotate autoRotate, int lifetimeTicks,
+                                      int maxDistance,
+                                      String effectPath,
+                                      Triplet scale, Triplet rotation, Triplet offset,
+                                      boolean forceDeath, int delayTicks, int renderDistance) {
         return new EffectToolConfig(
                 mode == null ? Mode.NONE : mode,
                 autoRotate == null ? AutoRotate.DEFAULT : autoRotate,
@@ -146,13 +188,14 @@ public record EffectToolConfig(
                         clamp(offset.y(), (double) -MAX_OFFSET, (double) MAX_OFFSET),
                         clamp(offset.z(), (double) -MAX_OFFSET, (double) MAX_OFFSET)),
                 forceDeath,
-                clamp(delayTicks, MIN_DELAY, MAX_DELAY));
+                clamp(delayTicks, MIN_DELAY, MAX_DELAY),
+                clampRenderDistance(renderDistance));
     }
 
     /** {@return this configuration, with any stored value that is out of range corrected} */
     public EffectToolConfig sanitised() {
         return of(mode, autoRotate, lifetimeTicks, maxDistance, effectPath, scale, rotation, offset,
-                forceDeath, delayTicks);
+                forceDeath, delayTicks, renderDistance);
     }
 
     /** {@return true when the effect is never removed rather than living for a number of ticks} */
@@ -163,6 +206,22 @@ public record EffectToolConfig(
     /** {@return true when the effect lands within the player's reach rather than at a distance} */
     public boolean usesPlayerReach() {
         return maxDistance == PLAYER_REACH;
+    }
+
+    /**
+     * {@return true when only the player who placed the effect may see it}
+     *
+     * <p>{@link #PERSONAL_RENDER_DISTANCE} is a flag, not a distance: it says who may be told about
+     * the effect at all, which is the only thing that can keep a screen shader off another player's
+     * screen — a post effect is submitted for the whole client and cannot be culled by distance.
+     */
+    public boolean personal() {
+        return renderDistance == PERSONAL_RENDER_DISTANCE;
+    }
+
+    /** {@return true when the drawing distance is left to the client's own view} */
+    public boolean unlimitedRenderDistance() {
+        return renderDistance == UNLIMITED_RENDER_DISTANCE;
     }
 
     /** {@return true until a mode has been chosen}, which is how a freshly given tool reads */
@@ -177,7 +236,7 @@ public record EffectToolConfig(
 
     public EffectToolConfig withMode(Mode newMode) {
         return of(newMode, autoRotate, lifetimeTicks, maxDistance, effectPath, scale, rotation,
-                offset, forceDeath, delayTicks);
+                offset, forceDeath, delayTicks, renderDistance);
     }
 
     /**
@@ -188,47 +247,53 @@ public record EffectToolConfig(
      */
     public EffectToolConfig withAutoRotate(AutoRotate newAutoRotate) {
         return of(mode, newAutoRotate, lifetimeTicks, maxDistance, effectPath, scale, rotation,
-                offset, forceDeath, delayTicks);
+                offset, forceDeath, delayTicks, renderDistance);
     }
 
     public EffectToolConfig withLifetime(int ticks) {
         return of(mode, autoRotate, ticks, maxDistance, effectPath, scale, rotation, offset,
-                forceDeath, delayTicks);
+                forceDeath, delayTicks, renderDistance);
     }
 
     public EffectToolConfig withDistance(int distance) {
         return of(mode, autoRotate, lifetimeTicks, distance, effectPath, scale, rotation, offset,
-                forceDeath, delayTicks);
+                forceDeath, delayTicks, renderDistance);
+    }
+
+    /** {@return this configuration with another drawing distance chosen} */
+    public EffectToolConfig withRenderDistance(int distance) {
+        return of(mode, autoRotate, lifetimeTicks, maxDistance, effectPath, scale, rotation, offset,
+                forceDeath, delayTicks, distance);
     }
 
     public EffectToolConfig withEffectPath(String path) {
         return of(mode, autoRotate, lifetimeTicks, maxDistance, path, scale, rotation, offset,
-                forceDeath, delayTicks);
+                forceDeath, delayTicks, renderDistance);
     }
 
     public EffectToolConfig withScale(Triplet newScale) {
         return of(mode, autoRotate, lifetimeTicks, maxDistance, effectPath, newScale, rotation,
-                offset, forceDeath, delayTicks);
+                offset, forceDeath, delayTicks, renderDistance);
     }
 
     public EffectToolConfig withRotation(Triplet newRotation) {
         return of(mode, autoRotate, lifetimeTicks, maxDistance, effectPath, scale, newRotation,
-                offset, forceDeath, delayTicks);
+                offset, forceDeath, delayTicks, renderDistance);
     }
 
     public EffectToolConfig withOffset(Triplet newOffset) {
         return of(mode, autoRotate, lifetimeTicks, maxDistance, effectPath, scale, rotation,
-                newOffset, forceDeath, delayTicks);
+                newOffset, forceDeath, delayTicks, renderDistance);
     }
 
     public EffectToolConfig withForceDeath(boolean death) {
         return of(mode, autoRotate, lifetimeTicks, maxDistance, effectPath, scale, rotation, offset,
-                death, delayTicks);
+                death, delayTicks, renderDistance);
     }
 
     public EffectToolConfig withDelay(int ticks) {
         return of(mode, autoRotate, lifetimeTicks, maxDistance, effectPath, scale, rotation, offset,
-                forceDeath, ticks);
+                forceDeath, ticks, renderDistance);
     }
 
     /**
@@ -270,6 +335,11 @@ public record EffectToolConfig(
     private static int clampDistance(int distance) {
         return distance == PLAYER_REACH
                 ? PLAYER_REACH : clamp(distance, MIN_DISTANCE, MAX_DISTANCE);
+    }
+
+    /** @return the drawing distance inside its slider's range, the two ends being sentinels */
+    private static int clampRenderDistance(int distance) {
+        return clamp(distance, PERSONAL_RENDER_DISTANCE, UNLIMITED_RENDER_DISTANCE);
     }
 
     /** {@return the path without the space a paste brings, cut to the length a path may have} */

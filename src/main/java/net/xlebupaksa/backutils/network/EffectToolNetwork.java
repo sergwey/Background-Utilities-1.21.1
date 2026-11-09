@@ -323,7 +323,14 @@ public final class EffectToolNetwork {
         EffectPlacedPayload out = new EffectPlacedPayload(stored.id(), payload.x(), payload.y(),
                 payload.z(), payload.yaw(), payload.pitch(), targetId, payload.face(),
                 payload.subLevel(), payload.config());
+        // A personal effect — the slider at zero — is the placer's alone, and this is where that is
+        // decided: the row is stored as usual, so it survives a reload and is replayed to its owner,
+        // but no other client is ever told about it. For a screen shader that is the only place the
+        // decision can be made at all, because Photon submits a post effect for the whole client and
+        // no client-side flag can keep it off somebody else's screen.
+        boolean personal = payload.config().personal();
         for (ServerPlayer witness : player.serverLevel().players()) {
+            if (personal && !witness.getUUID().equals(player.getUUID())) continue;
             send(witness, out);
         }
     }

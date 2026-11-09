@@ -41,7 +41,8 @@ public record EffectAttachment(
         int delayTicks,
         boolean forceDeath,
         boolean allowMulti,
-        int lifetimeTicks
+        int lifetimeTicks,
+        int renderDistance
 ) {
 
     /** What an effect hangs off, which is what decides the executor it needs. */
@@ -169,7 +170,8 @@ public record EffectAttachment(
                 // is lost by allowing them: the delete tool removes by place, and every placement is
                 // a row of its own either way.
                 true,
-                config.lifetimeTicks());
+                config.lifetimeTicks(),
+                config.renderDistance());
     }
 
     /**

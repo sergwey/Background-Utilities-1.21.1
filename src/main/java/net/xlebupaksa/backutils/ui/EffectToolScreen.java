@@ -8,6 +8,7 @@ import com.lowdragmc.lowdraglib2.gui.ui.data.Vertical;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.Button;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.Label;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.Selector;
+import com.lowdragmc.lowdraglib2.gui.ui.elements.Slider;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.TextElement;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.TextField;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.Toggle;
@@ -113,6 +114,11 @@ public final class EffectToolScreen extends Screen {
         TextField distance;
         Toggle reach;
         TextField path;
+        /** The drawing distance, at the end of the list because it is about the world, not the effect. */
+        Slider.Horizontal renderDistance;
+        /** The word or number beside the slider, which is "unlimited" at its top and "personal" at its
+         * bottom. */
+        Label renderDistanceValue;
         /**
          * The effects this client has, offered beside the path box.
          *
@@ -270,10 +276,43 @@ public final class EffectToolScreen extends Screen {
         UIElement offsetRow = tripletRow(built, "backutils.effect_tool.label.offset",
                 built.offset);
 
+        UIElement renderDistanceRow;
+
         built.forceDeath = toggle(value -> {
             if (instance != null) instance.refreshStatus();
         });
         built.delay = field(62);
+
+        // The one control of its kind on this screen, and the last of the effect's own settings: how
+        // far away the effect is still drawn. Its range is the record's own, and the two ends are
+        // words rather than numbers — see writeRenderDistance.
+        built.renderDistance = new Slider.Horizontal();
+        built.renderDistance.setRange(EffectToolConfig.PERSONAL_RENDER_DISTANCE,
+                EffectToolConfig.UNLIMITED_RENDER_DISTANCE);
+        // An integer control on a float widget: the normalised value is snapped to whole steps, so a
+        // drag cannot ask for sixty-three point seven blocks.
+        built.renderDistance.setClampNormalizedValue(normalised ->
+                Math.round(normalised * EffectToolConfig.UNLIMITED_RENDER_DISTANCE)
+                        / (float) EffectToolConfig.UNLIMITED_RENDER_DISTANCE);
+        built.renderDistance.setValue((float) EffectToolConfig.UNLIMITED_RENDER_DISTANCE, false);
+        built.renderDistance.layout(l -> l.flex(1).height(14));
+
+        built.renderDistanceValue = new Label();
+        built.renderDistanceValue.setText("", false);
+        built.renderDistanceValue.textStyle(t -> t.fontSize(9f).textColor(MUTED).textShadow(false)
+                .textAlignVertical(Vertical.CENTER).adaptiveWidth(true));
+        built.renderDistanceValue.layout(l -> l.width(92).height(ROW));
+
+        // Set after the label, because the listener writes into it: a value set before it exists is
+        // the one way this control could be built with nothing beside it.
+        built.renderDistance.setOnValueChanged(value -> {
+            writeRenderDistance(built, Math.round(value));
+            if (instance != null) instance.refreshStatus();
+        });
+        writeRenderDistance(built, EffectToolConfig.UNLIMITED_RENDER_DISTANCE);
+
+        renderDistanceRow = controlRow(built, "backutils.effect_tool.label.render_distance",
+                built.renderDistance, built.renderDistanceValue);
 
         built.status = new Label();
         built.status.setText("", false);
@@ -312,6 +351,7 @@ public final class EffectToolScreen extends Screen {
                 scaleRow, rotationRow, offsetRow,
                 labelled(built, "backutils.effect_tool.label.force_death", built.forceDeath),
                 labelled(built, "backutils.effect_tool.label.delay", built.delay),
+                renderDistanceRow,
                 built.status, buttons);
 
         built.root = new UIElement();
@@ -326,7 +366,7 @@ public final class EffectToolScreen extends Screen {
         int rows = 14            // title
                 + 8 * ROW        // mode, auto-rotate, lifetime, distance, path, scale, rotation,
                                  // offset
-                + 2 * ROW        // force death, delay
+                + 3 * ROW        // force death, delay, render distance
                 + 12             // status
                 + ROW;           // buttons
         return PAD * 2 + rows + GAP * 12;
@@ -354,6 +394,28 @@ public final class EffectToolScreen extends Screen {
         toggle.setText("", false);
         toggle.setOnToggleChanged(apply::accept);
         return toggle;
+    }
+
+    /**
+     * Writes the distance the slider stands at into the word or number beside it.
+     *
+     * <p>Both ends are words. The top is "unlimited", which is what every tool written before this
+     * setting existed does — the client's own view decides what is drawn — and the bottom is
+     * "personal", which is not a distance of zero blocks but a statement about who may be told about
+     * the effect at all: the placer, and nobody else, wherever they stand. Everything between is a
+     * distance in blocks, and a bare number is read as one because the caption beside it says what.
+     */
+    private static void writeRenderDistance(Built built, int distance) {
+        if (built.renderDistanceValue == null) return;
+        if (distance >= EffectToolConfig.UNLIMITED_RENDER_DISTANCE) {
+            built.renderDistanceValue.setText(
+                    Text.of("backutils.effect_tool.render_distance.unlimited"), false);
+        } else if (distance <= EffectToolConfig.PERSONAL_RENDER_DISTANCE) {
+            built.renderDistanceValue.setText(
+                    Text.of("backutils.effect_tool.render_distance.personal"), false);
+        } else {
+            built.renderDistanceValue.setText(String.valueOf(distance), false);
+        }
     }
 
     /** {@return one row of a caption and a control beside it} */
@@ -457,6 +519,11 @@ public final class EffectToolScreen extends Screen {
         for (Built.Caption caption : built.captions) {
             caption.element().setText(Text.of(caption.key()), false);
         }
+        // The value beside the slider is a word at either end: a language change has to reach it too,
+        // and the number in between is written from the slider itself.
+        if (built.renderDistance != null && built.renderDistance.getValue() != null) {
+            writeRenderDistance(built, Math.round(built.renderDistance.getValue()));
+        }
     }
 
     // ------------------------------------------------------------------
@@ -521,6 +588,8 @@ public final class EffectToolScreen extends Screen {
         writeTriplet(built.offset, config.offset());
         built.forceDeath.setOn(config.forceDeath(), false);
         built.delay.setText(String.valueOf(config.delayTicks()), false);
+        built.renderDistance.setValue((float) config.renderDistance(), false);
+        writeRenderDistance(built, config.renderDistance());
 
         refreshStatus();
     }
@@ -607,6 +676,8 @@ public final class EffectToolScreen extends Screen {
         int distance = on(built.reach)
                 ? EffectToolConfig.PLAYER_REACH
                 : whole(built.distance.getText(), old.maxDistance(), kept);
+        // The slider is the value: it cannot hold anything but a whole step inside its own range.
+        int renderDistance = Math.round(built.renderDistance.getValue());
 
         EffectToolConfig wanted = EffectToolConfig.of(
                 chosenMode,
@@ -618,7 +689,8 @@ public final class EffectToolScreen extends Screen {
                 readTriplet(built.rotation, kept),
                 readTriplet(built.offset, kept),
                 on(built.forceDeath),
-                whole(built.delay.getText(), old.delayTicks(), kept));
+                whole(built.delay.getText(), old.delayTicks(), kept),
+                renderDistance);
 
         if (source == null) {
             setStatus(Text.of("backutils.effect_tool.status.not_here"), WARNING);
@@ -688,6 +760,7 @@ public final class EffectToolScreen extends Screen {
         for (TextField box : allFields()) box.setDisplay(true);
         built.mode.setDisplay(true);
         built.autoRotate.setDisplay(true);
+        built.renderDistance.setDisplay(true);
         // The list is a way of filling the path box in, so it goes with the boxes: refreshEffects is
         // what decides whether this client has any effects to offer at all.
         built.effects.setDisplay(!built.effects.getCandidates().isEmpty());

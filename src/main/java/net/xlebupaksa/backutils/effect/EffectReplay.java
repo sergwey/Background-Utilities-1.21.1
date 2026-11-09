@@ -146,6 +146,21 @@ public class EffectReplay {
         EffectAnchor.clear();
     }
 
+    /**
+     * {@return true when this player is one of the players an effect is for}
+     *
+     * <p>Personal effects — the slider at zero — are sent only to the player who placed them. This is
+     * the whole of their enforcement: a screen shader is submitted for the whole client, so a client
+     * that is told about one cannot decide not to draw it. Reading the setting from the row rather
+     * than from a live tool is deliberate: a row keeps what it was placed with, and an operator
+     * changing their tool afterwards must not change what an effect in the world is.
+     */
+    private static boolean deliverable(PlacedEffect effect, ServerPlayer player) {
+        if (!effect.config().personal()) return true;
+        return effect.ownerUuid() != null
+                && effect.ownerUuid().equals(player.getUUID().toString());
+    }
+
     /** Puts a player in the queue, or moves them back to the end of it when they are already in. */
     private void queue(ServerPlayer player) {
         waiting.put(player.getUUID(), SETTLE_TICKS);
@@ -177,6 +192,7 @@ public class EffectReplay {
         for (PlacedEffect effect : store.inChunk(dimension, chunk.x, chunk.z)) {
             EffectPlacement where = effect.placement();
             if (where == null || !where.dimension().equals(dimension)) continue;
+            if (!deliverable(effect, player)) continue;
             // The block the effect is in now rather than the one its row was written at: an accurate
             // effect hangs off a display anything may move, and the effect goes with it — so the chunk
             // that brings it back is the display's. See EffectAnchor.whereIs. A display moved clean out
@@ -196,6 +212,7 @@ public class EffectReplay {
         // same question — is this effect in the chunk that has just arrived — asked in world space.
         for (PlacedEffect effect : store.subLevels(dimension)) {
             if (effect.placement() == null) continue;
+            if (!deliverable(effect, player)) continue;
             Point at = EffectAnchor.whereIs(level, effect);
             if (at == null) continue;
             BlockPos block = BlockPos.containing(at.x(), at.y(), at.z());
@@ -230,6 +247,7 @@ public class EffectReplay {
         for (PlacedEffect effect : store.attachedTo(dimension, targetUuid)) {
             EffectPlacement where = effect.placement();
             if (where == null || !where.dimension().equals(dimension)) continue;
+            if (!deliverable(effect, player)) continue;
             if (!targetUuid.equals(effect.targetUuid()) && !targetUuid.equals(effect.anchorUuid())) {
                 continue;
             }
@@ -311,6 +329,7 @@ public class EffectReplay {
         for (PlacedEffect effect : store.all()) {
             EffectPlacement where = effect.placement();
             if (where == null || !where.dimension().equals(dimension)) continue;
+            if (!deliverable(effect, player)) continue;
 
             // Measured to where the effect is now rather than to the point its row was written at,
             // which is the same question the drawing asks: an accurate effect follows the display it
