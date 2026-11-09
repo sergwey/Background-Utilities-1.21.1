@@ -86,6 +86,27 @@ public record PlacedEffect(
     }
 
     /**
+     * {@return the player a personal effect is for, or null when it is for nobody}
+     *
+     * <p><b>Personal means the target, not the placer.</b> The two entity modes hang the effect off an
+     * entity, so one aimed at a player is that player's alone — the case a screen shader exists for —
+     * and one aimed at a mob is nobody's, because a mob has no screen to put it on. Every other mode
+     * has no target entity to be for, and falls back to the player who placed the effect.
+     *
+     * <p>Answered from the row rather than from a live tool: a row keeps what it was placed with, and
+     * an operator changing their tool afterwards must not change who an effect in the world is for.
+     */
+    public String personalAudience() {
+        if (placement != null
+                && (placement.mode() == EffectToolConfig.Mode.ENTITY
+                        || placement.mode() == EffectToolConfig.Mode.ENTITY_AUTO_ROTATE)
+                && targetUuid != null && !targetUuid.isBlank()) {
+            return targetUuid;
+        }
+        return ownerUuid;
+    }
+
+    /**
      * {@return true when this effect sits in the same block as the given one}
      *
      * <p>What the delete tool asks: clicking a pink cube removes everything in that place, so two

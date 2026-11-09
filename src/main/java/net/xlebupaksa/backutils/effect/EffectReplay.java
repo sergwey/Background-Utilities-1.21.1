@@ -149,16 +149,16 @@ public class EffectReplay {
     /**
      * {@return true when this player is one of the players an effect is for}
      *
-     * <p>Personal effects — the slider at zero — are sent only to the player who placed them. This is
-     * the whole of their enforcement: a screen shader is submitted for the whole client, so a client
-     * that is told about one cannot decide not to draw it. Reading the setting from the row rather
-     * than from a live tool is deliberate: a row keeps what it was placed with, and an operator
-     * changing their tool afterwards must not change what an effect in the world is.
+     * <p>Personal effects — the slider at zero — are sent only to the player they are for, which is
+     * the target entity in the two entity modes and the placer everywhere else: see
+     * {@link PlacedEffect#personalAudience()}. This is the whole of their enforcement, because a
+     * screen shader is submitted for the whole client and a client that is told about one cannot
+     * decide not to draw it.
      */
     private static boolean deliverable(PlacedEffect effect, ServerPlayer player) {
         if (!effect.config().personal()) return true;
-        return effect.ownerUuid() != null
-                && effect.ownerUuid().equals(player.getUUID().toString());
+        String audience = effect.personalAudience();
+        return audience != null && audience.equals(player.getUUID().toString());
     }
 
     /** Puts a player in the queue, or moves them back to the end of it when they are already in. */

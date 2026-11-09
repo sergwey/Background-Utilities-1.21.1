@@ -56,10 +56,14 @@ public record EffectToolConfig(
     public static final int PLAYER_REACH = -1;
 
     /**
-     * The bottom of the render-distance slider: the effect is the placer's own and nobody else's.
+     * The bottom of the render-distance slider: the effect is for one player and no one else.
+     *
+     * <p>Which player is the target's business, not the placer's: an entity-mode effect is for the
+     * entity it was aimed at, and every other mode for the player who placed it — see
+     * {@link net.xlebupaksa.backutils.data.PlacedEffect#personalAudience()}.
      *
      * <p>Read as a flag rather than as a distance. A zero that meant "within zero blocks" would hide
-     * the placer's own effect as soon as they stepped back from it, which is the opposite of what a
+     * the player's own effect as soon as they stepped back from it, which is the opposite of what a
      * personal effect — a screen shader, most of the time — is for.
      */
     public static final int PERSONAL_RENDER_DISTANCE = 0;
@@ -209,11 +213,12 @@ public record EffectToolConfig(
     }
 
     /**
-     * {@return true when only the player who placed the effect may see it}
+     * {@return true when only one player may be told about the effect at all}
      *
-     * <p>{@link #PERSONAL_RENDER_DISTANCE} is a flag, not a distance: it says who may be told about
-     * the effect at all, which is the only thing that can keep a screen shader off another player's
-     * screen — a post effect is submitted for the whole client and cannot be culled by distance.
+     * <p>Who that is comes from the placement: the entity the effect was aimed at in the two entity
+     * modes, and the placer in every other mode. See
+     * {@link net.xlebupaksa.backutils.data.PlacedEffect#personalAudience()}, which is where the row
+     * answers it.
      */
     public boolean personal() {
         return renderDistance == PERSONAL_RENDER_DISTANCE;
