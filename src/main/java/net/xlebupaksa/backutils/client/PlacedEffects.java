@@ -550,6 +550,14 @@ public final class PlacedEffects {
             // timeline from the start.
             if (outOfRange(entry, level, holder)) {
                 if (entry.runtime != null) {
+                    // An effect that played its own timeline out is reported before it is taken
+                    // down, even though the player is too far to see it: the row goes with that
+                    // ending, and a destroy here would be the one ending nobody tells the server
+                    // about, leaving a row for an effect that has already finished.
+                    if (!PhotonFx.destroyed(entry.runtime) && PhotonFx.playedOut(entry.runtime)) {
+                        end(entry);
+                        continue;
+                    }
                     PhotonFx.destroy(entry.runtime);
                     entry.runtime = null;
                     // None of this was a failure: the effect is the same one, the player is simply
