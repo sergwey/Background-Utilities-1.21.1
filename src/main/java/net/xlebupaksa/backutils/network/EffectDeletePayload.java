@@ -30,10 +30,10 @@ import java.util.List;
  *       so "the effects on this entity" is not a question the server can be asked; the client's own
  *       registry is what knows an effect hangs off one, and it sends the rows it holds. An id the
  *       server does not know is not an error — a client that has stopped drawing an effect already
- *       has nothing to stop. This is also what alt-click sends, for the effects attached to the
+ *       has nothing to stop. This is also what a sneak-click sends, for the effects attached to the
  *       clicking player: the same question about themselves.
  *   <li><b>{@link Kind#MINE}</b> — retired, and deliberately still here: it emptied every effect the
- *       clicking player had ever placed, which one stray alt-click could do to a whole build, so
+ *       clicking player had ever placed, which one stray sneak-click could do to a whole build, so
  *       nothing sends it and the server acts on nothing for it. It is kept as a value because the
  *       kinds are written by ordinal, and removing it would renumber the one after it.
  * </ul>

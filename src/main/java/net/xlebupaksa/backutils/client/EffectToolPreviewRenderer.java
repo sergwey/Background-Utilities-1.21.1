@@ -379,7 +379,7 @@ public final class EffectToolPreviewRenderer {
      * position its entry carries is only where they were standing when they asked for it: a cube
      * there would offer a click at a block holding nothing the server can remove, and an outline
      * around the holder would be a target drawn on themselves. The effect itself is the indication,
-     * and alt-click is what takes these away.
+     * and a sneak-click is what takes these away.
      */
     private static void drawPlacedEffects(PoseStack poses, Minecraft minecraft, ClientLevel level,
                                           Vec3 camera, float partialTick) {

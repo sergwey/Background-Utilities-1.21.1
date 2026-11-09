@@ -1,7 +1,6 @@
 package net.xlebupaksa.backutils.client;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
@@ -46,10 +45,10 @@ import java.util.List;
  * <p>What a click names, in the order the two targets are asked about:
  *
  * <ul>
- *   <li><b>Alt</b> — the effects attached to the clicking player, which is the one target a crosshair
- *       cannot name: a self effect is drawn as nothing, and the player wearing it is not something they
- *       can aim at. It comes first because it is a statement about the player rather than about the
- *       crosshair, and a player holding alt is not aiming at anything in particular.
+ *   <li><b>Sneak + right-click</b> — the effects attached to the clicking player, which is the one
+ *       target a crosshair cannot name: a self effect is drawn as nothing, and the player wearing it is
+ *       not something they can aim at. It comes first because it is a statement about the player rather
+ *       than about the crosshair, and a player who is sneaking is not aiming at anything in particular.
  *   <li><b>Whatever {@link EffectPick} answers</b>, which is the one decision the renderer takes as
  *       well: a placed effect the crosshair is on, or an entity an effect hangs off when that entity
  *       is what the ray meets first. It is asked once, here, rather than worked out again from the
@@ -131,10 +130,10 @@ public final class DeleteToolClick {
         // one whether or not there is anything to remove, and the shot is the sound of that.
         ToolShot.deleteTool();
 
-        if (Screen.hasAltDown()) {
+        if (player.isShiftKeyDown()) {
             // The effects attached to this player, which is the one target the crosshair cannot name: a
             // self effect is drawn as nothing and hangs off the holder, so "the effects from self" is
-            // what alt-click is for.
+            // what sneak-click is for.
             //
             // A self effect was never written down — a row would outlive the thing it described — so its
             // id is one this client invented and the server has nothing to remove: it is taken away
@@ -143,8 +142,8 @@ public final class DeleteToolClick {
             // carrying one would be.
             //
             // Nothing here removes an effect placed somewhere else, which an earlier reading of the same
-            // words did: alt-click used to take away every effect the clicking player had ever placed, so
-            // one stray key removed a whole build's worth of them.
+            // words did: sneak-click used to take away every effect the clicking player had ever placed,
+            // so one stray key removed a whole build's worth of them.
             List<Long> stored = new ArrayList<>();
             for (long id : PlacedEffects.anchoredTo(player.getId())) {
                 if (id > 0L) {

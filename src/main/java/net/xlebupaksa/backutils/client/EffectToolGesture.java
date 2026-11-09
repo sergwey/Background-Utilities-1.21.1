@@ -81,7 +81,8 @@ public final class EffectToolGesture {
             abandon();
             return;
         }
-        // Ctrl and the rest are somebody else's shortcut, and Alt is used by the delete tool later.
+        // Ctrl and the rest are somebody else's shortcut, and the delete tool's own gesture is a
+        // sneak-click rather than one of these modifiers.
         if (event.getModifiers() != 0) return;
 
         // Every press counts, including the auto-repeat a held key sends, so the timer follows the

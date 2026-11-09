@@ -38,15 +38,15 @@ public class DeleteToolItem extends Item {
      * What the tool is for, since nothing on it says so.
      *
      * <p>The gesture has to be on the item rather than in the spec: a player handed a tool has no
-     * other way to learn that alt-clicking removes their own effects, and the difference between a
-     * click and an alt-click is not one anybody would find by accident.
+     * other way to learn that sneak-clicking removes the effects on themselves, and the difference
+     * between a click and a sneak-click is not one anybody would find by accident.
      */
     @Override
     public void appendHoverText(ItemStack stack, TooltipContext context, List<Component> lines,
                                 TooltipFlag flag) {
         lines.add(Component.translatable("backutils.delete_tool.tooltip.hint")
                 .withStyle(ChatFormatting.GRAY));
-        lines.add(Component.translatable("backutils.delete_tool.tooltip.alt")
+        lines.add(Component.translatable("backutils.delete_tool.tooltip.self")
                 .withStyle(ChatFormatting.DARK_GRAY));
     }
 }

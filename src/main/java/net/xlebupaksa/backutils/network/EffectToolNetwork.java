@@ -393,7 +393,7 @@ public final class EffectToolNetwork {
                 // level the sender is standing in are removed — that is the level the tool draws,
                 // and therefore the only one a click can be about — and an id that names nothing is
                 // ignored rather than refused, since an effect already gone is gone. This is also what
-                // alt-click sends: the effects attached to the sender, named by the client like any
+                // a sneak-click sends: the effects attached to the sender, named by the client like any
                 // other set of rows.
                 String dimension = player.level().dimension().location().toString();
                 for (PlacedEffect effect : store.all()) {
