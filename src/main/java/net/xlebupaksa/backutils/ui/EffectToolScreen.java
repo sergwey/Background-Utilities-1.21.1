@@ -297,17 +297,24 @@ public final class EffectToolScreen extends Screen {
         built.delay = field(62);
 
         // The one control of its kind on this screen, and the last of the effect's own settings: how
-        // far away the effect is still drawn. Its range is the record's own, and the two ends are
-        // words rather than numbers — see writeRenderDistance.
+        // far away the effect is still drawn. The slider's own value is a position on the track rather
+        // than a distance — see distanceFor for why the two are not the same thing — and the two ends
+        // are words rather than numbers, as writeRenderDistance says.
         built.renderDistance = new Slider.Horizontal();
-        built.renderDistance.setRange(EffectToolConfig.PERSONAL_RENDER_DISTANCE,
-                EffectToolConfig.UNLIMITED_RENDER_DISTANCE);
-        // One block per wheel notch. A track of a hundred-odd pixels over four thousand blocks is
-        // about forty blocks to a pixel, so a drag alone can never name a distance near either end;
-        // the wheel is the fine control and the field beside it the exact one.
-        built.renderDistance.sliderStyle(style -> style.sliderStep(
-                1.0F / EffectToolConfig.UNLIMITED_RENDER_DISTANCE));
-        built.renderDistance.setValue((float) EffectToolConfig.UNLIMITED_RENDER_DISTANCE, false);
+        built.renderDistance.setRange(0.0F, 1.0F);
+        // A wheel notch is one block, wherever the handle is. The step only carries the direction: the
+        // square below means a fixed fraction of the track is not a fixed distance, so what is added
+        // is the change of position one block is worth here — which is what makes the wheel usable
+        // near the small distances as well as the large ones.
+        built.renderDistance.sliderStyle(style -> style.sliderStep(1.0F));
+        built.renderDistance.setClampNormalizedValue(step -> {
+            if (step == 0.0F) return 0.0F;
+            float current = built.renderDistance.getNormalizedValue();
+            int present = distanceFor(current);
+            int wanted = step > 0.0F ? present + 1 : present - 1;
+            return positionFor(wanted) - current;
+        });
+        built.renderDistance.setValue(1.0F, false);
         built.renderDistance.layout(l -> l.flex(1).height(14));
 
         built.renderDistanceValue = new TextField();
@@ -323,14 +330,12 @@ public final class EffectToolScreen extends Screen {
             // while the field is being written in. A word is one of the two ends, and typing it moves
             // the slider there rather than leaving the handle where it was.
             if (word(RENDER_DISTANCE_UNLIMITED, text)) {
-                built.renderDistance.setValue(
-                        (float) EffectToolConfig.UNLIMITED_RENDER_DISTANCE, false);
+                built.renderDistance.setValue(1.0F, false);
             } else if (word(RENDER_DISTANCE_PERSONAL, text)) {
-                built.renderDistance.setValue(
-                        (float) EffectToolConfig.PERSONAL_RENDER_DISTANCE, false);
+                built.renderDistance.setValue(0.0F, false);
             } else {
                 int typed = numberOr(text, -1);
-                if (typed >= 0) built.renderDistance.setValue((float) typed, false);
+                if (typed >= 0) built.renderDistance.setValue(positionFor(typed), false);
             }
             refreshApply(built);
             if (instance != null) instance.refreshStatus();
@@ -339,7 +344,7 @@ public final class EffectToolScreen extends Screen {
         // Set after the field, because the listener writes into it: a value set before it exists is
         // the one way this control could be built with nothing beside it.
         built.renderDistance.setOnValueChanged(value -> {
-            writeRenderDistance(built, Math.round(value));
+            writeRenderDistance(built, distanceFor(value));
             if (instance != null) instance.refreshStatus();
         });
         writeRenderDistance(built, EffectToolConfig.UNLIMITED_RENDER_DISTANCE);
@@ -430,7 +435,7 @@ public final class EffectToolScreen extends Screen {
     }
 
     /**
-     * Writes the distance the slider stands at into the field beside it.
+     * Writes a distance into the field beside the slider.
      *
      * <p>Both ends are words, and the field takes them as text like any other value. The top is
      * "unlimited", which is what every tool written before this setting existed does — the client's
@@ -574,9 +579,9 @@ public final class EffectToolScreen extends Screen {
             caption.element().setText(Text.of(caption.key()), false);
         }
         // The value beside the slider is a word at either end: a language change has to reach it too,
-        // and the number in between is written from the slider itself.
+        // and the number in between is written from the position the slider stands at.
         if (built.renderDistance != null && built.renderDistance.getValue() != null) {
-            writeRenderDistance(built, Math.round(built.renderDistance.getValue()));
+            writeRenderDistance(built, distanceFor(built.renderDistance.getValue()));
         }
     }
 
@@ -642,7 +647,7 @@ public final class EffectToolScreen extends Screen {
         writeTriplet(built.offset, config.offset());
         built.forceDeath.setOn(config.forceDeath(), false);
         built.delay.setText(String.valueOf(config.delayTicks()), false);
-        built.renderDistance.setValue((float) config.renderDistance(), false);
+        built.renderDistance.setValue(positionFor(config.renderDistance()), false);
         writeRenderDistance(built, config.renderDistance());
 
         refreshStatus();
@@ -750,12 +755,46 @@ public final class EffectToolScreen extends Screen {
     }
 
     /**
-     * {@return the distance the row holds}, typed into the field when it is a number, and the slider's
-     * own value while it is a word
+     * {@return the distance the row holds}, typed into the field when it is a number, and the distance
+     * the slider's position stands for while it is a word
      */
     private static int readRenderDistance(Built built) {
         return numberOr(built.renderDistanceValue.getText(),
-                Math.round(built.renderDistance.getValue()));
+                distanceFor(built.renderDistance.getValue()));
+    }
+
+    /**
+     * {@return the distance a position on the track stands for}
+     *
+     * <p>The track is a square rather than a straight line, because a straight line cannot be used:
+     * four thousand four hundred and forty-four values across a hundred-odd pixels is about forty
+     * blocks to a pixel, so nothing below a hundred can be dragged at and the two ends are a few
+     * pixels of guesswork. Squaring the position puts the first hundred blocks in the first fifteenth
+     * of the track, where a hand can reach them, and leaves the long distances — which all look the
+     * same at that range — to the rest of it. The field beside it is still the exact answer.
+     *
+     * @param position the slider's own value, from 0 at the personal end to 1 at the unlimited one
+     */
+    private static int distanceFor(float position) {
+        if (position <= 0.0F) return EffectToolConfig.PERSONAL_RENDER_DISTANCE;
+        if (position >= 1.0F) return EffectToolConfig.UNLIMITED_RENDER_DISTANCE;
+        double squared = (double) position * position;
+        return (int) Math.round(EffectToolConfig.UNLIMITED_RENDER_DISTANCE * squared);
+    }
+
+    /**
+     * {@return where on the track a distance sits}, the inverse of {@link #distanceFor}
+     *
+     * <p>Asked whenever the value comes from somewhere other than the track itself — a tool being
+     * loaded, or a number typed into the field — so the handle lands where the distance is, rather
+     * than at the number the distance happens to look like on a straight line.
+     */
+    private static float positionFor(int distance) {
+        int clamped = Math.max(EffectToolConfig.PERSONAL_RENDER_DISTANCE,
+                Math.min(EffectToolConfig.UNLIMITED_RENDER_DISTANCE, distance));
+        if (clamped <= EffectToolConfig.PERSONAL_RENDER_DISTANCE) return 0.0F;
+        if (clamped >= EffectToolConfig.UNLIMITED_RENDER_DISTANCE) return 1.0F;
+        return (float) Math.sqrt((double) clamped / EffectToolConfig.UNLIMITED_RENDER_DISTANCE);
     }
 
     /**
