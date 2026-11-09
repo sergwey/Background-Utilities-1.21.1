@@ -116,9 +116,16 @@ public final class EffectToolScreen extends Screen {
         TextField path;
         /** The drawing distance, at the end of the list because it is about the world, not the effect. */
         Slider.Horizontal renderDistance;
-        /** The word or number beside the slider, which is "unlimited" at its top and "personal" at its
-         * bottom. */
-        Label renderDistanceValue;
+        /**
+         * The value beside the slider: a number, or one of the two words at the ends of its range.
+         *
+         * <p>A field rather than a label, and a fixed width rather than one that follows the text:
+         * the words and the numbers are not the same width, and a control that resizes moves the
+         * slider's track under the cursor exactly when a player is trying to reach an end. It is also
+         * the only way to ask for an exact distance, since a track this short cannot resolve four
+         * thousand of them.
+         */
+        TextField renderDistanceValue;
         /**
          * The effects this client has, offered beside the path box.
          *
@@ -289,21 +296,27 @@ public final class EffectToolScreen extends Screen {
         built.renderDistance = new Slider.Horizontal();
         built.renderDistance.setRange(EffectToolConfig.PERSONAL_RENDER_DISTANCE,
                 EffectToolConfig.UNLIMITED_RENDER_DISTANCE);
-        // An integer control on a float widget: the normalised value is snapped to whole steps, so a
-        // drag cannot ask for sixty-three point seven blocks.
-        built.renderDistance.setClampNormalizedValue(normalised ->
-                Math.round(normalised * EffectToolConfig.UNLIMITED_RENDER_DISTANCE)
-                        / (float) EffectToolConfig.UNLIMITED_RENDER_DISTANCE);
+        // One block per wheel notch. A track of a hundred-odd pixels over four thousand blocks is
+        // about forty blocks to a pixel, so a drag alone can never name a distance near either end;
+        // the wheel is the fine control and the field beside it the exact one.
+        built.renderDistance.sliderStyle(style -> style.sliderStep(
+                1.0F / EffectToolConfig.UNLIMITED_RENDER_DISTANCE));
         built.renderDistance.setValue((float) EffectToolConfig.UNLIMITED_RENDER_DISTANCE, false);
         built.renderDistance.layout(l -> l.flex(1).height(14));
 
-        built.renderDistanceValue = new Label();
+        built.renderDistanceValue = new TextField();
+        built.renderDistanceValue.layout(l -> l.width(92).height(14));
         built.renderDistanceValue.setText("", false);
-        built.renderDistanceValue.textStyle(t -> t.fontSize(9f).textColor(MUTED).textShadow(false)
-                .textAlignVertical(Vertical.CENTER).adaptiveWidth(true));
-        built.renderDistanceValue.layout(l -> l.width(92).height(ROW));
+        built.renderDistanceValue.setTextResponder(text -> {
+            // A typed number moves the handle without rewriting the text, so the cursor does not jump
+            // while the field is being written in. A word is what the two ends show, and the slider
+            // already holds the value behind it.
+            int typed = numberOr(text, -1);
+            if (typed >= 0) built.renderDistance.setValue((float) typed, false);
+            if (instance != null) instance.refreshStatus();
+        });
 
-        // Set after the label, because the listener writes into it: a value set before it exists is
+        // Set after the field, because the listener writes into it: a value set before it exists is
         // the one way this control could be built with nothing beside it.
         built.renderDistance.setOnValueChanged(value -> {
             writeRenderDistance(built, Math.round(value));
@@ -397,22 +410,26 @@ public final class EffectToolScreen extends Screen {
     }
 
     /**
-     * Writes the distance the slider stands at into the word or number beside it.
+     * Writes the distance the slider stands at into the field beside it.
      *
-     * <p>Both ends are words. The top is "unlimited", which is what every tool written before this
-     * setting existed does — the client's own view decides what is drawn — and the bottom is
-     * "personal", which is not a distance of zero blocks but a statement about who may be told about
-     * the effect at all: the placer, and nobody else, wherever they stand. Everything between is a
-     * distance in blocks, and a bare number is read as one because the caption beside it says what.
+     * <p>Both ends are words, and the field takes them as text like any other value. The top is
+     * "unlimited", which is what every tool written before this setting existed does — the client's
+     * own view decides what is drawn — and the bottom is "personal", which is not a distance of zero
+     * blocks but a statement about who may be told about the effect at all: the placer, and nobody
+     * else, wherever they stand. Everything between is a distance in blocks, and a bare number is
+     * read as one because the caption beside it says what.
+     *
+     * <p>Written with the field's own notify flag off: this is the control speaking, and the field's
+     * responder must not read its own text back and move the handle it is standing beside.
      */
     private static void writeRenderDistance(Built built, int distance) {
         if (built.renderDistanceValue == null) return;
         if (distance >= EffectToolConfig.UNLIMITED_RENDER_DISTANCE) {
-            built.renderDistanceValue.setText(
-                    Text.of("backutils.effect_tool.render_distance.unlimited"), false);
+            built.renderDistanceValue.setText(Component.translatable(
+                    "backutils.effect_tool.render_distance.unlimited").getString(), false);
         } else if (distance <= EffectToolConfig.PERSONAL_RENDER_DISTANCE) {
-            built.renderDistanceValue.setText(
-                    Text.of("backutils.effect_tool.render_distance.personal"), false);
+            built.renderDistanceValue.setText(Component.translatable(
+                    "backutils.effect_tool.render_distance.personal").getString(), false);
         } else {
             built.renderDistanceValue.setText(String.valueOf(distance), false);
         }
@@ -648,6 +665,31 @@ public final class EffectToolScreen extends Screen {
     }
 
     /**
+     * {@return the number a field holds, or {@code fallback} when it holds anything else}
+     *
+     * <p>Separate from {@link #whole} because the distance field is allowed to hold a word: the two
+     * ends of its range show "unlimited" and "personal", and neither is a number a player typed. A
+     * field that holds a word is not a field being typed in, so nothing is reported as kept.
+     */
+    private static int numberOr(String text, int fallback) {
+        if (text == null || text.isBlank()) return fallback;
+        try {
+            return Math.round(Float.parseFloat(text.trim()));
+        } catch (NumberFormatException notANumber) {
+            return fallback;
+        }
+    }
+
+    /**
+     * {@return the distance the row holds}, typed into the field when it is a number, and the slider's
+     * own value while it is a word
+     */
+    private static int readRenderDistance(Built built) {
+        return numberOr(built.renderDistanceValue.getText(),
+                Math.round(built.renderDistance.getValue()));
+    }
+
+    /**
      * Sends every box to the server, clamped.
      *
      * <p>The tool's own stored values are read first, so a field that cannot be read keeps what the
@@ -676,8 +718,9 @@ public final class EffectToolScreen extends Screen {
         int distance = on(built.reach)
                 ? EffectToolConfig.PLAYER_REACH
                 : whole(built.distance.getText(), old.maxDistance(), kept);
-        // The slider is the value: it cannot hold anything but a whole step inside its own range.
-        int renderDistance = Math.round(built.renderDistance.getValue());
+        // The slider and the field are one setting: a number typed into the field is the answer, and
+        // a word in it is one of the two ends, whose value the slider already holds.
+        int renderDistance = readRenderDistance(built);
 
         EffectToolConfig wanted = EffectToolConfig.of(
                 chosenMode,
@@ -745,6 +788,7 @@ public final class EffectToolScreen extends Screen {
         fields.addAll(List.of(built.rotation));
         fields.addAll(List.of(built.offset));
         fields.add(built.delay);
+        fields.add(built.renderDistanceValue);
         return fields;
     }
 
