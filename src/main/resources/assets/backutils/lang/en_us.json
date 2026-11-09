@@ -155,6 +155,7 @@
   "backutils.effect_tool.render_distance.unlimited": "Unlimited",
   "backutils.effect_tool.screen.title": "Effect tool",
   "backutils.effect_tool.status.applied": "Written to the tool.",
+  "backutils.effect_tool.status.bad_distance": "The render distance is not a value this tool can use.",
   "backutils.effect_tool.status.choose_mode": "Choose a mode, then apply.",
   "backutils.effect_tool.status.kept": "Some boxes are not numbers yet; the tool kept its values.",
   "backutils.effect_tool.status.no_answer": "The server did not answer, so this edit is unconfirmed.",

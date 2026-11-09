@@ -332,6 +332,7 @@ public final class EffectToolScreen extends Screen {
                 int typed = numberOr(text, -1);
                 if (typed >= 0) built.renderDistance.setValue((float) typed, false);
             }
+            refreshApply(built);
             if (instance != null) instance.refreshStatus();
         });
 
@@ -434,9 +435,10 @@ public final class EffectToolScreen extends Screen {
      * <p>Both ends are words, and the field takes them as text like any other value. The top is
      * "unlimited", which is what every tool written before this setting existed does — the client's
      * own view decides what is drawn — and the bottom is "personal", which is not a distance of zero
-     * blocks but a statement about who may be told about the effect at all: the placer, and nobody
-     * else, wherever they stand. Everything between is a distance in blocks, and a bare number is
-     * read as one because the caption beside it says what.
+     * blocks but a statement about who may be told about the effect at all: the entity it was aimed
+     * at in the two entity modes, and the placer everywhere else, wherever either stands. Everything
+     * between is a distance in blocks, and a bare number is read as one because the caption beside it
+     * says what.
      *
      * <p>Written with the field's own notify flag off: this is the control speaking, and the field's
      * responder must not read its own text back and move the handle it is standing beside.
@@ -452,6 +454,22 @@ public final class EffectToolScreen extends Screen {
         } else {
             built.renderDistanceValue.setText(String.valueOf(distance), false);
         }
+        // A write from the slider is always text the field accepts, so this is also what takes the
+        // red away and gives Apply back after a typo.
+        refreshApply(built);
+    }
+
+    /**
+     * Enables Apply only while the screen holds a tool and nothing on it is in error.
+     *
+     * <p>The distance field is the one control that can hold text it refuses, and a red field beside
+     * a working Apply is what this is for: the button goes with the field rather than the click being
+     * refused afterwards. {@link #apply} refuses anyway — a button is not a guard.
+     */
+    private static void refreshApply(Built built) {
+        if (built.apply == null) return;
+        boolean held = instance != null && !instance.tool().isEmpty();
+        built.apply.setActive(held && !built.renderDistanceValue.isError());
     }
 
     /** {@return one row of a caption and a control beside it} */
@@ -756,6 +774,12 @@ public final class EffectToolScreen extends Screen {
             load();
             return;
         }
+        if (built.renderDistanceValue.isError()) {
+            // The field is showing text it refuses, and text it never adopted is not a value this can
+            // store: the edit stops here rather than storing everything else around a typo.
+            setStatus(Text.of("backutils.effect_tool.status.bad_distance"), WARNING);
+            return;
+        }
 
         EffectToolConfig old = EffectToolItem.configOf(stack);
         // Boxes the player is part-way through typing in are not numbers yet: they keep what the
@@ -769,17 +793,9 @@ public final class EffectToolScreen extends Screen {
         int distance = on(built.reach)
                 ? EffectToolConfig.PLAYER_REACH
                 : whole(built.distance.getText(), old.maxDistance(), kept);
-        // The distance field is allowed to say no: it validates its own text as it is typed, and a
-        // text it refuses is a text it never adopted — reading the last value it did adopt would be
-        // reading a prefix of a typo. The tool's own value is the honest answer there, and the red
-        // the field is already drawing is the explanation.
-        int renderDistance;
-        if (built.renderDistanceValue.isError()) {
-            renderDistance = old.renderDistance();
-            kept[0] = true;
-        } else {
-            renderDistance = readRenderDistance(built);
-        }
+        // The field validated itself as it was typed, so by here it holds either a number the tool can
+        // use, one of the two words, or nothing; readRenderDistance answers for all three.
+        int renderDistance = readRenderDistance(built);
 
         EffectToolConfig wanted = EffectToolConfig.of(
                 chosenMode,

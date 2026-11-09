@@ -155,6 +155,7 @@
   "backutils.effect_tool.render_distance.unlimited": "Без ограничения",
   "backutils.effect_tool.screen.title": "Инструмент эффектов",
   "backutils.effect_tool.status.applied": "Записано в инструмент.",
+  "backutils.effect_tool.status.bad_distance": "Дальность отрисовки — не значение, которое может использовать инструмент.",
   "backutils.effect_tool.status.choose_mode": "Выберите режим и нажмите «Применить».",
   "backutils.effect_tool.status.kept": "Некоторые поля ещё не числа — инструмент сохранил свои значения.",
   "backutils.effect_tool.status.no_answer": "Сервер не ответил — изменение не подтверждено.",
