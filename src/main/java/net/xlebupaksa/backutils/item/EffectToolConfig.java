@@ -67,7 +67,7 @@ public record EffectToolConfig(
      * The top of the slider: no distance of our own, so the client's own view decides, as it did
      * before this setting existed. The slider shows this as "unlimited" rather than as a number.
      */
-    public static final int UNLIMITED_RENDER_DISTANCE = 9999;
+    public static final int UNLIMITED_RENDER_DISTANCE = 4_444;
 
     public static final int MIN_DELAY = 0;
     public static final int MAX_DELAY = 72_000;

@@ -29,6 +29,9 @@ import java.util.Locale;
  * @param lifetimeTicks the configured life of the effect, which the caller schedules the ending of:
  *                      the library has no lifetime of its own, so a placement that is to be removed
  *                      on time is removed by this mod
+ * @param renderDistance how far from the effect a player may stand and still have it drawn; zero is
+ *                       personal and {@link EffectToolConfig#UNLIMITED_RENDER_DISTANCE} leaves it to
+ *                       the client's own view
  */
 public record EffectAttachment(
         String effectPath,
