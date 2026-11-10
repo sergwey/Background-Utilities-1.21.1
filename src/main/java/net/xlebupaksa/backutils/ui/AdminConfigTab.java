@@ -236,8 +236,13 @@ public final class AdminConfigTab {
 
         // The previews wrap to the width of the rows, so they are drawn again once it is known: a
         // preview wrapped before this ran was wrapped to the floor and showed one word of the line.
+        boolean widthChanged = contentWidth != innerWidth;
         contentWidth = innerWidth;
         for (String key : previews.keySet()) updatePreview(key);
+        // The explanations' wrapping and their blocks' heights were measured at the old width. A window
+        // resize is the one thing that changes it while the rows are alive; rebuilding is the only way
+        // to give the text the new width, and it is not done over unsaved edits.
+        if (widthChanged && pending.isEmpty()) rebuild();
     }
 
     // ------------------------------------------------------------------
