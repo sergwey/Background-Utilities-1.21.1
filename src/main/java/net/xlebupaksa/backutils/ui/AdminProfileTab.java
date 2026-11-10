@@ -381,6 +381,9 @@ public final class AdminProfileTab {
         back.layout(l -> l.width(showBack ? BACK_WIDTH : 0).height(14));
         create.setVisible(showCreate);
         create.layout(l -> l.width(showCreate ? CREATE_WIDTH : 0).height(14));
+        // A hidden button still leaves its gap: with both hidden, the strip's only child is the scope
+        // line, and it has to start where the other tabs' first line starts.
+        bar.layout(l -> l.gapAll(showBack || showCreate ? GAP : 0));
         filter.textFieldStyle(s -> s.placeholder(Component.translatable(
                 inside ? "backutils.profiles.search.profiles"
                         : "backutils.profiles.search.players")));

@@ -205,6 +205,10 @@ public final class AdminPlayersTab {
         tabs.addTab(chatHeader, chat.root());
         tabs.addTab(namesHeader, names.root());
         tabs.addTab(memoryHeader, memory.root());
+        // The same trailing "+" entry the client's own lists have: an administrator may start a
+        // profile for this player, and the editor closes back into this menu.
+        chat.setCreateRow(true, null);
+        names.setCreateRow(true, null);
 
         detail.layout(l -> l.flexDirection(FlexDirection.COLUMN).gapAll(GAP));
         detail.addChildren(header, tabs);

@@ -44,7 +44,8 @@ import java.util.List;
 public final class AdminMemoryPanel {
 
     private static final int LINE_STEP = 10;
-    private static final int SCOPE_HEIGHT = 10;
+    /** The same height as the profile panel's strip, so the two tabs' first lines sit level. */
+    private static final int SCOPE_HEIGHT = 16;
     private static final int FILTER_HEIGHT = 14;
     private static final int STATUS_HEIGHT = 10;
     private static final int BUTTON_HEIGHT = 14;
