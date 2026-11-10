@@ -117,6 +117,8 @@ public final class BackUtilsAdminScreen extends Screen {
         TextField filterField;
         TextField logFilter;
         Button deleteButton;
+        /** The one hide/show button for the listed witnesses: its caption says which way it goes. */
+        Button hideListed;
         Button refresh;
         UIElement header;
         UIElement details;
@@ -332,6 +334,9 @@ public final class BackUtilsAdminScreen extends Screen {
         }
         // The player tab owns captions of its own: its tabs, its buttons and its two search hints.
         built.players.relabel();
+        // The hide button's caption is a state as much as a caption, so a language change writes the
+        // one the selection is in rather than the one it was built with.
+        updateHideButton();
     }
 
     private static Button refreshButton(Built built) {
@@ -431,10 +436,10 @@ public final class BackUtilsAdminScreen extends Screen {
         // is what shrinks.
         built.witnessList.layout(l -> l.widthPercent(100).flex(1));
 
-        Button hideListed = optionButton(built, "backutils.admin.option.hide.listed",
-                () -> sendMany(AdminLogBatchPayload.Kind.HIDE_FROM_MANY));
-        Button showListed = optionButton(built, "backutils.admin.option.show.listed",
-                () -> sendMany(AdminLogBatchPayload.Kind.UNHIDE_FROM_MANY));
+        built.hideListed = new Button();
+        built.hideListed.layout(l -> l.widthPercent(100).height(16));
+        built.hideListed.setOnClick(e -> toggleListed());
+        built.hideListed.setText(Text.of("backutils.admin.option.hide.listed"), false);
 
         Button copy = optionButton(built, "backutils.admin.option.copy.text", () -> {
             if (instance != null) instance.copySelection();
@@ -454,10 +459,53 @@ public final class BackUtilsAdminScreen extends Screen {
         built.optionsColumn.addChildren(heading,
                 built.selectedActor, built.selectedId, built.selectedPlace,
                 copy, toAction, toActor,
-                built.deleteButton,
-                built.witnessHeading, hideListed, showListed, built.filterField, built.witnessList);
+                built.deleteButton, built.hideListed,
+                built.witnessHeading, built.filterField, built.witnessList);
 
         rebuildWitnesses(built, List.of());
+    }
+
+    /**
+     * Writes the one hide button's caption: show when every listed pair is already withheld, hide
+     * otherwise.
+     *
+     * <p>A selector target cannot be resolved locally, so it always reads as hide: guessing which
+     * players it names would be worse than saying what the click does.
+     */
+    private void updateHideButton() {
+        if (built.hideListed == null) return;
+        built.hideListed.setText(Text.of(allListedHidden()
+                ? "backutils.admin.option.show.listed"
+                : "backutils.admin.option.hide.listed"), false);
+    }
+
+    /** Hides every listed pair, or gives every one of them back, in one click. */
+    private static void toggleListed() {
+        if (instance == null) return;
+        sendMany(instance.allListedHidden()
+                ? AdminLogBatchPayload.Kind.UNHIDE_FROM_MANY
+                : AdminLogBatchPayload.Kind.HIDE_FROM_MANY);
+    }
+
+    /**
+     * {@return true when every listed witness of every selected entry is already withheld from it}
+     *
+     * <p>"Listed" is the witness filter's answer, so the button follows the filter the same way the
+     * old two buttons did.
+     */
+    private boolean allListedHidden() {
+        List<AdminLogPayload.Row> rows = selectedRows();
+        if (rows.isEmpty() || filterText().startsWith("@")) return false;
+
+        boolean any = false;
+        for (AdminLogPayload.Row row : rows) {
+            for (String witness : listedWitnesses(row)) {
+                if (!row.witnesses().contains(witness)) continue;
+                any = true;
+                if (!row.hiddenAll() && !row.hiddenFrom().contains(witness)) return false;
+            }
+        }
+        return any;
     }
 
     /**
@@ -486,8 +534,7 @@ public final class BackUtilsAdminScreen extends Screen {
         sendBatch(new AdminLogBatchPayload(kind, instance.selection.ids(), target), true);
     }
 
-    /** Deletes the selected records, on a second click: hiding is reversible, deleting is not. */
-    private static void onDeleteClicked() {
+    /** Deletes the selected records, on a second click: hiding is reversible, deleting is not. */    private static void onDeleteClicked() {
         if (instance == null || instance.selection.isEmpty()) return;
 
         long now = System.nanoTime();
@@ -554,6 +601,9 @@ public final class BackUtilsAdminScreen extends Screen {
      */
     private static void rebuildWitnesses(Built built, List<AdminLogPayload.Row> rows) {
         built.witnessList.clearAllScrollViewChildren();
+        // The hide button is about the same selection and the same filter, so it is written here:
+        // every path that changes either one arrives through this method.
+        if (instance != null) instance.updateHideButton();
         built.witnessHeading.setText(Text.of(rows.size() > 1
                 ? "backutils.admin.witness.heading.many"
                 : "backutils.admin.witness.heading"), false);

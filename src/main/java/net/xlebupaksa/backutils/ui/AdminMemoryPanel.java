@@ -74,8 +74,8 @@ public final class AdminMemoryPanel {
     private final TextField filter = new TextField();
     private final ScrollerView list = new ScrollerView();
     private final Label status = new Label();
-    private final Button hide = new Button();
-    private final Button show = new Button();
+    /** One button for both directions: its caption says which way the click will go. */
+    private final Button toggleHide = new Button();
     private final Button teleport = new Button();
     private final Button delete = new Button();
 
@@ -156,8 +156,7 @@ public final class AdminMemoryPanel {
 
     /** Writes the captions again in the language the client is set to now. */
     public void relabel() {
-        hide.setText(Text.of("backutils.admin.memory.hide"), false);
-        show.setText(Text.of("backutils.admin.memory.show"), false);
+        updateToggleLabel();
         teleport.setText(Text.of("backutils.admin.option.teleport.to.action"), false);
         delete.setText(Text.of(deleteArmedAt == 0L
                 ? "backutils.admin.option.delete.record"
@@ -222,10 +221,8 @@ public final class AdminMemoryPanel {
         status.textStyle(t -> t.fontSize(9f).textColor(AdminListStyle.MUTED).textShadow(false)
                 .textAlignVertical(Vertical.CENTER).adaptiveWidth(true));
 
-        hide.setText(Text.of("backutils.admin.memory.hide"), false);
-        hide.setOnClick(e -> hideSelected(true));
-        show.setText(Text.of("backutils.admin.memory.show"), false);
-        show.setOnClick(e -> hideSelected(false));
+        toggleHide.setText(Text.of("backutils.admin.memory.hide"), false);
+        toggleHide.setOnClick(e -> toggleSelected());
         teleport.setText(Text.of("backutils.admin.option.teleport.to.action"), false);
         teleport.setOnClick(e -> teleportToAction());
         delete.setText(Text.of("backutils.admin.option.delete.record"), false);
@@ -234,9 +231,8 @@ public final class AdminMemoryPanel {
         UIElement hideRow = new UIElement();
         hideRow.layout(l -> l.widthPercent(100).height(BUTTON_HEIGHT)
                 .flexDirection(FlexDirection.ROW).gapAll(GAP));
-        hide.layout(l -> l.flex(1).height(BUTTON_HEIGHT));
-        show.layout(l -> l.flex(1).height(BUTTON_HEIGHT));
-        hideRow.addChildren(hide, show);
+        toggleHide.layout(l -> l.flex(1).height(BUTTON_HEIGHT));
+        hideRow.addChild(toggleHide);
 
         UIElement actionRow = new UIElement();
         actionRow.layout(l -> l.widthPercent(100).height(BUTTON_HEIGHT)
@@ -324,13 +320,39 @@ public final class AdminMemoryPanel {
 
     private void updateControls() {
         int count = selection.size();
-        hide.setActive(count > 0);
-        show.setActive(count > 0);
+        toggleHide.setActive(count > 0);
         teleport.setActive(count == 1);
         delete.setActive(count > 0);
+        updateToggleLabel();
         status.setText(Text.of(count == 0
                 ? "backutils.admin.memory.hint"
                 : "backutils.admin.memory.selected", count), false);
+    }
+
+    /**
+     * Writes the one hide button's caption: "show" when every selected line is withheld from this
+     * player, "hide" otherwise.
+     *
+     * <p>The state is the per-player flag, not the global one: a line hidden from everyone has its own
+     * marker and is not what this button moves. A mixed selection reads as hide, so one click puts all
+     * of it away and the second brings all of it back.
+     */
+    private void updateToggleLabel() {
+        toggleHide.setText(Text.of(allSelectedHidden()
+                ? "backutils.admin.memory.show" : "backutils.admin.memory.hide"), false);
+    }
+
+    /** {@return true when every selected line carries this player's own withholding flag} */
+    private boolean allSelectedHidden() {
+        if (selection.isEmpty() || player.isEmpty()) return false;
+
+        boolean any = false;
+        for (AdminMemoryPayload.Row row : AdminMemoryCache.rows()) {
+            if (!selection.contains(row.id())) continue;
+            any = true;
+            if (!row.hiddenFromPlayer()) return false;
+        }
+        return any;
     }
 
     // ------------------------------------------------------------------
@@ -428,11 +450,18 @@ public final class AdminMemoryPanel {
     // Actions
     // ------------------------------------------------------------------
 
-    private void hideSelected(boolean hidden) {
+    /**
+     * Hides every selected line from this player, or gives every one of them back, in one click.
+     *
+     * <p>One button rather than two: the list already says which state the selection is in beside
+     * each line, so the button only has to say which way it will move it.
+     */
+    private void toggleSelected() {
         if (selection.isEmpty() || player.isEmpty()) return;
+
         AdminNetwork.sendBatch(new AdminLogBatchPayload(
-                hidden ? AdminLogBatchPayload.Kind.HIDE_FROM_PLAYER
-                        : AdminLogBatchPayload.Kind.UNHIDE_FROM_PLAYER,
+                allSelectedHidden() ? AdminLogBatchPayload.Kind.UNHIDE_FROM_PLAYER
+                        : AdminLogBatchPayload.Kind.HIDE_FROM_PLAYER,
                 selection.ids(), player));
         // Re-asked rather than patched: the server decides what the hidden list now says.
         refresh();
