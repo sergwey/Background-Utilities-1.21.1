@@ -44,22 +44,29 @@ public final class BackUtilsSettings {
 
     /** Where a setting belongs in the menu, which is what its sub-tab is. */
     public enum Group {
-        CHAT("Chat"),
-        ACTIONS("Actions"),
-        LOG("Log"),
-        MENU("Menu"),
-        ROLLS("Rolls"),
-        PROFILES("Profiles");
+        CHAT("Chat", "backutils.config.group.chat"),
+        ACTIONS("Actions", "backutils.config.group.actions"),
+        LOG("Log", "backutils.config.group.log"),
+        MENU("Menu", "backutils.config.group.menu"),
+        ROLLS("Rolls", "backutils.config.group.rolls"),
+        PROFILES("Profiles", "backutils.config.group.profiles");
 
         private final String display;
+        private final String translationKey;
 
-        Group(String display) {
+        Group(String display, String translationKey) {
             this.display = display;
+            this.translationKey = translationKey;
         }
 
         /** {@return the name of this group's sub-tab} */
         public String display() {
             return display;
+        }
+
+        /** {@return the translation key the client draws this group's sub-tab from} */
+        public String translationKey() {
+            return translationKey;
         }
     }
 

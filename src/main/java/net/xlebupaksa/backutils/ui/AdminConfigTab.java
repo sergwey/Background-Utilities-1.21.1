@@ -157,7 +157,7 @@ public final class AdminConfigTab {
                     .adaptiveHeight(false));
             list.viewContainer(v -> v.getLayout().gapAll(2));
             lists.put(group, list);
-            tabs.addTab(new Tab().setText(group.display(), false), list);
+            tabs.addTab(new Tab().setText(Text.of(group.translationKey()), false), list);
         }
         // The strip stays, the panel border goes: a box inside the menu's own tab view is a mistake.
         tabs.tabContentContainer(c -> c.style(s -> s.backgroundTexture(IGuiTexture.EMPTY)));
@@ -259,9 +259,10 @@ public final class AdminConfigTab {
         row.layout(l -> l.widthPercent(100).height(ROW)
                 .flexDirection(FlexDirection.ROW).alignItems(AlignItems.CENTER).gapAll(GAP));
         row.style(s -> s.background(new ColorRectTexture(ROW_IDLE))
-                .tooltips(Component.literal(String.join(" ", setting.comment()))));
+                .tooltips(Component.literal(configText("backutils.config.comment." + setting.key(),
+                        String.join(" ", setting.comment())))));
 
-        Label label = text(setting.label(), PLAIN, 9f, ROW);
+        Label label = text(settingLabel(setting), PLAIN, 9f, ROW);
         label.layout(l -> l.width(LABEL_WIDTH).height(ROW));
         row.addChild(label);
 
@@ -387,7 +388,8 @@ public final class AdminConfigTab {
         // the unformatted line, and the first click lands on a character the drawn line is not on.
         field.setFormatter(MarkupUtil::asLiteral);
         field.setText(entry, false);
-        field.textFieldStyle(s -> s.placeholder(Component.literal("name=soundid")));
+        field.textFieldStyle(s -> s.placeholder(Component.translatable(
+                "backutils.config.palette.placeholder")));
         field.layout(l -> l.flex(1).height(14));
         field.setTextResponder(value -> set(setting.key(), paletteValue(fields)));
         fields.add(field);
@@ -619,11 +621,29 @@ public final class AdminConfigTab {
      * <p>The whole comment is the tooltip, on one line: ldlib2 draws a newline there as a blank box.
      */
     private String comment(AdminConfigPayload.Row setting) {
-        List<String> lines = setting.comment();
-        if (lines.isEmpty()) return "";
+        String text = configText("backutils.config.comment." + setting.key(),
+                setting.comment().isEmpty() ? "" : setting.comment().getFirst());
+        if (text.isEmpty()) return "";
         int width = Math.max(120, Math.round(root.getSizeWidth()) - 12);
-        return MarkupWrap.truncate(lines.getFirst(), width,
+        return MarkupWrap.truncate(text, width,
                 value -> Minecraft.getInstance().font.width(value));
+    }
+
+    /**
+     * {@return a setting's label in the client's language}, falling back to the label the server sent
+     *
+     * <p>The labels live in the server's settings table so that a setting can be added there alone;
+     * their translations live here, keyed by the setting's own key. A key with no translation falls
+     * back to the server's English rather than showing the key.
+     */
+    private static String settingLabel(AdminConfigPayload.Row setting) {
+        return configText("backutils.config.setting." + setting.key(), setting.label());
+    }
+
+    /** {@return the translation of a config key, or the fallback when this language has none} */
+    private static String configText(String key, String fallback) {
+        String translated = Text.of(key);
+        return translated.equals(key) ? fallback : translated;
     }
 
     /**
