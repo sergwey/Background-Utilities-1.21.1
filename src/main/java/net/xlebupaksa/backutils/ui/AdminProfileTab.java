@@ -11,6 +11,7 @@ import com.lowdragmc.lowdraglib2.gui.ui.elements.ScrollerView;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.TextField;
 import com.lowdragmc.lowdraglib2.gui.ui.event.UIEvents;
 import com.lowdragmc.lowdraglib2.gui.ui.rendering.GUIContext;
+import com.lowdragmc.lowdraglib2.math.Rect;
 import dev.vfyjxf.taffy.style.AlignItems;
 import dev.vfyjxf.taffy.style.FlexDirection;
 import net.minecraft.client.Minecraft;
@@ -111,10 +112,17 @@ public final class AdminProfileTab {
             Font font = Minecraft.getInstance().font;
             float x = getPositionX();
             float y = getPositionY();
+            // Same reason as MarkupLabel's: a row scrolled out of the viewport still costs a draw
+            // call every frame unless the viewport's own scissor is asked first.
+            Rect clip = guiContext.scissorStack.isEmpty() ? null : guiContext.scissorStack.top();
+            if (clip != null && (y + contentHeight() <= clip.up || y >= clip.down)) return;
+
             for (int i = 0; i < rows.size(); i++) {
+                float lineY = y + i * LINE_STEP;
+                if (clip != null && (lineY + LINE_STEP <= clip.up || lineY >= clip.down)) continue;
                 // The call the chat draws each of its own rows with, on the rows the same splitter made.
                 guiContext.graphics.drawString(font, rows.get(i),
-                        Math.round(x), Math.round(y + i * LINE_STEP), PLAIN, true);
+                        Math.round(x), Math.round(lineY), PLAIN, true);
             }
         }
     }
@@ -124,6 +132,11 @@ public final class AdminProfileTab {
 
     /** The player this panel is fixed to, or "" when it browses every player. */
     private String fixedTarget = "";
+
+    /** Whether the strip with Back, the scope and Create is drawn; a window may show those itself. */
+    private boolean barShown = true;
+    /** The last player-and-count line written, for a window that shows it in a corner of its own. */
+    private String scopeValue = "";
 
     /** Which menu opened the editor on these profiles, and therefore where closing it goes. */
     private final boolean forAdmin;
@@ -180,6 +193,22 @@ public final class AdminProfileTab {
         filter.setText("", false);
         applyScope();
         if (player.isEmpty()) rebuildPlayers(); else rebuildCurrent();
+    }
+
+    /**
+     * Hides the strip with Back, the scope line and Create.
+     *
+     * <p>For a window that draws those elsewhere: the menu shows the player and the count in its own
+     * corner, and a second copy on the panel's first line would be the same fact twice.
+     */
+    public void setBarShown(boolean shown) {
+        barShown = shown;
+        bar.setDisplay(shown);
+    }
+
+    /** {@return the player-and-count line this panel would show}, for a window that shows it itself */
+    public String scopeText() {
+        return scopeValue;
     }
 
     /**
@@ -251,7 +280,10 @@ public final class AdminProfileTab {
         listWidth = w;
 
         // The list takes what is left: the other strips are fixed line counts and this one scrolls.
-        int listHeight = Math.max(20, h - BAR_HEIGHT - FILTER_HEIGHT - STATUS_HEIGHT - GAP * 3);
+        // A hidden bar gives its line and its gap back to the list rather than leaving a hole.
+        int barHeight = barShown ? BAR_HEIGHT : 0;
+        int gaps = barShown ? 3 : 2;
+        int listHeight = Math.max(20, h - barHeight - FILTER_HEIGHT - STATUS_HEIGHT - GAP * gaps);
 
         root.layout(l -> l.width(w).height(h).flexDirection(FlexDirection.COLUMN).gapAll(GAP));
         bar.layout(l -> l.width(w).height(BAR_HEIGHT).flexDirection(FlexDirection.ROW)
@@ -322,6 +354,7 @@ public final class AdminProfileTab {
         boolean showBack = inside && browsing;
         boolean showCreate = inside && browsing;
 
+        bar.setDisplay(barShown);
         back.setVisible(showBack);
         back.layout(l -> l.width(showBack ? BACK_WIDTH : 0).height(14));
         create.setVisible(showCreate);
@@ -335,20 +368,23 @@ public final class AdminProfileTab {
     private void setScopeText() {
         if (player.isEmpty()) {
             int count = AdminProfileCache.players(names).size();
-            scope.setText(Text.of(count == 1 ? "backutils.profiles.player.count"
-                    : "backutils.profiles.player.count.plural", count), false);
+            scopeValue = Text.of(count == 1 ? "backutils.profiles.player.count"
+                    : "backutils.profiles.player.count.plural", count);
+            scope.setText(scopeValue, false);
             return;
         }
         if (!AdminProfileCache.holds(names, player)) {
             // Nothing about this player's profiles is known yet, so the line names them and no more.
-            scope.setText(player, false);
+            scopeValue = player;
+            scope.setText(scopeValue, false);
             return;
         }
         int count = AdminProfileCache.profiles().size();
-        scope.setText(player + "  -  " + (count == 0
+        scopeValue = player + "  -  " + (count == 0
                 ? Text.of("backutils.profiles.no.profiles")
                 : Text.of(count == 1 ? "backutils.profiles.profile.count"
-                        : "backutils.profiles.profile.count.plural", count)), false);
+                        : "backutils.profiles.profile.count.plural", count));
+        scope.setText(scopeValue, false);
     }
 
     // ------------------------------------------------------------------

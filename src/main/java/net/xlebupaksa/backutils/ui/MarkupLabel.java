@@ -2,6 +2,7 @@ package net.xlebupaksa.backutils.ui;
 
 import com.lowdragmc.lowdraglib2.gui.ui.UIElement;
 import com.lowdragmc.lowdraglib2.gui.ui.rendering.GUIContext;
+import com.lowdragmc.lowdraglib2.math.Rect;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.network.chat.Component;
@@ -84,6 +85,12 @@ public final class MarkupLabel extends UIElement {
         float x = getPositionX();
         float y = getPositionY();
 
+        // A scrolled list draws every row it owns, in or out of view, and a scissor only hides the
+        // pixels: with a few hundred rows the clipped ones were still a draw call each, every frame.
+        // The viewport's scissor is the authority on what is visible, so the rest is skipped here.
+        Rect clip = guiContext.scissorStack.isEmpty() ? null : guiContext.scissorStack.top();
+        if (clip != null && (y + contentHeight() <= clip.up || y >= clip.down)) return;
+
         if (prefix != null && !prefix.getString().isEmpty()) {
             // Measured every frame rather than kept: the prefix is a marker of a few characters, and a
             // width kept between frames would be a width from a font whose glyphs a resource pack can
@@ -102,9 +109,10 @@ public final class MarkupLabel extends UIElement {
         }
 
         for (int i = 0; i < drawn.size(); i++) {
+            float lineY = y + i * lineStep;
+            if (clip != null && (lineY + lineStep <= clip.up || lineY >= clip.down)) continue;
             guiContext.graphics.drawString(font, drawn.component(i),
-                    Math.round(x), Math.round(y), colour, true);
-            y += lineStep;
+                    Math.round(x), Math.round(lineY), colour, true);
         }
     }
 }

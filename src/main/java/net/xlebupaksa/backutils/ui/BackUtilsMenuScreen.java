@@ -42,8 +42,6 @@ import net.xlebupaksa.backutils.client.ZoneMusicPlayer;
 import net.xlebupaksa.backutils.data.MarkupUtil;
 import net.xlebupaksa.backutils.data.MarkupWrap;
 import net.xlebupaksa.backutils.data.ProfileOptions;
-import net.xlebupaksa.backutils.network.AdminLogBatchPayload;
-import net.xlebupaksa.backutils.network.AdminNetwork;
 import net.xlebupaksa.backutils.network.LogHistoryCache;
 import net.xlebupaksa.backutils.network.LogHistoryPayload;
 import net.xlebupaksa.backutils.network.MenuMusicRequestPayload;
@@ -118,6 +116,7 @@ public final class BackUtilsMenuScreen extends Screen {
 
     /** The strip above the profile list: the New profile button and the status line. */
     private static final int PROFILE_HEADER_HEIGHT = 18;
+    private static final int PROFILE_FOOTER_HEIGHT = 16;
     /** How long a row's Delete button stays armed between its two clicks. */
     private static final long DELETE_CONFIRM_NANOS = 5_000_000_000L;
 
@@ -140,8 +139,6 @@ public final class BackUtilsMenuScreen extends Screen {
         ScrollerView memoryList;
         Tab memoryTab;
         UIElement memoryPanel;
-        UIElement memoryActions;
-        Button memoryDelete;
         ScrollerView configScroll;
         /** The Profiles tab is itself a tab view: chat profiles always, plus name profiles for an
          * operator. Everyone else sees one panel and no strip. */
@@ -153,6 +150,10 @@ public final class BackUtilsMenuScreen extends Screen {
         Button newProfile;
         ScrollerView profileList;
         Label profileStatus;
+        /** The window's top-right line: the player and the count for the profile list in view. */
+        Label corner;
+        UIElement profileFooter;
+        Tab profilesTabHeader;
         AdminProfileTab nameTab;
         /**
          * Every caption in the tree with the key it came from. The tree outlives a language change
@@ -244,7 +245,8 @@ public final class BackUtilsMenuScreen extends Screen {
     private final List<Row> rows = new ArrayList<>();
     /** What is selected in the memory list, with the anchor a shift-click ranges from. */
     private final MultiSelection memorySelection = new MultiSelection();
-    private long memoryDeleteArmedAt;
+    /** The corner's current text, so the same line is not flattened into a literal every frame. */
+    private String cornerValue = "";
     private int builtRevision = -1;
     /** How wide the memory list is, recalculated whenever the menu opens. */
     private int listWidth = 200;
@@ -340,36 +342,43 @@ public final class BackUtilsMenuScreen extends Screen {
                 .textAlignHorizontal(Horizontal.LEFT).textAlignVertical(Vertical.CENTER)
                 .adaptiveWidth(true));
 
+        // The player and the count of the profile list in view, in the window's top-right corner:
+        // the name panel's own strip used to carry the same line inside the list, where it read as
+        // part of the list rather than as a fact about the window.
+        built.corner = new Label();
+        built.corner.setText("", false);
+        built.corner.textStyle(t -> t.fontSize(9f).textColor(MUTED).textShadow(false)
+                .textAlignHorizontal(Horizontal.RIGHT).textAlignVertical(Vertical.CENTER)
+                .adaptiveWidth(true));
+
+        UIElement titleRow = new UIElement();
+        titleRow.layout(l -> l.widthPercent(100).height(TITLE_HEIGHT)
+                .flexDirection(FlexDirection.ROW).alignItems(AlignItems.CENTER).gapAll(INNER_GAP));
+        title.layout(l -> l.flex(1).height(TITLE_HEIGHT));
+        titleRow.addChildren(title, built.corner);
+
         built.memoryList = scrollingList();
         built.configScroll = scrollingList();
         built.profileList = scrollingList();
         buildProfilePanel(built);
 
-        // The memory list and the one action an operator has on it: the delete button is hidden for
-        // everybody else, and so is the strip that holds it.
+        // The memory tab is the list alone: a player's own memory has no administrator's action on it,
+        // and selecting lines is what makes the copied text what was asked for.
         built.memoryTab = translatedTab(built, "backutils.menu.tab.memory");
-        built.memoryDelete = new Button();
-        built.memoryDelete.setText(Text.of("backutils.admin.option.delete.record"), false);
-        built.memoryDelete.layout(l -> l.widthPercent(100).height(14));
-        built.memoryDelete.setOnClick(e -> {
-            if (instance != null) instance.onMemoryDelete();
-        });
-        built.memoryActions = new UIElement();
-        built.memoryActions.layout(l -> l.widthPercent(100).height(14));
-        built.memoryActions.addChild(built.memoryDelete);
         built.memoryPanel = new UIElement();
-        built.memoryPanel.layout(l -> l.flexDirection(FlexDirection.COLUMN).gapAll(INNER_GAP));
-        built.memoryPanel.addChildren(built.memoryList, built.memoryActions);
+        built.memoryPanel.layout(l -> l.flexDirection(FlexDirection.COLUMN));
+        built.memoryPanel.addChild(built.memoryList);
 
         TabView tabView = new TabView();
         tabView.addTab(built.memoryTab, built.memoryPanel);
         tabView.addTab(translatedTab(built, "backutils.menu.tab.configuration"),
                 wrap(built.configScroll));
-        tabView.addTab(translatedTab(built, "backutils.menu.tab.profiles"), built.profilePanel);
+        built.profilesTabHeader = translatedTab(built, "backutils.menu.tab.profiles");
+        tabView.addTab(built.profilesTabHeader, built.profilePanel);
         buildConfigControls(built);
         built.tabView = tabView;
 
-        built.tabColumn.addChildren(title, tabView);
+        built.tabColumn.addChildren(titleRow, tabView);
 
         built.root = new UIElement();
         built.root.layout(l -> l
@@ -409,11 +418,6 @@ public final class BackUtilsMenuScreen extends Screen {
         }
         // The name panel's own captions, its filter hint and its scope line are keys as well.
         built.nameTab.relabel();
-        // The memory tab's one action: a caption like any other, but its wording also depends on
-        // whether a second click is armed, which a language change is allowed to forget.
-        if (built.memoryDelete != null) {
-            built.memoryDelete.setText(Text.of("backutils.admin.option.delete.record"), false);
-        }
     }
 
     /**
@@ -685,20 +689,19 @@ public final class BackUtilsMenuScreen extends Screen {
     // ------------------------------------------------------------------
 
     /**
-     * Builds the Profiles tab: the strip that carries the create button and the server's answer, and
-     * under it the sub-tabs whose lists that button works on.
+     * Builds the Profiles tab: the server's answer above, the sub-tabs in the middle, and the one
+     * create button at the end of the list in view.
      *
-     * <p>The strip sits above the sub-tabs rather than inside one, because there is one create button
-     * and it serves whichever kind is in view: {@link #onProfileKindChanged} relabels it as the sub-tab
-     * changes, and {@link #createProfile} opens the editor for the kind selected. Built into the chat
-     * panel instead, as it was, it left the name profiles with no way to make one at all — the panel
-     * under them is a fixed one, which deliberately hides the create button that its browsing form has.
+     * <p>The button is a "+" for both kinds, because the sub-tab already says which kind is being
+     * looked at and a caption would repeat it; {@link #createProfile} opens the editor for the kind
+     * selected. The name profiles have no create button of their own — the panel under them is a fixed
+     * one, which deliberately hides the one its browsing form has — so this one serves both.
      */
     private static void buildProfilePanel(Built built) {
-        // One button for both kinds, relabelled by the tab strip: wide enough that the Russian of
-        // either label sits inside it rather than running past its own edge.
-        built.newProfile = profileButton(Text.of("backutils.menu.profiles.new_chat"), 122,
-                () -> createProfile(built));
+        // One small button for both kinds, at the end of whichever list is in view. It says what it
+        // does with its shape rather than a caption, which is what leaves the strip above to the
+        // status line alone.
+        built.newProfile = profileButton("+", 16, () -> createProfile(built));
 
         built.profileStatus = new Label();
         built.profileStatus.setText("", false);
@@ -708,11 +711,14 @@ public final class BackUtilsMenuScreen extends Screen {
         built.profileHeader = new UIElement();
         built.profileHeader.layout(l -> l.widthPercent(100).height(PROFILE_HEADER_HEIGHT)
                 .flexDirection(FlexDirection.ROW).alignItems(AlignItems.CENTER).gapAll(INNER_GAP));
-        built.profileHeader.addChildren(built.newProfile, built.profileStatus);
+        built.profileHeader.addChild(built.profileStatus);
 
         // A player's own name profiles: the same panel the background menu opens on a player, with its
         // browsing removed, for an operator.
         built.nameTab = new AdminProfileTab(true);
+        // Its player-and-count strip is not drawn here: that line sits in the window's corner instead,
+        // where it belongs to the window rather than to one list.
+        built.nameTab.setBarShown(false);
 
         built.chatTabHeader = translatedTab(built, "backutils.menu.tab.chat");
         built.namesTabHeader = translatedTab(built, "backutils.menu.tab.names");
@@ -722,14 +728,18 @@ public final class BackUtilsMenuScreen extends Screen {
                 c -> c.style(s -> s.backgroundTexture(IGuiTexture.EMPTY)));
         built.profileTabs.addTab(built.chatTabHeader, wrap(built.profileList));
         built.profileTabs.addTab(built.namesTabHeader, built.nameTab.root());
-        built.profileTabs.setOnTabSelected(tab -> {
-            if (instance != null) instance.onProfileKindChanged(tab);
-        });
+
+        UIElement spacer = new UIElement();
+        spacer.layout(l -> l.flex(1));
+        built.profileFooter = new UIElement();
+        built.profileFooter.layout(l -> l.widthPercent(100).height(PROFILE_FOOTER_HEIGHT)
+                .flexDirection(FlexDirection.ROW).alignItems(AlignItems.CENTER));
+        built.profileFooter.addChildren(spacer, built.newProfile);
 
         built.profilePanel = new UIElement();
         built.profilePanel.layout(l -> l.widthPercent(100).heightPercent(100)
                 .flexDirection(FlexDirection.COLUMN).gapAll(INNER_GAP));
-        built.profilePanel.addChildren(built.profileHeader, built.profileTabs);
+        built.profilePanel.addChildren(built.profileHeader, built.profileTabs, built.profileFooter);
     }
 
     private static void createProfile(Built built) {
@@ -767,20 +777,6 @@ public final class BackUtilsMenuScreen extends Screen {
     }
 
     /**
-     * Writes the create button's label for the kind in view. One button serves both, so its words are
-     * the only thing that says which editor a click opens.
-     */
-    private void labelNewProfile(boolean names) {
-        built.newProfile.setText(names
-                ? Text.of("backutils.menu.profiles.new_name")
-                : Text.of("backutils.menu.profiles.new_chat"), false);
-    }
-
-    private void onProfileKindChanged(Tab tab) {
-        labelNewProfile(tab == built.namesTabHeader);
-    }
-
-    /**
      * Puts the Profiles tab in step with what this client may do, and sizes what is under the strip.
      *
      * <p>Called on every open and again from {@link #render} whenever the answer moves, because the
@@ -801,18 +797,15 @@ public final class BackUtilsMenuScreen extends Screen {
         // panel the server would refuse is a lie about what the player can do.
         built.namesTabHeader.setDisplay(staff);
         built.profileTabs.tabHeaderContainer.setDisplay(staff);
-        // The memory strip is the same kind of offer: a button whose action the server would refuse
-        // is a lie about what this player can do.
-        built.memoryActions.setVisible(staff);
         if (!staff && built.profileTabs.getSelectedTab() != built.chatTabHeader) {
             built.profileTabs.selectTab(built.chatTabHeader);
         }
-        labelNewProfile(staff && built.profileTabs.getSelectedTab() == built.namesTabHeader);
 
         // The sub-tabs take what the strip leaves, and their contents what ldlib2's own five-pixel
         // padding and the sub-tab strip leave of that. Sized before the name panel is pointed at
         // anybody: pointing it rebuilds its rows, and those wrap to the width set here.
-        int tabsHeight = Math.max(20, height - PROFILE_HEADER_HEIGHT - INNER_GAP);
+        int tabsHeight = Math.max(20,
+                height - PROFILE_HEADER_HEIGHT - PROFILE_FOOTER_HEIGHT - INNER_GAP * 2);
         int contentHeight = Math.max(20,
                 tabsHeight - (staff ? TAB_STRIP_HEIGHT : 0) - TAB_CONTENT_PAD * 2);
         int contentWidth = Math.max(60, width - TAB_CONTENT_PAD * 2);
@@ -1017,7 +1010,7 @@ public final class BackUtilsMenuScreen extends Screen {
     private void setProfileStatus(String text, boolean bad) {
         // Truncated rather than left to run: a label is as wide as its text, so a refusal would
         // spill. The budget is what the New profile button and the row's gap leave of the width.
-        built.profileStatus.setText(fit(text, Math.max(40, listWidth - 132)), false);
+        built.profileStatus.setText(fit(text, Math.max(40, listWidth - 4)), false);
         built.profileStatus.textStyle(t -> t.fontSize(9f)
                 .textColor(bad ? WARNING : MUTED).textShadow(false)
                 .textAlignVertical(Vertical.CENTER).adaptiveWidth(true));
@@ -1068,7 +1061,6 @@ public final class BackUtilsMenuScreen extends Screen {
 
         if (history.isEmpty()) {
             built.memoryList.addScrollViewChild(muted(Text.of("backutils.menu.memory.empty")));
-            updateMemoryActions();
             return;
         }
         // Oldest first, straight from the payload, so the list reads in the order things happened.
@@ -1078,7 +1070,6 @@ public final class BackUtilsMenuScreen extends Screen {
             built.memoryList.addScrollViewChild(last);
         }
         paintMemoryRows();
-        updateMemoryActions();
 
         // Scrolled to the newest end once the layout has run: the rows have no measured position yet.
         newestRow = last;
@@ -1118,7 +1109,6 @@ public final class BackUtilsMenuScreen extends Screen {
             memorySelection.click(state.id, Screen.hasControlDown(), Screen.hasShiftDown(),
                     memoryIds());
             paintMemoryRows();
-            updateMemoryActions();
         });
         return row;
     }
@@ -1163,41 +1153,6 @@ public final class BackUtilsMenuScreen extends Screen {
             if (memorySelection.contains(row.id)) row.clickedAt = now;
         }
         return true;
-    }
-
-    /**
-     * Deletes the selected records, on a second click, for an operator only.
-     *
-     * <p>The server refuses it from anybody else, and the button is not even drawn for them; the
-     * history is asked for again because the deleted lines are the server's rows, not this list's.
-     */
-    private void onMemoryDelete() {
-        if (!canManageNames() || memorySelection.isEmpty()) return;
-
-        long now = System.nanoTime();
-        if (now - memoryDeleteArmedAt > DELETE_CONFIRM_NANOS) {
-            memoryDeleteArmedAt = now;
-            built.memoryDelete.setText(Text.of("backutils.admin.option.delete.confirm"), false);
-            return;
-        }
-
-        memoryDeleteArmedAt = 0L;
-        built.memoryDelete.setText(Text.of("backutils.admin.option.delete.record"), false);
-        AdminNetwork.sendBatch(new AdminLogBatchPayload(
-                AdminLogBatchPayload.Kind.DELETE_RECORD, memorySelection.ids(), ""));
-        RoleplayLogNetwork.requestHistory();
-    }
-
-    /** Keeps the one memory action in step with the selection and with who is looking at it. */
-    private void updateMemoryActions() {
-        boolean staff = canManageNames();
-        built.memoryActions.setVisible(staff);
-        built.memoryDelete.setActive(staff && !memorySelection.isEmpty());
-
-        if (!staff || memorySelection.isEmpty()) {
-            memoryDeleteArmedAt = 0L;
-            built.memoryDelete.setText(Text.of("backutils.admin.option.delete.record"), false);
-        }
     }
 
     private static Label muted(String text) {
@@ -1264,13 +1219,8 @@ public final class BackUtilsMenuScreen extends Screen {
                 .width(rightWidth)
                 .height(contentHeight - TITLE_HEIGHT - INNER_GAP));
         // Explicit heights: without a definite viewport the scroller cannot clip or scroll.
-        // The memory list and its action strip share the tab's height; the strip exists for an
-        // operator only, and takes room only while it is shown.
-        built.memoryActions.setVisible(canManageNames());
-        int memoryActionsHeight = built.memoryActions.isVisible() ? 14 + INNER_GAP : 0;
         built.memoryPanel.layout(l -> l.width(rightWidth).height(listHeight));
-        built.memoryList.layout(l -> l.width(rightWidth).height(listHeight - memoryActionsHeight));
-        built.memoryActions.layout(l -> l.width(rightWidth).height(14));
+        built.memoryList.layout(l -> l.width(rightWidth).height(listHeight));
         built.configScroll.layout(l -> l.width(rightWidth).height(listHeight));
 
         // The Profiles tab is a column of its own: the strip that carries the create button, then the
@@ -1333,6 +1283,7 @@ public final class BackUtilsMenuScreen extends Screen {
         // Only the kind in view follows the server: the two tabs read different caches.
         if (built.profileTabs.getSelectedTab() == built.namesTabHeader) built.nameTab.sync();
         syncProfileFeedback();
+        updateCorner();
         applyBlink();
         super.render(graphics, mouseX, mouseY, partialTick);
 
@@ -1363,6 +1314,28 @@ public final class BackUtilsMenuScreen extends Screen {
 
         if (!built.memoryList.scrollToChild(newestRow)) {
             built.memoryList.verticalScroller.setNormalizedValue(1.0f);
+        }
+    }
+
+    /**
+     * Writes the window's top-right line: who these profiles belong to and how many the list in view
+     * holds. Only while the Profiles tab is open, because no other tab has a count to show.
+     */
+    private void updateCorner() {
+        String text = "";
+        if (built.tabView.getSelectedTab() == built.profilesTabHeader) {
+            if (built.profileTabs.getSelectedTab() == built.namesTabHeader) {
+                text = built.nameTab.scopeText();
+            } else {
+                int count = ProfileListCache.rows().size();
+                text = ownName() + "  -  " + Text.of(count == 1
+                        ? "backutils.profiles.profile.count"
+                        : "backutils.profiles.profile.count.plural", count);
+            }
+        }
+        if (!text.equals(cornerValue)) {
+            cornerValue = text;
+            built.corner.setText(text, false);
         }
     }
 

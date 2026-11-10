@@ -202,7 +202,10 @@ public final class AdminPlayersTab {
 
         detail.layout(l -> l.flexDirection(FlexDirection.COLUMN).gapAll(GAP));
         detail.addChildren(header, tabs);
-        detail.setVisible(false);
+        // display:none, not visibility:hidden: the hidden half must not keep taking the whole panel's
+        // height in the layout, which is what pushed the open player's header to the bottom.
+        detail.setDisplay(false);
+        root.layout(l -> l.flexDirection(FlexDirection.COLUMN));
 
         root.addChildren(browse, detail);
         rebuildPlayers();
@@ -219,15 +222,15 @@ public final class AdminPlayersTab {
         chat.setTarget(name);
         names.setTarget(name);
         memory.setPlayer(name);
-        browse.setVisible(false);
-        detail.setVisible(true);
+        browse.setDisplay(false);
+        detail.setDisplay(true);
     }
 
     private void showPlayers() {
         selected = "";
         memory.setPlayer("");
-        browse.setVisible(true);
-        detail.setVisible(false);
+        browse.setDisplay(true);
+        detail.setDisplay(false);
         rebuildPlayers();
     }
 
