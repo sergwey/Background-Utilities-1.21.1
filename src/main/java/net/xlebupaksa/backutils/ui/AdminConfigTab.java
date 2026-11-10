@@ -255,6 +255,9 @@ public final class AdminConfigTab {
 
     /** {@return the block for one setting: its row, then the config file's explanation} */
     private UIElement block(AdminConfigPayload.Row setting) {
+        List<String> explanation = commentRows(setting);
+        int explanationHeight = Math.max(COMMENT, explanation.size() * COMMENT);
+
         UIElement row = new UIElement();
         row.layout(l -> l.widthPercent(100).height(ROW)
                 .flexDirection(FlexDirection.ROW).alignItems(AlignItems.CENTER).gapAll(GAP));
@@ -267,7 +270,7 @@ public final class AdminConfigTab {
         row.addChild(label);
 
         UIElement block = new UIElement();
-        block.layout(l -> l.widthPercent(100).height(ROW + COMMENT + 2)
+        block.layout(l -> l.widthPercent(100).height(ROW + explanationHeight + 2)
                 .flexDirection(FlexDirection.COLUMN));
         boolean previewed = false;
         boolean palette = false;
@@ -290,7 +293,7 @@ public final class AdminConfigTab {
                 // the tags as they are rather than what they will draw, so both are previewed.
                 previewed = isSeparator(setting.key()) || Rolls.isFormat(setting.key());
                 if (previewed) block.layout(l -> l.widthPercent(100)
-                        .height(ROW + COMMENT + 2 + PREVIEW_HEIGHT)
+                        .height(ROW + explanationHeight + 2 + PREVIEW_HEIGHT)
                         .flexDirection(FlexDirection.COLUMN));
             }
             case CHOICE -> row.addChild(selectorFor(setting));
@@ -299,8 +302,8 @@ public final class AdminConfigTab {
 
         block.addChild(row);
 
-        Label comment = text(comment(setting), MUTED, 8f, COMMENT);
-        comment.layout(l -> l.widthPercent(100).height(COMMENT));
+        MarkupLabel comment = new MarkupLabel(explanation, COMMENT, MUTED);
+        comment.layout(l -> l.widthPercent(100).height(explanationHeight));
         block.addChild(comment);
 
         if (previewed) {
@@ -313,7 +316,7 @@ public final class AdminConfigTab {
 
         // Under the row and its explanation, because that is the order the block is built in: the list
         // itself, and the block made as tall as its rows rather than the one row everything else is.
-        if (palette) addPalette(setting, block);
+        if (palette) addPalette(setting, block, explanationHeight);
 
         rowElements.put(setting.key(), row);
         return block;
@@ -345,7 +348,7 @@ public final class AdminConfigTab {
      * the row a new entry would be typed in anyway, so nothing in this tab has to be laid out again while
      * it is open.
      */
-    private void addPalette(AdminConfigPayload.Row setting, UIElement block) {
+    private void addPalette(AdminConfigPayload.Row setting, UIElement block, int explanationHeight) {
         String value = pending.getOrDefault(setting.key(), setting.value());
         List<String> entries = new ArrayList<>();
         for (String piece : (value == null ? "" : value).split(",")) {
@@ -355,7 +358,8 @@ public final class AdminConfigTab {
 
         // One field more than there are entries: the empty one at the end is where the next is typed.
         int rows = entries.size() + 1;
-        block.layout(l -> l.widthPercent(100).height(ROW + COMMENT + 2 + rows * (ROW + 2))
+        block.layout(l -> l.widthPercent(100)
+                .height(ROW + explanationHeight + 2 + rows * (ROW + 2))
                 .flexDirection(FlexDirection.COLUMN));
 
         UIElement list = new UIElement();
@@ -616,16 +620,18 @@ public final class AdminConfigTab {
     }
 
     /**
-     * {@return the one line of explanation to show under a setting}
+     * {@return the explanation under a setting, wrapped to the width of the rows}
      *
-     * <p>The whole comment is the tooltip, on one line: ldlib2 draws a newline there as a blank box.
+     * <p>Wrapped rather than cut: these are sentences, and a truncated explanation hides the part that
+     * says what the value does. The block is made as tall as the lines need, so the list scrolls and
+     * nothing is lost.
      */
-    private String comment(AdminConfigPayload.Row setting) {
+    private List<String> commentRows(AdminConfigPayload.Row setting) {
         String text = configText("backutils.config.comment." + setting.key(),
-                setting.comment().isEmpty() ? "" : setting.comment().getFirst());
-        if (text.isEmpty()) return "";
-        int width = Math.max(120, Math.round(root.getSizeWidth()) - 12);
-        return MarkupWrap.truncate(text, width,
+                String.join(" ", setting.comment()));
+        if (text.isEmpty()) return List.of();
+        int width = Math.max(120, contentWidth - 12);
+        return MarkupWrap.wrapByWidth(text, width,
                 value -> Minecraft.getInstance().font.width(value));
     }
 
