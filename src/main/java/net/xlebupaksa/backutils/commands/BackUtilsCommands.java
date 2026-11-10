@@ -45,9 +45,11 @@ public class BackUtilsCommands {
 
         // /freeze [player] and /unfreeze [player] - holding a player still, and letting them go. No
         // player named is the sender, which is how an operator checks what being held is like before
-        // doing it to somebody else. Roots of their own rather than nodes under /backutils: these are
-        // reached for while something is going wrong, so the name that has to be got right is the
-        // short one.
+        // doing it to somebody else. /freeze is the one command in either direction: reaching for the
+        // same name to undo what was just done is what an operator does while something is going
+        // wrong. /unfreeze stays one-way, because a command that says what it does is worth having
+        // beside it. Roots of their own rather than nodes under /backutils: these are reached for
+        // while something is going wrong, so the name that has to be got right is the short one.
         d.register(Commands.literal("freeze")
                 .requires(s -> s.hasPermission(ProfileLoader.PROFILE_PERMISSION_LEVEL))
                 .executes(this::freezeSelf)
@@ -149,16 +151,17 @@ public class BackUtilsCommands {
     }
 
     /**
-     * Holds a player still, or lets them go.
+     * Holds a player still, or lets them go when they are already held.
      *
      * <p>One handler each rather than four: a command with nobody named is the sender, and the only
      * difference between that and a named player is which player is looked up. What is said afterwards
      * is said to the sender and names the player, because an operator holding somebody in a room where
-     * they are not standing needs to know which of two names took effect.
+     * they are not standing needs to know which of two names took effect — and, for {@code /freeze},
+     * which of the two directions the command took.
      */
     private int freezeSelf(CommandContext<CommandSourceStack> ctx) {
         try {
-            return hold(ctx.getSource(), ctx.getSource().getPlayerOrException(), true);
+            return toggle(ctx.getSource(), ctx.getSource().getPlayerOrException());
         } catch (Exception e) {
             return failed(ctx, e);
         }
@@ -166,7 +169,7 @@ public class BackUtilsCommands {
 
     private int freezeTarget(CommandContext<CommandSourceStack> ctx) {
         try {
-            return hold(ctx.getSource(), EntityArgument.getPlayer(ctx, "player"), true);
+            return toggle(ctx.getSource(), EntityArgument.getPlayer(ctx, "player"));
         } catch (Exception e) {
             return failed(ctx, e);
         }
@@ -174,7 +177,7 @@ public class BackUtilsCommands {
 
     private int unfreezeSelf(CommandContext<CommandSourceStack> ctx) {
         try {
-            return hold(ctx.getSource(), ctx.getSource().getPlayerOrException(), false);
+            return release(ctx.getSource(), ctx.getSource().getPlayerOrException());
         } catch (Exception e) {
             return failed(ctx, e);
         }
@@ -182,29 +185,38 @@ public class BackUtilsCommands {
 
     private int unfreezeTarget(CommandContext<CommandSourceStack> ctx) {
         try {
-            return hold(ctx.getSource(), EntityArgument.getPlayer(ctx, "player"), false);
+            return release(ctx.getSource(), EntityArgument.getPlayer(ctx, "player"));
         } catch (Exception e) {
             return failed(ctx, e);
         }
     }
 
-    private static int hold(CommandSourceStack source, ServerPlayer player, boolean freeze) {
+    /**
+     * Holds the player, or releases them if they are already held, and says which it did.
+     *
+     * <p>The state is asked for before the change, so the answer describes what happened rather than
+     * what was already true. The player is told nothing either way: the answer belongs to the operator.
+     */
+    private static int toggle(CommandSourceStack source, ServerPlayer player) {
         String name = player.getName().getString();
-        // Asked before the change, so the answer describes what happened rather than what was already
-        // true: holding somebody who is already held is not an event, and the operator is told so.
-        boolean was = FreezeState.frozen(player.getUUID());
+        boolean held = FreezeState.frozen(player.getUUID());
 
-        if (freeze == was) {
-            source.sendSuccess(() -> Component.literal(name
-                    + (freeze ? " is already held." : " is not being held.")), true);
+        if (held) FreezeState.unfreeze(player); else FreezeState.freeze(player);
+
+        source.sendSuccess(() -> Component.literal((held ? "Released " : "Held ") + name + "."), true);
+        return 1;
+    }
+
+    /** Lets a held player go, or says they were not being held. */
+    private static int release(CommandSourceStack source, ServerPlayer player) {
+        String name = player.getName().getString();
+        if (!FreezeState.frozen(player.getUUID())) {
+            source.sendSuccess(() -> Component.literal(name + " is not being held."), true);
             return 0;
         }
 
-        if (freeze) FreezeState.freeze(player);
-        else FreezeState.unfreeze(player);
-
-        source.sendSuccess(() -> Component.literal(
-                (freeze ? "Held " : "Released ") + name + "."), true);
+        FreezeState.unfreeze(player);
+        source.sendSuccess(() -> Component.literal("Released " + name + "."), true);
         return 1;
     }
 

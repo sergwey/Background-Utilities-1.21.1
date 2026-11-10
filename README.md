@@ -143,7 +143,9 @@ vanilla command away from the people who have it.
 - `/backutils menu`, `actions`, `typing_sounds add|remove|list` — `typing_sounds` is the palette a
   chat profile may name: `add <name> <sound id>` stores `name=soundid` in the server's config, a bare
   name in that list stays what Ember's own preset table resolves, and `list` shows what each name plays
-- `/freeze`, `/unfreeze` — hold a player still, or let them go; naming nobody is yourself
+- `/freeze [player]`, `/unfreeze [player]` — `/freeze` holds a player still, or lets them go when they
+  are already held; `/unfreeze` only lets them go. Naming nobody is yourself, and the answer is for the
+  operators, not for the player it acts on
 - `/tabhide <player> true|false` — keeps a player's name out of the tab list and the social
   interactions screen, for everyone, while leaving the player themselves in the world; `/tabhide list`
   says who is hidden. Kept in memory, so a restart shows every name again
