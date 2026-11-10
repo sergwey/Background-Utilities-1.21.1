@@ -11,6 +11,7 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 import net.xlebupaksa.backutils.BackUtils;
 import net.xlebupaksa.backutils.data.ActionLogEntry;
+import net.xlebupaksa.backutils.data.BackUtilsData;
 import net.xlebupaksa.backutils.data.LogData;
 import net.xlebupaksa.backutils.profile.ProfileLoader;
 
@@ -35,6 +36,8 @@ public final class AdminNetwork {
         PayloadRegistrar registrar = event.registrar(BackUtils.MOD_ID).optional();
 
         registrar.playToClient(AdminLogPayload.TYPE, AdminLogPayload.STREAM_CODEC, AdminNetwork::onLog);
+        registrar.playToClient(AdminMemoryPayload.TYPE, AdminMemoryPayload.STREAM_CODEC,
+                AdminNetwork::onMemory);
         registrar.playToClient(AdminAlertPayload.TYPE, AdminAlertPayload.STREAM_CODEC, AdminNetwork::onAlert);
         registrar.playToClient(AdminMenuOpenPayload.TYPE, AdminMenuOpenPayload.STREAM_CODEC, AdminNetwork::onOpen);
 
@@ -42,6 +45,10 @@ public final class AdminNetwork {
                 AdminNetwork::onLogRequest);
         registrar.playToServer(AdminActionPayload.TYPE, AdminActionPayload.STREAM_CODEC,
                 AdminNetwork::onAction);
+        registrar.playToServer(AdminLogBatchPayload.TYPE, AdminLogBatchPayload.STREAM_CODEC,
+                AdminNetwork::onBatch);
+        registrar.playToServer(AdminMemoryRequestPayload.TYPE,
+                AdminMemoryRequestPayload.STREAM_CODEC, AdminNetwork::onMemoryRequest);
     }
 
     // The client's side
@@ -49,6 +56,11 @@ public final class AdminNetwork {
     private static void onLog(AdminLogPayload payload, IPayloadContext context) {
         if (!(context.player() instanceof net.minecraft.client.player.LocalPlayer)) return;
         net.xlebupaksa.backutils.client.AdminMenuCache.set(payload.rows());
+    }
+
+    private static void onMemory(AdminMemoryPayload payload, IPayloadContext context) {
+        if (!(context.player() instanceof net.minecraft.client.player.LocalPlayer)) return;
+        AdminMemoryCache.set(payload.player(), payload.rows());
     }
 
     private static void onAlert(AdminAlertPayload payload, IPayloadContext context) {
@@ -143,6 +155,95 @@ public final class AdminNetwork {
                         .orElse(playerId.toString());
     }
 
+    /**
+     * Applies one bulk action to a set of entries.
+     *
+     * <p>One permission check, one target resolved and one report for the set: the administrator
+     * selected a list, so it is answered as one act rather than as one report per row. Ids are claims
+     * and each is looked up; an entry that has gone is skipped, because a client's list is always a
+     * moment older than the table.
+     */
+    private static void onBatch(AdminLogBatchPayload payload, IPayloadContext context) {
+        if (!(context.player() instanceof ServerPlayer admin)) return;
+        if (!mayAdminister(admin)) {
+            reportFailure(admin, "You are not allowed to administer the action log.");
+            return;
+        }
+
+        BackUtilsData data = BackUtils.data();
+        if (data == null) return;
+        if (payload.ids().isEmpty()) return;
+
+        switch (payload.action()) {
+            case DELETE_RECORD -> deleteMany(admin, data, payload.ids());
+            case HIDE_FOR_EVERYONE -> hideForEveryoneMany(admin, data, payload.ids(), true);
+            case UNHIDE_FOR_EVERYONE -> hideForEveryoneMany(admin, data, payload.ids(), false);
+            case HIDE_FROM_PLAYER, UNHIDE_FROM_PLAYER -> hideFromMany(admin, data, payload.ids(),
+                    payload.target(), payload.action() == AdminLogBatchPayload.Kind.HIDE_FROM_PLAYER);
+            default -> {
+                // NONE: nothing this build knows how to do, so nothing is changed.
+            }
+        }
+    }
+
+    /** Removes every selected entry that is still there. */
+    private static void deleteMany(ServerPlayer admin, BackUtilsData data, List<Long> ids) {
+        int removed = 0;
+        for (long id : ids) {
+            if (data.logs().find(id) == null) continue;
+            data.logs().delete(id);
+            removed++;
+        }
+        report(admin, removed + " of " + ids.size() + " selected entries were deleted.");
+    }
+
+    /** Withholds every selected entry from everyone, or gives it back. */
+    private static void hideForEveryoneMany(ServerPlayer admin, BackUtilsData data, List<Long> ids,
+                                            boolean hidden) {
+        int changed = 0;
+        for (long id : ids) {
+            if (data.logs().find(id) == null) continue;
+            if (hidden) {
+                data.logs().hideForEveryone(id);
+            } else {
+                data.logs().unhideForEveryone(id);
+            }
+            changed++;
+        }
+        report(admin, changed + " of " + ids.size() + " selected entries are now "
+                + (hidden ? "hidden from everyone." : "visible to everyone."));
+    }
+
+    /**
+     * Withholds every selected entry from one player.
+     *
+     * <p>An entry this player never witnessed is skipped rather than counted: a line they never had
+     * cannot be withheld from them, and reporting it as done would be a change that did not happen.
+     */
+    private static void hideFromMany(ServerPlayer admin, BackUtilsData data, List<Long> ids,
+                                     String targetName, boolean hidden) {
+        UUID targetId = resolveUuid(admin, targetName);
+        if (targetId == null) {
+            reportFailure(admin, "No player called '" + targetName + "' here, so nothing changed.");
+            return;
+        }
+
+        int changed = 0;
+        for (long id : ids) {
+            ActionLogEntry entry = data.logs().find(id);
+            if (entry == null) continue;
+            if (hidden && !entry.accessList().contains(targetId)) continue;
+            if (hidden) {
+                data.logs().hideFrom(id, targetId);
+            } else {
+                data.logs().unhideFrom(id, targetId);
+            }
+            changed++;
+        }
+        report(admin, changed + " of " + ids.size() + " selected entries are now "
+                + (hidden ? "hidden from " : "visible to ") + nameOf(admin, targetId) + ".");
+    }
+
     /** Runs one of the options offered when an entry is clicked. */
     private static void onAction(AdminActionPayload payload, IPayloadContext context) {
         if (!(context.player() instanceof ServerPlayer player)) return;
@@ -181,6 +282,46 @@ public final class AdminNetwork {
             case TELEPORT_TO_ACTION -> teleportToAction(player, entry);
             case TELEPORT_TO_ACTOR -> teleportToActor(player, entry);
         }
+    }
+
+    /**
+     * Sends one player's memory: every line they have, hidden ones included.
+     *
+     * <p>The line is rendered as that player sees it — the underline on the actor's name is theirs —
+     * because this is their memory and not the administrator's view of the log. A name the server
+     * cannot resolve is answered with an empty list rather than with silence, so a screen waiting for
+     * an answer stops saying it is waiting.
+     */
+    private static void onMemoryRequest(AdminMemoryRequestPayload payload, IPayloadContext context) {
+        if (!(context.player() instanceof ServerPlayer player)) return;
+        if (!mayAdminister(player)) return;
+
+        BackUtilsData data = BackUtils.data();
+        if (data == null) return;
+
+        String wanted = payload.player();
+        UUID targetId = wanted.isBlank() ? null : resolveUuid(player, wanted);
+        if (targetId == null) {
+            PacketDistributor.sendToPlayer(player, new AdminMemoryPayload(wanted, List.of()));
+            return;
+        }
+
+        Map<String, String> actors = new HashMap<>();
+        List<AdminMemoryPayload.Row> rows = new ArrayList<>();
+        for (ActionLogEntry entry : data.logs().rememberedBy(targetId, LogData.SCREEN_ROWS)) {
+            rows.add(new AdminMemoryPayload.Row(
+                    entry.id(),
+                    entry.createdAt(),
+                    entry.textFor(targetId,
+                            actors.computeIfAbsent(entry.actorName(), ProfileLoader::logName)),
+                    entry.actorName(),
+                    entry.dimension() == null ? "" : entry.dimension(),
+                    entry.x(), entry.y(), entry.z(),
+                    entry.hiddenAll(),
+                    entry.hiddenFrom().contains(targetId),
+                    entry.adminNote()));
+        }
+        PacketDistributor.sendToPlayer(player, new AdminMemoryPayload(wanted, rows));
     }
 
     /** Records what an administrator did, in the server log rather than in their chat. */
@@ -355,8 +496,18 @@ public final class AdminNetwork {
         PacketDistributor.sendToServer(new AdminLogRequestPayload());
     }
 
+    /** Asks for one player's memory; the name is the one the administrator picked. */
+    public static void requestMemory(String player) {
+        PacketDistributor.sendToServer(new AdminMemoryRequestPayload(player));
+    }
+
     /** Sends one option's request. */
     public static void send(AdminActionPayload payload) {
+        PacketDistributor.sendToServer(payload);
+    }
+
+    /** Sends one bulk action. */
+    public static void sendBatch(AdminLogBatchPayload payload) {
         PacketDistributor.sendToServer(payload);
     }
 }

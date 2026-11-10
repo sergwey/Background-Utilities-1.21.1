@@ -15,6 +15,7 @@ import net.xlebupaksa.backutils.client.AdminMenuCache;
 import net.xlebupaksa.backutils.network.LogHistoryCache;
 import net.xlebupaksa.backutils.network.AdminConfigCache;
 import net.xlebupaksa.backutils.network.AdminConfigFeedbackCache;
+import net.xlebupaksa.backutils.network.AdminMemoryCache;
 import net.xlebupaksa.backutils.network.AdminProfileCache;
 import net.xlebupaksa.backutils.network.AdminProfileFeedbackCache;
 import net.xlebupaksa.backutils.network.BannerTextCache;
@@ -113,6 +114,9 @@ public final class RoleplayLogHudLayer {
         // is an operator on two servers reads the first server's notes on the second until that
         // server's own answer arrives.
         AdminMenuCache.clear();
+        // One player's memory is the server's rows too, and its lines carry the administrator's note:
+        // the next server's own answer replaces it, and until then the wrong server's must not be read.
+        AdminMemoryCache.clear();
         // The profiles and the palette belong to the server just left, as do its settings.
         ProfileListCache.clear();
         ProfileFeedbackCache.clear();

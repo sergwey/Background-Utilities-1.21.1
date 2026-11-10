@@ -1,7 +1,6 @@
 package net.xlebupaksa.backutils.ui;
 
 import com.lowdragmc.lowdraglib2.gui.texture.ColorRectTexture;
-import com.lowdragmc.lowdraglib2.gui.texture.IGuiTexture;
 import com.lowdragmc.lowdraglib2.gui.ui.ModularUI;
 import com.lowdragmc.lowdraglib2.gui.ui.UI;
 import com.lowdragmc.lowdraglib2.gui.ui.UIElement;
@@ -38,6 +37,7 @@ import net.xlebupaksa.backutils.network.AdminConfigNetwork;
 import net.xlebupaksa.backutils.network.AdminLogPayload;
 import net.xlebupaksa.backutils.network.AdminNetwork;
 import net.xlebupaksa.backutils.network.AdminProfileNetwork;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -117,13 +117,9 @@ public final class BackUtilsAdminScreen extends Screen {
         UIElement details;
         TabView tabView;
         Tab logTab;
-        Tab profilesTab;
+        Tab playersTab;
         Tab configTab;
-        TabView profileTabs;
-        Tab chatTabHeader;
-        Tab namesTabHeader;
-        AdminProfileTab chatTab;
-        AdminProfileTab nameTab;
+        AdminPlayersTab players;
         AdminConfigTab config;
         /** The three lines describing the hovered entry, carried in the header row. */
         Label hoverDate;
@@ -257,23 +253,12 @@ public final class BackUtilsAdminScreen extends Screen {
         tabView.layout(l -> l.flex(1));
         built.tabView = tabView;
 
-        // The profile tab is itself a tab view, so the two halves answer the same question about two
-        // kinds of profile.
-        built.chatTab = new AdminProfileTab(false);
-        built.nameTab = new AdminProfileTab(true);
-
-        built.chatTabHeader = translatedTab(built, "backutils.admin.tab.chat");
-        built.namesTabHeader = translatedTab(built, "backutils.admin.tab.names");
-        built.profileTabs = new TabView();
-        // The inner tab view keeps its strip and gives up its panel border: the outer view already
-        // draws a box.
-        built.profileTabs.tabContentContainer(
-                c -> c.style(s -> s.backgroundTexture(IGuiTexture.EMPTY)));
-        built.profileTabs.addTab(built.chatTabHeader, built.chatTab.root());
-        built.profileTabs.addTab(built.namesTabHeader, built.nameTab.root());
-
-        built.profilesTab = translatedTab(built, "backutils.admin.tab.profiles");
-        tabView.addTab(built.profilesTab, built.profileTabs);
+        // The player tab owns its own player list and an inner tab view for the chosen player's
+        // chat profiles, name profiles and memory: asking "who" once and then showing everything
+        // about them is the shape of the question.
+        built.players = new AdminPlayersTab();
+        built.playersTab = translatedTab(built, "backutils.admin.tab.players");
+        tabView.addTab(built.playersTab, built.players.root());
 
         // The settings tab: its sub-tabs are groups of settings, and one Save button sits below them.
         built.config = new AdminConfigTab();
@@ -331,6 +316,8 @@ public final class BackUtilsAdminScreen extends Screen {
         if (deleteArmedAt != 0L) {
             built.deleteButton.setText(Text.of("backutils.admin.option.delete.confirm"), false);
         }
+        // The player tab owns captions of its own: its tabs, its buttons and its two search hints.
+        built.players.relabel();
     }
 
     private static Button refreshButton(Built built) {
@@ -796,12 +783,6 @@ public final class BackUtilsAdminScreen extends Screen {
         }
     }
 
-    /** {@return the profile half that is showing, which is the only one that follows the server} */
-    private AdminProfileTab selectedProfileTab() {
-        return built.profileTabs.getSelectedTab() == built.namesTabHeader
-                ? built.nameTab : built.chatTab;
-    }
-
     @Override
     public void init() {
         // The tree is built once and kept, so the captions resolved as it was built are written
@@ -867,16 +848,14 @@ public final class BackUtilsAdminScreen extends Screen {
         int tabHeight = Math.max(40, contentHeight - headerHeight - INNER_GAP);
         built.tabView.layout(l -> l.width(columnWidth).height(tabHeight));
 
-        // The profile tab is a tab view inside a tab view, so its content pays the strip and the
-        // padding twice.
+        // What the outer tab view adds around the content it mounts: its own strip above, and
+        // ldlib2's five-pixel padding on every side.
         int panelWidth = Math.max(60, columnWidth - TAB_CONTENT_PAD * 2);
         int panelHeight = Math.max(60, tabHeight - TAB_STRIP_HEIGHT - TAB_CONTENT_PAD * 2);
-        built.profileTabs.layout(l -> l.width(panelWidth).height(panelHeight));
 
-        int subWidth = Math.max(40, panelWidth - TAB_CONTENT_PAD * 2);
-        int subHeight = Math.max(40, panelHeight - TAB_STRIP_HEIGHT - TAB_CONTENT_PAD * 2);
-        built.chatTab.layout(subWidth, subHeight);
-        built.nameTab.layout(subWidth, subHeight);
+        // The player tab is mounted directly, so it pays the strip and the padding once; inside it
+        // the chosen player's detail has a tab view of its own, which the tab sizes for itself.
+        built.players.layout(panelWidth, panelHeight);
 
         // The settings tab is mounted directly, so it pays the strip and the padding once.
         built.config.layout(panelWidth, panelHeight);
@@ -907,11 +886,29 @@ public final class BackUtilsAdminScreen extends Screen {
     /** Brings the tab in view up to date with whatever the server last sent it. */
     private void syncVisibleTab() {
         Tab selected = built.tabView.getSelectedTab();
-        if (selected == built.profilesTab) {
-            selectedProfileTab().sync();
+        if (selected == built.playersTab) {
+            built.players.sync();
         } else if (selected == built.configTab) {
             built.config.sync();
         }
+    }
+
+    /**
+     * Takes ctrl+C for the list in view, unless a text field has the keyboard.
+     *
+     * <p>Checked before the focused widget sees the key, which is why the text-field test matters:
+     * an administrator typing in the filter must get its own copy behaviour, not a list copy that
+     * would also swallow the keystroke.
+     */
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (keyCode == GLFW.GLFW_KEY_C && Screen.hasControlDown()) {
+            if (built.tabView.getSelectedTab() == built.playersTab
+                    && !built.players.typing() && built.players.copySelection()) {
+                return true;
+            }
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     /**

@@ -258,6 +258,30 @@ public class LogData extends DataManager {
                 MAPPER, limit);
     }
 
+    /**
+     * {@return the newest entries this player has in memory, despite any hiding, newest first}
+     *
+     * <p>The access list is memory — who was close enough to witness a line — and hiding is only the
+     * overlay that decides whether they are still shown it. A line an administrator has withheld from
+     * this player is still a line in their memory, and is exactly the line an administrator needs to
+     * see to give it back, so the visibility conditions are deliberately not applied here.
+     *
+     * <p>Bounded like every other screen read: see {@link #SCREEN_ROWS}.
+     */
+    public List<ActionLogEntry> rememberedBy(UUID player, int limit) {
+        if (player == null) return List.of();
+        String needle = "," + player + ",";
+        return query(
+                "SELECT " + COLUMNS + " FROM action_log " +
+                        // Ids start at one, so this selects every row and leaves the access list as
+                        // the only narrowing. The padded LIKE is the same whole-element test the
+                        // visibility rule uses.
+                        "WHERE log_id > 0 " +
+                        "AND (',' || replace(access_list, ' ', '') || ',') LIKE ? " +
+                        "ORDER BY log_id DESC LIMIT ?",
+                MAPPER, "%" + needle + "%", limit);
+    }
+
     /** {@return one entry, or null when no row has that id} */
     public ActionLogEntry find(long logId) {
         List<ActionLogEntry> rows = query(
