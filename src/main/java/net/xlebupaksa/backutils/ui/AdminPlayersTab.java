@@ -137,7 +137,11 @@ public final class AdminPlayersTab {
 
     /** {@return true while a text field in this tab has the keyboard, so ctrl+C must not take it} */
     public boolean typing() {
-        return filter.isFocused() || memory.typing();
+        if (selected.isEmpty()) return filter.isFocused();
+        // Only the memory filter can be in view once a player is open. The other two panels have their
+        // own filters, but they are hidden while the memory tab is the one drawn, and a field that was
+        // focused before Back was pressed must not swallow ctrl+C for a list it is no longer beside.
+        return tabs.getSelectedTab() == memoryHeader && memory.typing();
     }
 
     /** Writes the captions again in the language the client is set to now. */

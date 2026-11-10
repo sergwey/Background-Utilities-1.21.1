@@ -11,6 +11,7 @@
   "backutils.admin.memory.empty": "Nothing in this player's memory.",
   "backutils.admin.memory.hide": "Hide from this player",
   "backutils.admin.memory.hint": "Select a line to act on it.",
+  "backutils.admin.memory.loading": "Loading memory...",
   "backutils.admin.memory.no.match": "No line matches that filter.",
   "backutils.admin.memory.search": "Search memory",
   "backutils.admin.memory.selected": "%s selected",

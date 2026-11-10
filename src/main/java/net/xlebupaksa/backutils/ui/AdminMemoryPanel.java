@@ -272,6 +272,18 @@ public final class AdminMemoryPanel {
     private void rebuild() {
         if (player.isEmpty()) return;
 
+        if (!AdminMemoryCache.holds(player)) {
+            // The cache can still be the previous player's. Drawing it under this name would show one
+            // player's lines as another's, and the buttons would act on ids from that other memory.
+            list.clearAllScrollViewChildren();
+            drawn.clear();
+            selection.clear();
+            scope.setText("", false);
+            list.addScrollViewChild(muted(Text.of("backutils.admin.memory.loading")));
+            updateControls();
+            return;
+        }
+
         List<AdminMemoryPayload.Row> all = AdminMemoryCache.rows();
         List<Long> allIds = new ArrayList<>(all.size());
         for (AdminMemoryPayload.Row row : all) allIds.add(row.id());
@@ -507,8 +519,10 @@ public final class AdminMemoryPanel {
                 continue;
             }
             boolean bright = (elapsed / AdminListStyle.BLINK_PHASE_NANOS) % 2L == 0L;
+            int rest = selection.contains(row.data.id())
+                    ? AdminListStyle.ROW_SELECTED : AdminListStyle.ROW_IDLE;
             row.element.style(s -> s.background(new ColorRectTexture(
-                    bright ? AdminListStyle.ROW_COPIED : AdminListStyle.ROW_IDLE)));
+                    bright ? AdminListStyle.ROW_COPIED : rest)));
         }
     }
 }

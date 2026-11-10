@@ -1347,12 +1347,12 @@ public final class BackUtilsMenuScreen extends Screen {
             long elapsed = now - row.clickedAt;
             if (elapsed >= BLINK_NANOS) {
                 row.clickedAt = -1L;
-                row.element.style(s -> s.background(new ColorRectTexture(ROW_IDLE)));
+                paintMemory(row);
                 continue;
             }
             boolean bright = (elapsed / BLINK_PHASE_NANOS) % 2L == 0L;
-            int colour = bright ? ROW_COPIED : ROW_IDLE;
-            row.element.style(s -> s.background(new ColorRectTexture(colour)));
+            int rest = memorySelection.contains(row.id) ? ROW_SELECTED : ROW_IDLE;
+            row.element.style(s -> s.background(new ColorRectTexture(bright ? ROW_COPIED : rest)));
         }
     }
 }

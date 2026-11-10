@@ -1009,6 +1009,9 @@ public final class BackUtilsAdminScreen extends Screen {
         // so coming back from the editor lands where the edit started.
         formSelected = built.tabView.getSelectedTab() != built.logTab;
         layoutAll();
+        // After the layout, because the config tab's explanations wrap to the width it just set, and
+        // a language change between two opens has to rewrite them along with the labels and units.
+        built.config.relabel();
 
         built.ui.setScreenAndInit(this);
         addRenderableWidget(built.ui.getWidget());

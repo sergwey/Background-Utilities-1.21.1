@@ -90,6 +90,11 @@ public final class AdminConfigTab {
 
     private final Map<BackUtilsSettings.Group, ScrollerView> lists =
             new EnumMap<>(BackUtilsSettings.Group.class);
+    /** The group tabs, so a language change can write their captions again. */
+    private final Map<BackUtilsSettings.Group, Tab> groupTabs =
+            new EnumMap<>(BackUtilsSettings.Group.class);
+    /** The setting labels, by the setting's key, for the same reason. */
+    private final Map<String, Label> settingLabels = new LinkedHashMap<>();
     /** The control row of each setting, tinted while its value is unsaved. */
     private final Map<String, UIElement> rowElements = new LinkedHashMap<>();
     /** The exact-value fields, so a slider drag can move the one beside it. */
@@ -157,7 +162,9 @@ public final class AdminConfigTab {
                     .adaptiveHeight(false));
             list.viewContainer(v -> v.getLayout().gapAll(2));
             lists.put(group, list);
-            tabs.addTab(new Tab().setText(Text.of(group.translationKey()), false), list);
+            Tab tab = new Tab().setText(Text.of(group.translationKey()), false);
+            groupTabs.put(group, tab);
+            tabs.addTab(tab, list);
         }
         // The strip stays, the panel border goes: a box inside the menu's own tab view is a mistake.
         tabs.tabContentContainer(c -> c.style(s -> s.backgroundTexture(IGuiTexture.EMPTY)));
@@ -185,6 +192,29 @@ public final class AdminConfigTab {
     /** {@return the element to mount as the Config tab's content} */
     public UIElement root() {
         return root;
+    }
+
+    /**
+     * Writes the group tabs and the setting labels again in the language the client is set to now.
+     *
+     * <p>The tab tree is built once and kept for the life of the client, while a language change can
+     * happen between two opens. The explanations under the rows are re-wrapped when the rows are next
+     * rebuilt from the server, because their heights are part of the block's layout.
+     */
+    public void relabel() {
+        if (pending.isEmpty()) {
+            // Nothing is being edited, so the rows can be made again: that also writes the units and
+            // the on/off words, and wraps the explanations in the language and at the width now.
+            rebuild();
+            return;
+        }
+        for (Map.Entry<BackUtilsSettings.Group, Tab> entry : groupTabs.entrySet()) {
+            entry.getValue().setText(Text.of(entry.getKey().translationKey()), false);
+        }
+        for (AdminConfigPayload.Row row : AdminConfigCache.rows()) {
+            Label label = settingLabels.get(row.key());
+            if (label != null) label.setText(settingLabel(row), false);
+        }
     }
 
     /** Sizes everything to the room the tab content has. */
@@ -266,6 +296,7 @@ public final class AdminConfigTab {
                         String.join(" ", setting.comment())))));
 
         Label label = text(settingLabel(setting), PLAIN, 9f, ROW);
+        settingLabels.put(setting.key(), label);
         label.layout(l -> l.width(LABEL_WIDTH).height(ROW));
         row.addChild(label);
 
