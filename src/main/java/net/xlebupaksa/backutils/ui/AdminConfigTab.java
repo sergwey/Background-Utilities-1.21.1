@@ -15,6 +15,7 @@ import com.lowdragmc.lowdraglib2.gui.ui.elements.Switch;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.Tab;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.TabView;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.TextField;
+import com.lowdragmc.lowdraglib2.gui.ui.rendering.GUIContext;
 import dev.vfyjxf.taffy.style.AlignItems;
 import dev.vfyjxf.taffy.style.FlexDirection;
 import net.minecraft.client.Minecraft;
@@ -30,6 +31,7 @@ import net.xlebupaksa.backutils.network.AdminConfigEditPayload;
 import net.xlebupaksa.backutils.network.AdminConfigFeedbackCache;
 import net.xlebupaksa.backutils.network.AdminConfigNetwork;
 import net.xlebupaksa.backutils.network.AdminConfigPayload;
+import net.xlebupaksa.backutils.client.LiteralDrawing;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -42,8 +44,8 @@ import java.util.Map;
  * The background menu's Config tab: the server's settings in sub-tabs, with Save and Revert.
  *
  * <p>Rows are built from what the server sent, so no settings list lives here; the kind picks the
- * control — {@code Switch} for 0-or-1, {@code Slider} plus field for a number, {@code TextField}
- * for text, a {@link MarkupLabel} preview for a separator or a roll format — a list is read-only with
+ * control вЂ” {@code Switch} for 0-or-1, {@code Slider} plus field for a number, {@code TextField}
+ * for text, a {@link MarkupLabel} preview for a separator or a roll format вЂ” a list is read-only with
  * the command that changes it, and unsaved rows are counted in the footer.
  */
 @OnlyIn(Dist.CLIENT)
@@ -103,6 +105,37 @@ public final class AdminConfigTab {
      * it: a preview wrapped before the layout has run wraps to nothing and shows its first word.
      */
     private int contentWidth;
+
+    /**
+     * A field that measures and draws its text with Ember's literal mode on.
+     *
+     * <p>The formatter shows a format value's markup as the characters it is made of, but the width
+     * splitter still parses what it is given: the caret then counts characters in the typed line while
+     * the click counts them in the parsed one, and the first click lands on the wrong character. The
+     * profile editor draws its fields under the same switch for the same reason.
+     */
+    private static final class LiteralTextField extends TextField {
+
+        @Override
+        public void drawContents(GUIContext guiContext) {
+            LiteralDrawing.begin();
+            try {
+                super.drawContents(guiContext);
+            } finally {
+                LiteralDrawing.end();
+            }
+        }
+
+        @Override
+        public int getCursorUnderMouseX(double mouseX) {
+            LiteralDrawing.begin();
+            try {
+                return super.getCursorUnderMouseX(mouseX);
+            } finally {
+                LiteralDrawing.end();
+            }
+        }
+    }
 
     public AdminConfigTab() {
         build();
@@ -304,7 +337,7 @@ public final class AdminConfigTab {
      * <p>One row per entry rather than one line of text, because an entry is a name and the id it plays and
      * a line of them is not a thing anybody reads. The rows come from the setting's value, or from the
      * unsaved one when the operator has already changed it, and the value goes back as the fields that are
-     * not blank — which is what makes a cleared field an entry taken away, and the empty last row the place
+     * not blank вЂ” which is what makes a cleared field an entry taken away, and the empty last row the place
      * a new one is written.
      *
      * <p>The rows are built once and left alone: a field that is cleared stays as an empty row, which is
@@ -336,7 +369,7 @@ public final class AdminConfigTab {
         block.addChild(list);
     }
 
-    /** One entry of a list: its text, and — for every row but the last — the button that clears it. */
+    /** One entry of a list: its text, and вЂ” for every row but the last вЂ” the button that clears it. */
     private TextField paletteField(AdminConfigPayload.Row setting, UIElement list,
                                    List<TextField> fields, String entry, boolean last) {
         UIElement row = new UIElement();
@@ -348,9 +381,12 @@ public final class AdminConfigTab {
         indent.layout(l -> l.width(LABEL_WIDTH).height(ROW));
         row.addChild(indent);
 
-        TextField field = new TextField();
-        field.setText(entry, false);
+        TextField field = new LiteralTextField();
+        // Before the text, because setting the text measures the line to decide what part of it is
+        // shown and where the caret sits; a formatter applied afterwards leaves that measurement from
+        // the unformatted line, and the first click lands on a character the drawn line is not on.
         field.setFormatter(MarkupUtil::asLiteral);
+        field.setText(entry, false);
         field.textFieldStyle(s -> s.placeholder(Component.literal("name=soundid")));
         field.layout(l -> l.flex(1).height(14));
         field.setTextResponder(value -> set(setting.key(), paletteValue(fields)));
@@ -414,12 +450,15 @@ public final class AdminConfigTab {
     }
 
     private TextField fieldFor(AdminConfigPayload.Row setting) {
-        TextField field = new TextField();
-        field.setText(setting.value(), false);
+        TextField field = new LiteralTextField();
         // The field draws its value as one literal, which Ember would parse: the tags would vanish
         // and the text would take on their formatting, leaving nothing to edit. Handing it a
         // component split so that no piece can be parsed shows the markup as it was typed.
+        // The formatter comes before the text: setting the text is what measures the line and puts the
+        // caret at its end, and that measurement has to be of the displayed (formatted) line or the
+        // first click in the field counts characters in a line that is not the one on screen.
         field.setFormatter(MarkupUtil::asLiteral);
+        field.setText(setting.value(), false);
         boolean number = setting.kind() == BackUtilsSettings.Kind.NUMBER;
         if (number) {
             field.layout(l -> l.width(FIELD_WIDTH).height(14));
