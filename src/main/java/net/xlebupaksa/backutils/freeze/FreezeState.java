@@ -1,6 +1,5 @@
 package net.xlebupaksa.backutils.freeze;
 
-import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
@@ -71,22 +70,26 @@ public final class FreezeState {
         return player != null && FROZEN.contains(player);
     }
 
-    /** Holds a player where they stand, along with everything they could otherwise do. */
+    /**
+     * Holds a player where they stand, along with everything they could otherwise do.
+     *
+     * <p>Nothing is said to the player. A moderation action is answered to the operator who asked for
+     * it, not announced to the player it acts on: being held is visible enough in what stops working,
+     * and a line in chat is a line the player can quote back or act on.
+     */
     public static void freeze(ServerPlayer player) {
         FROZEN.add(player.getUUID());
         PINS.put(player.getUUID(), player.position());
         hold(player);
         FreezeNetwork.send(player, true);
-        player.displayClientMessage(Component.translatable("backutils.freeze.held"), false);
     }
 
-    /** Lets a player go, leaving them exactly where they were held. */
+    /** Lets a player go, leaving them exactly where they were held, and also without a word to them. */
     public static void unfreeze(ServerPlayer player) {
         FROZEN.remove(player.getUUID());
         PINS.remove(player.getUUID());
         release(player);
         FreezeNetwork.send(player, false);
-        player.displayClientMessage(Component.translatable("backutils.freeze.released"), false);
     }
 
     /**

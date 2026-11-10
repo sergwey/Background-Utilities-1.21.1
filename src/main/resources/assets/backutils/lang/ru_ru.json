@@ -318,8 +318,6 @@
   "item.backutils.delete_tool": "Инструмент удаления",
   "item.backutils.effect_tool": "Инструмент эффектов",
   "backutils.tab.tools": "Инструменты BackUtils",
-  "backutils.freeze.held": "Оператор удерживает вас на месте.",
-  "backutils.freeze.released": "Вас отпустили.",
   "backutils.item_editor.refused": "Этот предмет нельзя изменить.",
   "backutils.item_editor.applied": "Предмет изменён.",
   "backutils.item_editor.unstyled": "%s: разметка не оформляет ни одного своего символа, поэтому предмет покажет сами теги. Нажмите «Применить» ещё раз, чтобы всё равно записать.",

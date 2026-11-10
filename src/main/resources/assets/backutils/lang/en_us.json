@@ -318,8 +318,6 @@
   "item.backutils.delete_tool": "Delete tool",
   "item.backutils.effect_tool": "Effect tool",
   "backutils.tab.tools": "BackUtils Tools",
-  "backutils.freeze.held": "You are being held in place by an operator.",
-  "backutils.freeze.released": "You have been released.",
   "backutils.item_editor.refused": "That item cannot be edited.",
   "backutils.item_editor.applied": "The item has been changed.",
   "backutils.item_editor.unstyled": "%s carries markup that styles none of its own characters, so the item will show the tags themselves. Press Apply again to write it anyway.",
