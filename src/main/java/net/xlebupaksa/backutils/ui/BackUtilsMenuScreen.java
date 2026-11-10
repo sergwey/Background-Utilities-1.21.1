@@ -42,6 +42,8 @@ import net.xlebupaksa.backutils.client.ZoneMusicPlayer;
 import net.xlebupaksa.backutils.data.MarkupUtil;
 import net.xlebupaksa.backutils.data.MarkupWrap;
 import net.xlebupaksa.backutils.data.ProfileOptions;
+import net.xlebupaksa.backutils.network.AdminLogBatchPayload;
+import net.xlebupaksa.backutils.network.AdminNetwork;
 import net.xlebupaksa.backutils.network.LogHistoryCache;
 import net.xlebupaksa.backutils.network.LogHistoryPayload;
 import net.xlebupaksa.backutils.network.MenuMusicRequestPayload;
@@ -51,6 +53,7 @@ import net.xlebupaksa.backutils.network.ProfileListCache;
 import net.xlebupaksa.backutils.network.ProfileListPayload;
 import net.xlebupaksa.backutils.network.ProfileNetwork;
 import net.xlebupaksa.backutils.network.RoleplayLogNetwork;
+import org.lwjgl.glfw.GLFW;
 import net.xlebupaksa.backutils.profile.ProfileMarkup;
 
 import java.util.ArrayList;
@@ -88,6 +91,7 @@ public final class BackUtilsMenuScreen extends Screen {
     private static final int ROW_IDLE = 0x44101016;
     private static final int ROW_HOVER = 0x883A4658;
     private static final int ROW_COPIED = 0xAA4E7FB8;
+    private static final int ROW_SELECTED = 0xAA4E7FB8;
     private static final int ROW_IN_USE = 0x664E7FB8;
     private static final int MUTED = 0xFF9AA3B2;
     private static final int PLAIN = 0xFFE2E8F0;
@@ -132,8 +136,12 @@ public final class BackUtilsMenuScreen extends Screen {
         UIElement root;
         UIElement portrait;
         UIElement tabColumn;
-        UIElement tabView;
+        TabView tabView;
         ScrollerView memoryList;
+        Tab memoryTab;
+        UIElement memoryPanel;
+        UIElement memoryActions;
+        Button memoryDelete;
         ScrollerView configScroll;
         /** The Profiles tab is itself a tab view: chat profiles always, plus name profiles for an
          * operator. Everyone else sees one panel and no strip. */
@@ -216,11 +224,13 @@ public final class BackUtilsMenuScreen extends Screen {
 
     /** A memory row, plus the state its blink needs. */
     private static final class Row {
+        final long id;
         final UIElement element;
         final String text;
         volatile long clickedAt = -1L;
 
-        Row(UIElement element, String text) {
+        Row(long id, UIElement element, String text) {
+            this.id = id;
             this.element = element;
             this.text = text;
         }
@@ -232,6 +242,9 @@ public final class BackUtilsMenuScreen extends Screen {
 
     private final Built built;
     private final List<Row> rows = new ArrayList<>();
+    /** What is selected in the memory list, with the anchor a shift-click ranges from. */
+    private final MultiSelection memorySelection = new MultiSelection();
+    private long memoryDeleteArmedAt;
     private int builtRevision = -1;
     /** How wide the memory list is, recalculated whenever the menu opens. */
     private int listWidth = 200;
@@ -332,8 +345,24 @@ public final class BackUtilsMenuScreen extends Screen {
         built.profileList = scrollingList();
         buildProfilePanel(built);
 
+        // The memory list and the one action an operator has on it: the delete button is hidden for
+        // everybody else, and so is the strip that holds it.
+        built.memoryTab = translatedTab(built, "backutils.menu.tab.memory");
+        built.memoryDelete = new Button();
+        built.memoryDelete.setText(Text.of("backutils.admin.option.delete.record"), false);
+        built.memoryDelete.layout(l -> l.widthPercent(100).height(14));
+        built.memoryDelete.setOnClick(e -> {
+            if (instance != null) instance.onMemoryDelete();
+        });
+        built.memoryActions = new UIElement();
+        built.memoryActions.layout(l -> l.widthPercent(100).height(14));
+        built.memoryActions.addChild(built.memoryDelete);
+        built.memoryPanel = new UIElement();
+        built.memoryPanel.layout(l -> l.flexDirection(FlexDirection.COLUMN).gapAll(INNER_GAP));
+        built.memoryPanel.addChildren(built.memoryList, built.memoryActions);
+
         TabView tabView = new TabView();
-        tabView.addTab(translatedTab(built, "backutils.menu.tab.memory"), wrap(built.memoryList));
+        tabView.addTab(built.memoryTab, built.memoryPanel);
         tabView.addTab(translatedTab(built, "backutils.menu.tab.configuration"),
                 wrap(built.configScroll));
         tabView.addTab(translatedTab(built, "backutils.menu.tab.profiles"), built.profilePanel);
@@ -380,6 +409,11 @@ public final class BackUtilsMenuScreen extends Screen {
         }
         // The name panel's own captions, its filter hint and its scope line are keys as well.
         built.nameTab.relabel();
+        // The memory tab's one action: a caption like any other, but its wording also depends on
+        // whether a second click is armed, which a language change is allowed to forget.
+        if (built.memoryDelete != null) {
+            built.memoryDelete.setText(Text.of("backutils.admin.option.delete.record"), false);
+        }
     }
 
     /**
@@ -767,6 +801,9 @@ public final class BackUtilsMenuScreen extends Screen {
         // panel the server would refuse is a lie about what the player can do.
         built.namesTabHeader.setDisplay(staff);
         built.profileTabs.tabHeaderContainer.setDisplay(staff);
+        // The memory strip is the same kind of offer: a button whose action the server would refuse
+        // is a lie about what this player can do.
+        built.memoryActions.setVisible(staff);
         if (!staff && built.profileTabs.getSelectedTab() != built.chatTabHeader) {
             built.profileTabs.selectTab(built.chatTabHeader);
         }
@@ -1024,8 +1061,14 @@ public final class BackUtilsMenuScreen extends Screen {
         builtRevision = LogHistoryCache.revision();
 
         List<LogHistoryPayload.Row> history = LogHistoryCache.rows();
+        List<Long> ids = new ArrayList<>(history.size());
+        for (LogHistoryPayload.Row entry : history) ids.add(entry.id());
+        // A refresh can remove rows, and a selection kept as indexes would move to the row below it.
+        memorySelection.retainAll(ids);
+
         if (history.isEmpty()) {
             built.memoryList.addScrollViewChild(muted(Text.of("backutils.menu.memory.empty")));
+            updateMemoryActions();
             return;
         }
         // Oldest first, straight from the payload, so the list reads in the order things happened.
@@ -1034,6 +1077,8 @@ public final class BackUtilsMenuScreen extends Screen {
             last = buildMemoryRow(entry);
             built.memoryList.addScrollViewChild(last);
         }
+        paintMemoryRows();
+        updateMemoryActions();
 
         // Scrolled to the newest end once the layout has run: the rows have no measured position yet.
         newestRow = last;
@@ -1052,26 +1097,107 @@ public final class BackUtilsMenuScreen extends Screen {
                 .height(text.contentHeight() + 4)
                 .paddingAll(2)
                 .flexDirection(FlexDirection.ROW));
-        row.style(s -> s
-                .background(new ColorRectTexture(ROW_IDLE))
-                .tooltips(Component.literal(entry.createdAt())));
+        row.style(s -> s.tooltips(Component.literal(entry.createdAt())));
         row.addChild(text);
 
-        Row state = new Row(row, MarkupUtil.strip(entry.text()));
+        Row state = new Row(entry.id(), row, MarkupUtil.strip(entry.text()));
         rows.add(state);
+        paintMemory(state);
 
         row.addEventListener(UIEvents.MOUSE_ENTER, e -> {
-            if (!state.blinking()) row.style(s -> s.background(new ColorRectTexture(ROW_HOVER)));
+            if (!state.blinking() && !memorySelection.contains(state.id)) {
+                row.style(s -> s.background(new ColorRectTexture(ROW_HOVER)));
+            }
         }, true);
         row.addEventListener(UIEvents.MOUSE_LEAVE, e -> {
-            if (!state.blinking()) row.style(s -> s.background(new ColorRectTexture(ROW_IDLE)));
+            if (!state.blinking()) paintMemory(state);
         }, true);
         row.addEventListener(UIEvents.MOUSE_DOWN, e -> {
             if (e.button != 0) return;
-            Minecraft.getInstance().keyboardHandler.setClipboard(state.text);
-            state.clickedAt = System.nanoTime();
+            // A click selects; copying is ctrl+C, so the selection is what the clipboard asks for.
+            memorySelection.click(state.id, Screen.hasControlDown(), Screen.hasShiftDown(),
+                    memoryIds());
+            paintMemoryRows();
+            updateMemoryActions();
         });
         return row;
+    }
+
+    /** {@return the ids of the memory rows, in drawing order}, which a shift range follows */
+    private List<Long> memoryIds() {
+        List<Long> ids = new ArrayList<>(rows.size());
+        for (Row row : rows) ids.add(row.id);
+        return ids;
+    }
+
+    private void paintMemory(Row row) {
+        row.element.style(s -> s.background(new ColorRectTexture(
+                memorySelection.contains(row.id) ? ROW_SELECTED : ROW_IDLE)));
+    }
+
+    private void paintMemoryRows() {
+        for (Row row : rows) paintMemory(row);
+    }
+
+    /**
+     * Copies the selected lines, in the order drawn, with the copied blink.
+     *
+     * <p>A click selects now, so copying is asked for: ctrl+C, and the rows it took are the rows that
+     * blink. A line's markup is stripped, because this is the text a reader copied and not the markup
+     * that shaped it.
+     *
+     * @return true when something was copied
+     */
+    private boolean copyMemorySelection() {
+        if (memorySelection.isEmpty()) return false;
+
+        List<String> lines = new ArrayList<>();
+        for (Row row : rows) {
+            if (memorySelection.contains(row.id)) lines.add(row.text);
+        }
+        if (lines.isEmpty()) return false;
+
+        Minecraft.getInstance().keyboardHandler.setClipboard(String.join("\n", lines));
+        long now = System.nanoTime();
+        for (Row row : rows) {
+            if (memorySelection.contains(row.id)) row.clickedAt = now;
+        }
+        return true;
+    }
+
+    /**
+     * Deletes the selected records, on a second click, for an operator only.
+     *
+     * <p>The server refuses it from anybody else, and the button is not even drawn for them; the
+     * history is asked for again because the deleted lines are the server's rows, not this list's.
+     */
+    private void onMemoryDelete() {
+        if (!canManageNames() || memorySelection.isEmpty()) return;
+
+        long now = System.nanoTime();
+        if (now - memoryDeleteArmedAt > DELETE_CONFIRM_NANOS) {
+            memoryDeleteArmedAt = now;
+            built.memoryDelete.setText(Text.of("backutils.admin.option.delete.confirm"), false);
+            return;
+        }
+
+        memoryDeleteArmedAt = 0L;
+        built.memoryDelete.setText(Text.of("backutils.admin.option.delete.record"), false);
+        AdminNetwork.sendBatch(new AdminLogBatchPayload(
+                AdminLogBatchPayload.Kind.DELETE_RECORD, memorySelection.ids(), ""));
+        RoleplayLogNetwork.requestHistory();
+    }
+
+    /** Keeps the one memory action in step with the selection and with who is looking at it. */
+    private void updateMemoryActions() {
+        boolean staff = canManageNames();
+        built.memoryActions.setVisible(staff);
+        built.memoryDelete.setActive(staff && !memorySelection.isEmpty());
+
+        if (!staff || memorySelection.isEmpty()) {
+            memoryDeleteArmedAt = 0L;
+            built.memoryDelete.setText(Text.of("backutils.admin.option.delete.record"), false);
+        }
     }
 
     private static Label muted(String text) {
@@ -1138,7 +1264,13 @@ public final class BackUtilsMenuScreen extends Screen {
                 .width(rightWidth)
                 .height(contentHeight - TITLE_HEIGHT - INNER_GAP));
         // Explicit heights: without a definite viewport the scroller cannot clip or scroll.
-        built.memoryList.layout(l -> l.width(rightWidth).height(listHeight));
+        // The memory list and its action strip share the tab's height; the strip exists for an
+        // operator only, and takes room only while it is shown.
+        built.memoryActions.setVisible(canManageNames());
+        int memoryActionsHeight = built.memoryActions.isVisible() ? 14 + INNER_GAP : 0;
+        built.memoryPanel.layout(l -> l.width(rightWidth).height(listHeight));
+        built.memoryList.layout(l -> l.width(rightWidth).height(listHeight - memoryActionsHeight));
+        built.memoryActions.layout(l -> l.width(rightWidth).height(14));
         built.configScroll.layout(l -> l.width(rightWidth).height(listHeight));
 
         // The Profiles tab is a column of its own: the strip that carries the create button, then the
@@ -1207,9 +1339,24 @@ public final class BackUtilsMenuScreen extends Screen {
         applyPendingScroll();
     }
 
+    /**
+     * Takes ctrl+C for the memory list when that is the tab in view.
+     *
+     * <p>No text field is checked: the memory tab draws none, and the configuration tab's fields are
+     * not in view while this one is selected. Every other keystroke stays the game's, as before.
+     */
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (keyCode == GLFW.GLFW_KEY_C && Screen.hasControlDown()
+                && built.tabView.getSelectedTab() == built.memoryTab
+                && copyMemorySelection()) {
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
     /** Scrolls the memory list to its newest row, after a render pass: a scroll requested while the
-     * rows are unmeasured has nothing to scroll to. */
-    private void applyPendingScroll() {
+     * rows are unmeasured has nothing to scroll to. */    private void applyPendingScroll() {
         if (!scrollToEndPending) return;
         scrollToEndPending = false;
         if (newestRow == null) return;
