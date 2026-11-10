@@ -122,11 +122,17 @@ public final class AdminPlayersTab {
             if (AdminProfileCache.playersRevision() != builtPlayersRevision) rebuildPlayers();
             return;
         }
-        // All three read different caches and each asks only for what it lacks, so syncing the two
-        // that are not in view costs a revision comparison rather than an answer.
-        chat.sync();
-        names.sync();
-        memory.sync();
+        // Only the half in view follows the server. The two profile panels share one cache, and both
+        // reading it would have them taking turns asking for the kind the other one is not showing,
+        // which rebuilds the visible list with the other kind's rows on every round trip.
+        Tab shown = tabs.getSelectedTab();
+        if (shown == namesHeader) {
+            names.sync();
+        } else if (shown == chatHeader) {
+            chat.sync();
+        } else {
+            memory.sync();
+        }
     }
 
     /** {@return true while a text field in this tab has the keyboard, so ctrl+C must not take it} */

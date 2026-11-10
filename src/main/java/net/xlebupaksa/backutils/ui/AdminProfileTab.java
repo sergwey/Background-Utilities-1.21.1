@@ -203,7 +203,14 @@ public final class AdminProfileTab {
      */
     public void setBarShown(boolean shown) {
         barShown = shown;
-        bar.setDisplay(shown);
+        if (shown) {
+            if (!root.hasChild(bar)) root.addChildAt(bar, 0);
+            bar.setDisplay(true);
+        } else {
+            // Taken out of the tree rather than only hidden: a line the window draws elsewhere must
+            // not stay in the layout as an empty gap, or be drawn a second time beside its copy.
+            root.removeChild(bar);
+        }
     }
 
     /** {@return the player-and-count line this panel would show}, for a window that shows it itself */
@@ -374,16 +381,20 @@ public final class AdminProfileTab {
             return;
         }
         if (!AdminProfileCache.holds(names, player)) {
-            // Nothing about this player's profiles is known yet, so the line names them and no more.
-            scopeValue = player;
+            // Nothing about this player's profiles is known yet. A fixed panel is under a header that
+            // already says who, so it has nothing to add until the count arrives.
+            scopeValue = fixedTarget.isEmpty() ? player : "";
             scope.setText(scopeValue, false);
             return;
         }
         int count = AdminProfileCache.profiles().size();
-        scopeValue = player + "  -  " + (count == 0
+        String countText = count == 0
                 ? Text.of("backutils.profiles.no.profiles")
                 : Text.of(count == 1 ? "backutils.profiles.profile.count"
-                        : "backutils.profiles.profile.count.plural", count));
+                        : "backutils.profiles.profile.count.plural", count);
+        // A fixed panel sits under a header that already names the player, so the name is not
+        // repeated here: that is the duplicate the opening player's header used to show twice.
+        scopeValue = fixedTarget.isEmpty() ? player + "  -  " + countText : countText;
         scope.setText(scopeValue, false);
     }
 

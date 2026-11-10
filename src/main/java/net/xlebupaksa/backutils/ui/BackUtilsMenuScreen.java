@@ -1325,7 +1325,10 @@ public final class BackUtilsMenuScreen extends Screen {
         String text = "";
         if (built.tabView.getSelectedTab() == built.profilesTabHeader) {
             if (built.profileTabs.getSelectedTab() == built.namesTabHeader) {
-                text = built.nameTab.scopeText();
+                // The panel is hidden and its strip carries only the count, so the window's corner is
+                // where the pair belongs: the account these profiles are on, then how many there are.
+                String count = built.nameTab.scopeText();
+                text = count.isEmpty() ? ownName() : ownName() + "  -  " + count;
             } else {
                 int count = ProfileListCache.rows().size();
                 text = ownName() + "  -  " + Text.of(count == 1
