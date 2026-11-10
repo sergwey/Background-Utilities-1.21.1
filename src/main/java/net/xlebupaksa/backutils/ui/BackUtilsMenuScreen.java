@@ -114,8 +114,6 @@ public final class BackUtilsMenuScreen extends Screen {
     /** Height of one line of memory text; matches the vanilla font plus a little air. */
     private static final int LINE_STEP = 10;
 
-    /** The strip above the profile list: the New profile button and the status line. */
-    private static final int PROFILE_HEADER_HEIGHT = 18;
     /** How long a row's Delete button stays armed between its two clicks. */
     private static final long DELETE_CONFIRM_NANOS = 5_000_000_000L;
 
@@ -145,9 +143,7 @@ public final class BackUtilsMenuScreen extends Screen {
         Tab chatTabHeader;
         Tab namesTabHeader;
         UIElement profilePanel;
-        UIElement profileHeader;
         ScrollerView profileList;
-        Label profileStatus;
         /** The window's top-right line: the player and the count for the profile list in view. */
         Label corner;
         Tab profilesTabHeader;
@@ -244,6 +240,10 @@ public final class BackUtilsMenuScreen extends Screen {
     private final MultiSelection memorySelection = new MultiSelection();
     /** The corner's current text, so the same line is not flattened into a literal every frame. */
     private String cornerValue = "";
+    /** The server's last answer about a profile, shown in the corner in place of a strip of its own. */
+    private String profileFeedback = "";
+    private boolean profileFeedbackBad;
+    private boolean cornerBad;
     private int builtRevision = -1;
     /** How wide the memory list is, recalculated whenever the menu opens. */
     private int listWidth = 200;
@@ -695,16 +695,6 @@ public final class BackUtilsMenuScreen extends Screen {
      * one, which deliberately hides the one its browsing form has — so this one serves both.
      */
     private static void buildProfilePanel(Built built) {
-        built.profileStatus = new Label();
-        built.profileStatus.setText("", false);
-        built.profileStatus.textStyle(t -> t.fontSize(9f).textColor(MUTED).textShadow(false)
-                .textAlignVertical(Vertical.CENTER).adaptiveWidth(true));
-
-        built.profileHeader = new UIElement();
-        built.profileHeader.layout(l -> l.widthPercent(100).height(PROFILE_HEADER_HEIGHT)
-                .flexDirection(FlexDirection.ROW).alignItems(AlignItems.CENTER).gapAll(INNER_GAP));
-        built.profileHeader.addChild(built.profileStatus);
-
         // A player's own name profiles: the same panel the background menu opens on a player, with its
         // browsing removed, for an operator.
         built.nameTab = new AdminProfileTab(true);
@@ -723,10 +713,13 @@ public final class BackUtilsMenuScreen extends Screen {
         built.profileTabs.addTab(built.chatTabHeader, wrap(built.profileList));
         built.profileTabs.addTab(built.namesTabHeader, built.nameTab.root());
 
+        // The tabs are the whole tab: no status strip of their own above them, which was an empty
+        // band on every open and a gap between the window's strip and the lists. The server's answer
+        // is written in the window's corner instead.
         built.profilePanel = new UIElement();
         built.profilePanel.layout(l -> l.widthPercent(100).heightPercent(100)
-                .flexDirection(FlexDirection.COLUMN).gapAll(INNER_GAP));
-        built.profilePanel.addChildren(built.profileHeader, built.profileTabs);
+                .flexDirection(FlexDirection.COLUMN));
+        built.profilePanel.addChild(built.profileTabs);
     }
 
     private static void createProfile(Built built) {
@@ -791,7 +784,7 @@ public final class BackUtilsMenuScreen extends Screen {
         // The sub-tabs take what the strip leaves, and their contents what ldlib2's own five-pixel
         // padding and the sub-tab strip leave of that. Sized before the name panel is pointed at
         // anybody: pointing it rebuilds its rows, and those wrap to the width set here.
-        int tabsHeight = Math.max(20, height - PROFILE_HEADER_HEIGHT - INNER_GAP);
+        int tabsHeight = Math.max(20, height);
         int contentHeight = Math.max(20,
                 tabsHeight - (staff ? TAB_STRIP_HEIGHT : 0) - TAB_CONTENT_PAD * 2);
         int contentWidth = Math.max(60, width - TAB_CONTENT_PAD * 2);
@@ -1002,12 +995,11 @@ public final class BackUtilsMenuScreen extends Screen {
     }
 
     private void setProfileStatus(String text, boolean bad) {
-        // Truncated rather than left to run: a label is as wide as its text, so a refusal would
-        // spill. The budget is what the New profile button and the row's gap leave of the width.
-        built.profileStatus.setText(fit(text, Math.max(40, listWidth - 4)), false);
-        built.profileStatus.textStyle(t -> t.fontSize(9f)
-                .textColor(bad ? WARNING : MUTED).textShadow(false)
-                .textAlignVertical(Vertical.CENTER).adaptiveWidth(true));
+        // Truncated rather than left to run: the corner is one line, and a refusal would spill past
+        // the window. The strip this used to write is not drawn any more; the answer takes the corner.
+        profileFeedback = fit(text, Math.max(40, listWidth - 4));
+        profileFeedbackBad = bad;
+        updateCorner();
     }
 
     /** {@return the text, cut to fit the width, with an ellipsis when anything was dropped} */
@@ -1317,8 +1309,13 @@ public final class BackUtilsMenuScreen extends Screen {
      */
     private void updateCorner() {
         String text = "";
+        boolean bad = false;
         if (built.tabView.getSelectedTab() == built.profilesTabHeader) {
-            if (built.profileTabs.getSelectedTab() == built.namesTabHeader) {
+            if (!profileFeedback.isEmpty()) {
+                // The server's answer outranks the count: it is the thing the click was asking for.
+                text = profileFeedback;
+                bad = profileFeedbackBad;
+            } else if (built.profileTabs.getSelectedTab() == built.namesTabHeader) {
                 // The panel is hidden and its strip carries only the count, so the window's corner is
                 // where the pair belongs: the account these profiles are on, then how many there are.
                 String count = built.nameTab.scopeText();
@@ -1330,9 +1327,14 @@ public final class BackUtilsMenuScreen extends Screen {
                         : "backutils.profiles.profile.count.plural", count);
             }
         }
-        if (!text.equals(cornerValue)) {
+        if (!text.equals(cornerValue) || bad != cornerBad) {
             cornerValue = text;
+            cornerBad = bad;
+            final boolean warning = bad;
             built.corner.setText(text, false);
+            built.corner.textStyle(t -> t.fontSize(9f).textColor(warning ? WARNING : MUTED)
+                    .textShadow(false).textAlignVertical(Vertical.CENTER)
+                    .textAlignHorizontal(Horizontal.RIGHT).adaptiveWidth(true));
         }
     }
 
