@@ -135,6 +135,9 @@ public final class AdminProfileTab {
 
     /** Whether the strip with Back, the scope and Create is drawn; a window may show those itself. */
     private boolean barShown = true;
+    /** Whether a blank "+" row is drawn after the profiles, and what starting the editor means here. */
+    private boolean createRow;
+    private Runnable createAction;
     /** The last player-and-count line written, for a window that shows it in a corner of its own. */
     private String scopeValue = "";
 
@@ -216,6 +219,18 @@ public final class AdminProfileTab {
     /** {@return the player-and-count line this panel would show}, for a window that shows it itself */
     public String scopeText() {
         return scopeValue;
+    }
+
+    /**
+     * Shows a blank row with a "+" after the profiles in the list.
+     *
+     * <p>The action belongs to the calling window: where the editor returns to is the window's
+     * business, and this panel is also used inside the administrator's menu, which returns elsewhere.
+     */
+    public void setCreateRow(boolean shown, Runnable action) {
+        createRow = shown;
+        createAction = action;
+        if (!player.isEmpty()) rebuildCurrent();
     }
 
     /**
@@ -457,7 +472,24 @@ public final class AdminProfileTab {
         if (shown == 0) {
             list.addScrollViewChild(muted(Text.of("backutils.profiles.no.profile.match")));
         }
+        if (createRow) list.addScrollViewChild(buildCreateRow());
         setScopeText();
+    }
+
+    /** {@return the blank entry at the end of the list, whose only content is the "+" to make one} */
+    private UIElement buildCreateRow() {
+        Button add = new Button();
+        add.setText("+", false);
+        add.layout(l -> l.width(16).height(12));
+        add.setOnClick(e -> {
+            if (createAction != null) createAction.run(); else create();
+        });
+
+        UIElement row = new UIElement();
+        row.layout(l -> l.widthPercent(100).height(16).paddingAll(2)
+                .flexDirection(FlexDirection.ROW).alignItems(AlignItems.CENTER));
+        row.addChild(add);
+        return row;
     }
 
     private void clearRows() {

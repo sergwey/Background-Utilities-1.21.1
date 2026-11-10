@@ -116,7 +116,6 @@ public final class BackUtilsMenuScreen extends Screen {
 
     /** The strip above the profile list: the New profile button and the status line. */
     private static final int PROFILE_HEADER_HEIGHT = 18;
-    private static final int PROFILE_FOOTER_HEIGHT = 16;
     /** How long a row's Delete button stays armed between its two clicks. */
     private static final long DELETE_CONFIRM_NANOS = 5_000_000_000L;
 
@@ -147,12 +146,10 @@ public final class BackUtilsMenuScreen extends Screen {
         Tab namesTabHeader;
         UIElement profilePanel;
         UIElement profileHeader;
-        Button newProfile;
         ScrollerView profileList;
         Label profileStatus;
         /** The window's top-right line: the player and the count for the profile list in view. */
         Label corner;
-        UIElement profileFooter;
         Tab profilesTabHeader;
         AdminProfileTab nameTab;
         /**
@@ -698,11 +695,6 @@ public final class BackUtilsMenuScreen extends Screen {
      * one, which deliberately hides the one its browsing form has — so this one serves both.
      */
     private static void buildProfilePanel(Built built) {
-        // One small button for both kinds, at the end of whichever list is in view. It says what it
-        // does with its shape rather than a caption, which is what leaves the strip above to the
-        // status line alone.
-        built.newProfile = profileButton("+", 16, () -> createProfile(built));
-
         built.profileStatus = new Label();
         built.profileStatus.setText("", false);
         built.profileStatus.textStyle(t -> t.fontSize(9f).textColor(MUTED).textShadow(false)
@@ -719,6 +711,8 @@ public final class BackUtilsMenuScreen extends Screen {
         // Its player-and-count strip is not drawn here: that line sits in the window's corner instead,
         // where it belongs to the window rather than to one list.
         built.nameTab.setBarShown(false);
+        // The create button is a blank entry at the end of each list, not a strip of its own above it.
+        built.nameTab.setCreateRow(true, () -> createProfile(built));
 
         built.chatTabHeader = translatedTab(built, "backutils.menu.tab.chat");
         built.namesTabHeader = translatedTab(built, "backutils.menu.tab.names");
@@ -729,17 +723,10 @@ public final class BackUtilsMenuScreen extends Screen {
         built.profileTabs.addTab(built.chatTabHeader, wrap(built.profileList));
         built.profileTabs.addTab(built.namesTabHeader, built.nameTab.root());
 
-        UIElement spacer = new UIElement();
-        spacer.layout(l -> l.flex(1));
-        built.profileFooter = new UIElement();
-        built.profileFooter.layout(l -> l.widthPercent(100).height(PROFILE_FOOTER_HEIGHT)
-                .flexDirection(FlexDirection.ROW).alignItems(AlignItems.CENTER));
-        built.profileFooter.addChildren(spacer, built.newProfile);
-
         built.profilePanel = new UIElement();
         built.profilePanel.layout(l -> l.widthPercent(100).heightPercent(100)
                 .flexDirection(FlexDirection.COLUMN).gapAll(INNER_GAP));
-        built.profilePanel.addChildren(built.profileHeader, built.profileTabs, built.profileFooter);
+        built.profilePanel.addChildren(built.profileHeader, built.profileTabs);
     }
 
     private static void createProfile(Built built) {
@@ -804,8 +791,7 @@ public final class BackUtilsMenuScreen extends Screen {
         // The sub-tabs take what the strip leaves, and their contents what ldlib2's own five-pixel
         // padding and the sub-tab strip leave of that. Sized before the name panel is pointed at
         // anybody: pointing it rebuilds its rows, and those wrap to the width set here.
-        int tabsHeight = Math.max(20,
-                height - PROFILE_HEADER_HEIGHT - PROFILE_FOOTER_HEIGHT - INNER_GAP * 2);
+        int tabsHeight = Math.max(20, height - PROFILE_HEADER_HEIGHT - INNER_GAP);
         int contentHeight = Math.max(20,
                 tabsHeight - (staff ? TAB_STRIP_HEIGHT : 0) - TAB_CONTENT_PAD * 2);
         int contentWidth = Math.max(60, width - TAB_CONTENT_PAD * 2);
@@ -819,14 +805,6 @@ public final class BackUtilsMenuScreen extends Screen {
         if (staff && Minecraft.getInstance().player != null) {
             built.nameTab.setTarget(Minecraft.getInstance().player.getGameProfile().getName());
         }
-    }
-
-    private static Button profileButton(String text, int width, Runnable action) {
-        Button button = new Button();
-        button.setText(text, false);
-        button.layout(l -> l.width(width).height(14));
-        button.setOnClick(e -> action.run());
-        return button;
     }
 
     /**
@@ -857,7 +835,23 @@ public final class BackUtilsMenuScreen extends Screen {
         for (ProfileListPayload.Row row : all) {
             built.profileList.addScrollViewChild(buildProfileRow(row));
         }
+        // The blank entry that ends the list, in the same place for every kind of profile.
+        built.profileList.addScrollViewChild(buildCreateRow());
         paintProfileRows();
+    }
+
+    /** {@return the empty row with the "+" that starts a new chat profile} */
+    private UIElement buildCreateRow() {
+        Button add = new Button();
+        add.setText("+", false);
+        add.layout(l -> l.width(16).height(12));
+        add.setOnClick(e -> createProfile(built));
+
+        UIElement row = new UIElement();
+        row.layout(l -> l.widthPercent(100).height(16).paddingAll(2)
+                .flexDirection(FlexDirection.ROW).alignItems(AlignItems.CENTER));
+        row.addChild(add);
+        return row;
     }
 
     private UIElement buildProfileRow(ProfileListPayload.Row row) {
