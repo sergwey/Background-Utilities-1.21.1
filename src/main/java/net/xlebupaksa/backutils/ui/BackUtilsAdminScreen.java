@@ -35,12 +35,17 @@ import net.xlebupaksa.backutils.network.AdminActionPayload;
 import net.xlebupaksa.backutils.network.AdminConfigCache;
 import net.xlebupaksa.backutils.network.AdminConfigNetwork;
 import net.xlebupaksa.backutils.network.AdminLogPayload;
+import net.xlebupaksa.backutils.network.AdminLogBatchPayload;
 import net.xlebupaksa.backutils.network.AdminNetwork;
 import net.xlebupaksa.backutils.network.AdminProfileNetwork;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 
 /**
  * The administrator menu — the "background" side of the mod, reached with {@code /backutils menu},
@@ -125,6 +130,8 @@ public final class BackUtilsAdminScreen extends Screen {
         Label hoverDate;
         Label hoverActor;
         Label hoverPlace;
+        /** The witness heading, which says "this action" or "every selected action". */
+        Label witnessHeading;
         /** The same for the selected entry, in the options column. */
         Label selectedId;
         Label selectedActor;
@@ -141,7 +148,14 @@ public final class BackUtilsAdminScreen extends Screen {
     private static final long DELETE_CONFIRM_NANOS = 5_000_000_000L;
 
     private final Built built;
-    private final List<UIElement> rowElements = new ArrayList<>();
+    /** The drawn row elements, by entry id, so a refresh paints the ones still here. */
+    private final Map<Long, UIElement> rowElements = new LinkedHashMap<>();
+    /** When each copied row started its acknowledgement, by entry id. */
+    private final Map<Long, Long> copiedAt = new HashMap<>();
+    /** What is selected, with the anchor a shift-click ranges from. */
+    private final MultiSelection selection = new MultiSelection();
+    /** The ids the list is drawing, in drawing order, which is what a shift range follows. */
+    private List<Long> drawnIds = List.of();
     private int builtRevision = -1;
     private int listWidth = 200;
     /** When the delete button was first clicked, or 0 when it is not armed. */
@@ -390,9 +404,9 @@ public final class BackUtilsAdminScreen extends Screen {
         built.selectedPlace = detailLine(MUTED);
         translated(built, built.selectedActor, "backutils.admin.option.hint");
 
-        Label witnessesHeading = new Label();
-        translated(built, witnessesHeading, "backutils.admin.witness.heading");
-        witnessesHeading.textStyle(t -> t.fontSize(9f).textColor(MUTED).textShadow(false)
+        built.witnessHeading = new Label();
+        translated(built, built.witnessHeading, "backutils.admin.witness.heading");
+        built.witnessHeading.textStyle(t -> t.fontSize(9f).textColor(MUTED).textShadow(false)
                 .adaptiveWidth(true).adaptiveHeight(true));
 
         // The filter does double duty: part of a name narrows the list, while a selector such as
@@ -403,7 +417,7 @@ public final class BackUtilsAdminScreen extends Screen {
         built.filterField.textFieldStyle(s -> s.placeholder(
                 Component.translatable("backutils.admin.witness.search")));
         built.filterField.setTextResponder(text ->
-                rebuildWitnesses(built, instance == null ? null : instance.selected));
+                rebuildWitnesses(built, instance == null ? List.of() : instance.selectedRows()));
 
         built.witnessList = new ScrollerView();
         built.witnessList.scrollerStyle(s -> s
@@ -418,12 +432,13 @@ public final class BackUtilsAdminScreen extends Screen {
         built.witnessList.layout(l -> l.widthPercent(100).flex(1));
 
         Button hideListed = optionButton(built, "backutils.admin.option.hide.listed",
-                () -> sendMany(AdminActionPayload.Kind.HIDE_FROM_MANY));
+                () -> sendMany(AdminLogBatchPayload.Kind.HIDE_FROM_MANY));
         Button showListed = optionButton(built, "backutils.admin.option.show.listed",
-                () -> sendMany(AdminActionPayload.Kind.UNHIDE_FROM_MANY));
+                () -> sendMany(AdminLogBatchPayload.Kind.UNHIDE_FROM_MANY));
 
-        Button copy = optionButton(built, "backutils.admin.option.copy.text",
-                BackUtilsAdminScreen::copySelected);
+        Button copy = optionButton(built, "backutils.admin.option.copy.text", () -> {
+            if (instance != null) instance.copySelection();
+        });
         Button toAction = optionButton(built, "backutils.admin.option.teleport.to.action",
                 () -> send(AdminActionPayload.of(AdminActionPayload.Kind.TELEPORT_TO_ACTION, idOrZero())));
         Button toActor = optionButton(built, "backutils.admin.option.teleport.to.actor",
@@ -440,29 +455,40 @@ public final class BackUtilsAdminScreen extends Screen {
                 built.selectedActor, built.selectedId, built.selectedPlace,
                 copy, toAction, toActor,
                 built.deleteButton,
-                witnessesHeading, hideListed, showListed, built.filterField, built.witnessList);
+                built.witnessHeading, hideListed, showListed, built.filterField, built.witnessList);
 
-        rebuildWitnesses(built, null);
+        rebuildWitnesses(built, List.of());
     }
 
     /**
-     * Sends a hide or unhide for everything the filter shows, with a selector passed through as-is:
-     * only the server can resolve one.
+     * Sends a hide or unhide for everything the filter lists across the selection.
+     *
+     * <p>The target is the union of the witnesses the filter shows, or a selector passed through as
+     * it is: only the server can resolve one. The server then crosses every selected entry with every
+     * named player and skips the pairs where the player never witnessed the entry, so an entry is
+     * only ever hidden from somebody who had it.
      */
-    private static void sendMany(AdminActionPayload.Kind kind) {
-        if (instance == null || instance.selected == null) return;
+    private static void sendMany(AdminLogBatchPayload.Kind kind) {
+        if (instance == null || instance.selection.isEmpty()) return;
 
+        List<AdminLogPayload.Row> rows = instance.selectedRows();
         String filter = instance.filterText();
-        String target = filter.startsWith("@") ? filter
-                : String.join(";", instance.listedWitnesses(instance.selected));
+        String target;
+        if (filter.startsWith("@")) {
+            target = filter;
+        } else {
+            LinkedHashSet<String> names = new LinkedHashSet<>();
+            for (AdminLogPayload.Row row : rows) names.addAll(instance.listedWitnesses(row));
+            target = String.join(";", names);
+        }
         if (target.isBlank()) return;
 
-        send(new AdminActionPayload(kind, instance.selected.id(), target));
+        sendBatch(new AdminLogBatchPayload(kind, instance.selection.ids(), target), true);
     }
 
-    /** Deletes the selected record, on a second click: hiding is reversible, deleting is not. */
+    /** Deletes the selected records, on a second click: hiding is reversible, deleting is not. */
     private static void onDeleteClicked() {
-        if (instance == null || instance.selected == null) return;
+        if (instance == null || instance.selection.isEmpty()) return;
 
         long now = System.nanoTime();
         if (now - instance.deleteArmedAt > DELETE_CONFIRM_NANOS) {
@@ -475,7 +501,8 @@ public final class BackUtilsAdminScreen extends Screen {
         instance.deleteArmedAt = 0L;
         instance.built.deleteButton.setText(Text.of("backutils.admin.option.delete.record"),
                 false);
-        send(AdminActionPayload.of(AdminActionPayload.Kind.DELETE_RECORD, instance.selected.id()));
+        sendBatch(new AdminLogBatchPayload(AdminLogBatchPayload.Kind.DELETE_RECORD,
+                instance.selection.ids(), ""), true);
     }
 
     /** {@return the filter text, trimmed} */
@@ -504,36 +531,68 @@ public final class BackUtilsAdminScreen extends Screen {
         return shown;
     }
 
+    /** {@return the names of a union the filter shows}, which the bulk buttons send */
+    private List<String> listedWitnesses(java.util.Collection<String> names) {
+        String filter = filterText().toLowerCase(java.util.Locale.ROOT);
+        // A selector cannot be matched against names locally, so everything stays listed.
+        if (filter.isEmpty() || filter.startsWith("@")) return new ArrayList<>(names);
+
+        List<String> shown = new ArrayList<>();
+        for (String name : names) {
+            if (name.toLowerCase(java.util.Locale.ROOT).contains(filter)) shown.add(name);
+        }
+        return shown;
+    }
+
     /**
-     * Fills the witness list for the selected entry, with {@link MarkupLabel} rather than buttons:
-     * the marker is a sprite, which ldlib2's own text element cannot draw.
+     * Fills the witness list for the selection, with {@link MarkupLabel} rather than buttons: the
+     * marker is a sprite, which ldlib2's own text element cannot draw.
+     *
+     * <p>The list is the union: a player who witnessed any selected entry is offered, with how many
+     * of them they can still see. Hiding is per entry, so a player who did not witness one is skipped
+     * for it on the server — which is exactly what the count beside the name is saying.
      */
-    private static void rebuildWitnesses(Built built, AdminLogPayload.Row row) {
+    private static void rebuildWitnesses(Built built, List<AdminLogPayload.Row> rows) {
         built.witnessList.clearAllScrollViewChildren();
-        if (row == null) {
+        built.witnessHeading.setText(Text.of(rows.size() > 1
+                ? "backutils.admin.witness.heading.many"
+                : "backutils.admin.witness.heading"), false);
+
+        if (rows.isEmpty()) {
             built.witnessList.addScrollViewChild(
                     muted(Text.of("backutils.admin.witness.none.selected")));
             return;
         }
-        if (row.witnesses().isEmpty()) {
+
+        Map<String, int[]> counts = new LinkedHashMap<>();
+        for (AdminLogPayload.Row row : rows) {
+            for (String witness : row.witnesses()) {
+                int[] count = counts.computeIfAbsent(witness, key -> new int[2]);
+                count[0]++;
+                if (!row.hiddenAll() && !row.hiddenFrom().contains(witness)) count[1]++;
+            }
+        }
+        if (counts.isEmpty()) {
             built.witnessList.addScrollViewChild(muted(Text.of("backutils.admin.witness.none")));
             return;
         }
 
-        List<String> shown = instance == null ? row.witnesses() : instance.listedWitnesses(row);
+        List<String> shown = instance == null ? new ArrayList<>(counts.keySet())
+                : instance.listedWitnesses(counts.keySet());
         if (shown.isEmpty()) {
             built.witnessList.addScrollViewChild(
                     muted(Text.of("backutils.admin.witness.no.match")));
             return;
         }
 
+        boolean many = rows.size() > 1;
         for (String witness : shown) {
-            // While it is hidden from everyone, every witness counts as withheld.
-            boolean canSee = !row.hiddenAll() && !row.hiddenFrom().contains(witness);
+            int[] count = counts.get(witness);
+            boolean canSee = count[1] == count[0];
+            String name = many ? witness + "  (" + count[1] + "/" + count[0] + ")" : witness;
 
-            MarkupLabel label = new MarkupLabel(List.of(witness), LINE_STEP,
-                    canSee ? PLAIN : MUTED);
-            label.withPrefix(checkbox(canSee), MARKER_GREY);
+            MarkupLabel label = new MarkupLabel(List.of(name), LINE_STEP, canSee ? PLAIN : MUTED);
+            label.withPrefix(AdminListStyle.checkbox(canSee), MARKER_GREY);
             if (!canSee) label.withPrefixSprite(HIDDEN_MARKER, HIDDEN_MARKER_SIZE);
 
             UIElement element = new UIElement();
@@ -546,18 +605,32 @@ public final class BackUtilsAdminScreen extends Screen {
 
             element.addEventListener(UIEvents.MOUSE_DOWN, e -> {
                 if (e.button != 0) return;
-                send(new AdminActionPayload(
-                        canSee ? AdminActionPayload.Kind.HIDE_FROM_PLAYER
-                               : AdminActionPayload.Kind.UNHIDE_FROM_PLAYER,
-                        row.id(), witness));
+                if (instance != null) instance.toggleWitness(witness, canSee);
             }, true);
             built.witnessList.addScrollViewChild(element);
         }
     }
 
-    /** {@return the tick box in front of a witness, with the marker when they cannot see it} */
-    private static Component checkbox(boolean canSee) {
-        return Component.literal(canSee ? "[x] " : "[ ] ");
+    /**
+     * Hides or shows every selected entry this player witnessed.
+     *
+     * <p>A player who can see all of them is hidden from all of them; one who is missing some is
+     * given the rest back, so a partly hidden witness is one click from being whole again rather than
+     * one click further into being hidden. The server skips entries the player never witnessed, so
+     * the ids sent are the ones the row's own witness list contains.
+     */
+    private void toggleWitness(String witness, boolean canSee) {
+        List<Long> ids = new ArrayList<>();
+        for (AdminLogPayload.Row row : selectedRows()) {
+            if (!row.witnesses().contains(witness)) continue;
+            boolean visible = !row.hiddenAll() && !row.hiddenFrom().contains(witness);
+            if (canSee || !visible) ids.add(row.id());
+        }
+        if (ids.isEmpty()) return;
+
+        sendBatch(new AdminLogBatchPayload(canSee
+                ? AdminLogBatchPayload.Kind.HIDE_FROM_PLAYER
+                : AdminLogBatchPayload.Kind.UNHIDE_FROM_PLAYER, ids, witness), true);
     }
 
     private static Label muted(String text) {
@@ -579,8 +652,10 @@ public final class BackUtilsAdminScreen extends Screen {
     // The options
     // ------------------------------------------------------------------
 
+    /** {@return the one selected entry's id}, or 0 when the selection is not exactly one */
     private static long idOrZero() {
-        return instance == null || instance.selected == null ? 0L : instance.selected.id();
+        return instance == null || instance.selection.size() != 1 ? 0L
+                : instance.selection.primary();
     }
 
     private static void send(AdminActionPayload payload) {
@@ -590,12 +665,63 @@ public final class BackUtilsAdminScreen extends Screen {
         AdminMenuCache.refresh();
     }
 
-    private static void copySelected() {
-        if (instance == null || instance.selected == null) return;
-        String note = instance.selected.note();
-        String text = instance.selected.text();
-        Minecraft.getInstance().keyboardHandler.setClipboard(note == null || note.isBlank()
-                ? text : text + " (" + note + ")");
+    /** Sends a bulk action, and asks for the log again unless the caller has a reason not to. */
+    private static void sendBatch(AdminLogBatchPayload payload, boolean refresh) {
+        if (payload.ids().isEmpty()) return;
+        AdminNetwork.sendBatch(payload);
+        if (refresh) AdminMenuCache.refresh();
+    }
+
+    /**
+     * Copies the selected entries, in the order the list draws them.
+     *
+     * <p>The note an administrator alone may read goes with its line, in brackets, as it did when one
+     * entry could be copied at a time. The copied rows are lit for a moment, and the lit rows are the
+     * ones that went to the clipboard.
+     *
+     * @return true when something was copied
+     */
+    private boolean copySelection() {
+        List<AdminLogPayload.Row> rows = selectedRows();
+        if (rows.isEmpty()) return false;
+
+        List<String> lines = new ArrayList<>(rows.size());
+        for (AdminLogPayload.Row row : rows) {
+            String note = row.note();
+            lines.add(note == null || note.isBlank()
+                    ? row.text() : row.text() + " (" + note + ")");
+        }
+        Minecraft.getInstance().keyboardHandler.setClipboard(String.join("\n", lines));
+
+        long now = System.nanoTime();
+        for (AdminLogPayload.Row row : rows) copiedAt.put(row.id(), now);
+        return true;
+    }
+
+    /**
+     * {@return the selected rows in the order the list draws them}, then any a filter hides
+     *
+     * <p>A filter hides a row from view, not from the selection: what was selected before the filter
+     * was typed is still what the buttons act on, and the copy of it is still a copy of it. The drawn
+     * ones come first because that is the order the clipboard and the blink follow.
+     */
+    private List<AdminLogPayload.Row> selectedRows() {
+        if (selection.isEmpty()) return List.of();
+
+        List<AdminLogPayload.Row> rows = AdminMenuCache.rows();
+        Map<Long, AdminLogPayload.Row> byId = new HashMap<>();
+        for (AdminLogPayload.Row row : rows) byId.put(row.id(), row);
+
+        List<AdminLogPayload.Row> chosen = new ArrayList<>();
+        for (Long id : drawnIds) {
+            if (!selection.contains(id)) continue;
+            AdminLogPayload.Row row = byId.get(id);
+            if (row != null) chosen.add(row);
+        }
+        for (AdminLogPayload.Row row : rows) {
+            if (selection.contains(row.id()) && !chosen.contains(row)) chosen.add(row);
+        }
+        return chosen;
     }
 
     /** {@return the log rows the action-log filter currently shows} */
@@ -639,50 +765,56 @@ public final class BackUtilsAdminScreen extends Screen {
         builtRevision = AdminMenuCache.revision();
 
         List<AdminLogPayload.Row> rows = AdminMenuCache.rows();
+        List<Long> allIds = new ArrayList<>(rows.size());
+        for (AdminLogPayload.Row row : rows) allIds.add(row.id());
+        // A refresh can remove rows, and a selection kept as indexes would move to the row below it.
+        selection.retainAll(allIds);
+        selected = rowFor(selection.primary(), rows);
+
         if (rows.isEmpty()) {
-            Label empty = new Label();
-            empty.setText(Text.of("backutils.admin.log.empty"), false);
-            empty.textStyle(t -> t.fontSize(9f).textColor(MUTED).textShadow(false).adaptiveWidth(true));
-            built.logList.addScrollViewChild(empty);
+            drawnIds = List.of();
+            built.logList.addScrollViewChild(listNote("backutils.admin.log.empty"));
+            showSelectionDetails();
+            rebuildWitnesses(built, List.of());
             return;
         }
 
         List<AdminLogPayload.Row> matching = matchingRows(rows);
+        drawnIds = new ArrayList<>(matching.size());
+        for (AdminLogPayload.Row row : matching) drawnIds.add(row.id());
+
         if (matching.isEmpty()) {
-            Label none = new Label();
-            none.setText(Text.of("backutils.admin.log.no.match"), false);
-            none.textStyle(t -> t.fontSize(9f).textColor(MUTED).textShadow(false).adaptiveWidth(true));
-            built.logList.addScrollViewChild(none);
+            built.logList.addScrollViewChild(listNote("backutils.admin.log.no.match"));
+            showSelectionDetails();
+            rebuildWitnesses(built, selectedRows());
             return;
         }
 
         for (AdminLogPayload.Row row : matching) {
             built.logList.addScrollViewChild(buildRow(row));
         }
-
-        // Re-resolved by id after a refresh, which keeps the options panel in step with the server.
-        if (selected != null) {
-            AdminLogPayload.Row updated = null;
-            for (AdminLogPayload.Row candidate : rows) {
-                if (candidate.id() == selected.id()) {
-                    updated = candidate;
-                    break;
-                }
-            }
-            selected = updated;
-            rebuildWitnesses(built, updated);
-            if (updated != null) showSelectionDetails(updated);
-            else {
-                // On the leading line, which is where an answer is looked for.
-                built.selectedActor.setText(Text.of("backutils.admin.option.gone"), false);
-                built.selectedId.setText("", false);
-                built.selectedPlace.setText("", false);
-            }
-        }
+        paintRows();
+        showSelectionDetails();
+        rebuildWitnesses(built, selectedRows());
 
         // Snapped to the top, because the list is newest first. Deferred: the rows have no measured
         // position yet.
         scrollToNewestPending = true;
+    }
+
+    private static Label listNote(String key) {
+        Label label = new Label();
+        label.setText(Text.of(key), false);
+        label.textStyle(t -> t.fontSize(9f).textColor(MUTED).textShadow(false).adaptiveWidth(true));
+        return label;
+    }
+
+    private static AdminLogPayload.Row rowFor(long id, List<AdminLogPayload.Row> rows) {
+        if (id <= 0L) return null;
+        for (AdminLogPayload.Row row : rows) {
+            if (row.id() == id) return row;
+        }
+        return null;
     }
 
     private UIElement buildRow(AdminLogPayload.Row row) {
@@ -700,27 +832,37 @@ public final class BackUtilsAdminScreen extends Screen {
                 .height(label.contentHeight() + 4)
                 .paddingAll(2)
                 .flexDirection(FlexDirection.ROW));
-        element.style(s -> s.background(new ColorRectTexture(ROW_IDLE)));
         element.addChild(label);
-        rowElements.add(element);
+        rowElements.put(row.id(), element);
+        paint(row.id(), element);
 
         element.addEventListener(UIEvents.MOUSE_ENTER, e -> {
             showHover(row);
-            if (selected == null || selected.id() != row.id()) {
+            if (!selection.contains(row.id()) && !copiedAt.containsKey(row.id())) {
                 element.style(s -> s.background(new ColorRectTexture(ROW_HOVER)));
             }
         }, true);
         element.addEventListener(UIEvents.MOUSE_LEAVE, e -> {
             showHover(null);
-            if (selected == null || selected.id() != row.id()) {
-                element.style(s -> s.background(new ColorRectTexture(ROW_IDLE)));
-            }
+            paint(row.id(), element);
         }, true);
         element.addEventListener(UIEvents.MOUSE_DOWN, e -> {
             if (e.button != 0) return;
-            onClickRow(row, element);
+            onClickRow(row);
         });
         return element;
+    }
+
+    /** Paints one row from the selection, which is the state a hover must not overwrite. */
+    private void paint(long id, UIElement element) {
+        element.style(s -> s.background(new ColorRectTexture(
+                selection.contains(id) ? ROW_SELECTED : ROW_IDLE)));
+    }
+
+    private void paintRows() {
+        for (Map.Entry<Long, UIElement> entry : rowElements.entrySet()) {
+            paint(entry.getKey(), entry.getValue());
+        }
     }
 
     /** {@return the entry's text with the administrator's note after it, when there is one} */
@@ -728,10 +870,12 @@ public final class BackUtilsAdminScreen extends Screen {
         return MarkupUtil.withNote(row.text(), row.note());
     }
 
-    /** Selects a row, or teleports when the same row is clicked twice in quick succession. */
-    private void onClickRow(AdminLogPayload.Row row, UIElement element) {
+    /** Selects a row, with the usual ctrl and shift meanings, or teleports on a plain double click. */
+    private void onClickRow(AdminLogPayload.Row row) {
         long now = System.nanoTime();
-        boolean doubleClick = row.id() == lastClickId && now - lastClickAt < DOUBLE_CLICK_NANOS;
+        boolean plain = !Screen.hasControlDown() && !Screen.hasShiftDown();
+        boolean doubleClick = plain && row.id() == lastClickId
+                && now - lastClickAt < DOUBLE_CLICK_NANOS;
         lastClickAt = now;
         lastClickId = row.id();
 
@@ -740,28 +884,50 @@ public final class BackUtilsAdminScreen extends Screen {
             return;
         }
 
-        selected = row;
-        for (UIElement other : rowElements) {
-            other.style(s -> s.background(new ColorRectTexture(ROW_IDLE)));
-        }
-        element.style(s -> s.background(new ColorRectTexture(ROW_SELECTED)));
+        selection.click(row.id(), Screen.hasControlDown(), Screen.hasShiftDown(), drawnIds);
+        selected = rowFor(selection.primary(), AdminMenuCache.rows());
 
         // A new selection disarms the delete button, so a confirmation cannot land on another row.
         deleteArmedAt = 0L;
         built.deleteButton.setText(Text.of("backutils.admin.option.delete.record"), false);
 
-        rebuildWitnesses(built, row);
-        showSelectionDetails(row);
+        paintRows();
+        rebuildWitnesses(built, selectedRows());
+        showSelectionDetails();
         showHover(row);
     }
 
-    /** Writes the selected entry's three lines, the name first as above the log. */
-    private void showSelectionDetails(AdminLogPayload.Row row) {
+    /** Writes what the options panel is about: one entry, several, or nothing. */
+    private void showSelectionDetails() {
+        int count = selection.size();
+        if (count == 0) {
+            showNothingSelected();
+            return;
+        }
+        if (count > 1) {
+            built.selectedActor.setText(
+                    Text.of("backutils.admin.option.many.selected", count), false);
+            built.selectedId.setText("", false);
+            built.selectedPlace.setText(selected == null ? "" : placeOf(selected), false);
+            return;
+        }
+
+        AdminLogPayload.Row row = selected;
+        if (row == null) {
+            showNothingSelected();
+            return;
+        }
         built.selectedActor.setText(row.actor(), false);
         built.selectedId.setText(Text.of("backutils.admin.option.id", row.id(),
                 row.visible() ? "" : Text.of("backutils.admin.option.not.witness"),
                 row.hiddenAll() ? Text.of("backutils.admin.option.hidden") : ""), false);
         built.selectedPlace.setText(placeOf(row), false);
+    }
+
+    private void showNothingSelected() {
+        built.selectedActor.setText(Text.of("backutils.admin.option.hint"), false);
+        built.selectedId.setText("", false);
+        built.selectedPlace.setText("", false);
     }
 
     // ------------------------------------------------------------------
@@ -879,8 +1045,31 @@ public final class BackUtilsAdminScreen extends Screen {
         // Only the tab in view follows the server: the profile halves share one cache, and both
         // reading it would have them taking turns asking for a player they are not showing.
         syncVisibleTab();
+        applyRowBlink();
         super.render(graphics, mouseX, mouseY, partialTick);
         applyPendingScroll();
+    }
+
+    /** Alternates the background of the rows that were copied, the usual copied acknowledgement. */
+    private void applyRowBlink() {
+        long now = System.nanoTime();
+        for (var iterator = copiedAt.entrySet().iterator(); iterator.hasNext(); ) {
+            var entry = iterator.next();
+            UIElement element = rowElements.get(entry.getKey());
+            long elapsed = now - entry.getValue();
+
+            if (elapsed >= AdminListStyle.BLINK_NANOS) {
+                iterator.remove();
+                if (element != null) paint(entry.getKey(), element);
+                continue;
+            }
+            if (element == null) continue;
+
+            boolean bright = (elapsed / AdminListStyle.BLINK_PHASE_NANOS) % 2L == 0L;
+            int colour = bright ? AdminListStyle.ROW_COPIED
+                    : (selection.contains(entry.getKey()) ? ROW_SELECTED : ROW_IDLE);
+            element.style(s -> s.background(new ColorRectTexture(colour)));
+        }
     }
 
     /** Brings the tab in view up to date with whatever the server last sent it. */
@@ -905,6 +1094,11 @@ public final class BackUtilsAdminScreen extends Screen {
         if (keyCode == GLFW.GLFW_KEY_C && Screen.hasControlDown()) {
             if (built.tabView.getSelectedTab() == built.playersTab
                     && !built.players.typing() && built.players.copySelection()) {
+                return true;
+            }
+            if (built.tabView.getSelectedTab() == built.logTab
+                    && !built.logFilter.isFocused() && !built.filterField.isFocused()
+                    && copySelection()) {
                 return true;
             }
         }

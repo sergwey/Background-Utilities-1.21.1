@@ -180,10 +180,76 @@ public final class AdminNetwork {
             case UNHIDE_FOR_EVERYONE -> hideForEveryoneMany(admin, data, payload.ids(), false);
             case HIDE_FROM_PLAYER, UNHIDE_FROM_PLAYER -> hideFromMany(admin, data, payload.ids(),
                     payload.target(), payload.action() == AdminLogBatchPayload.Kind.HIDE_FROM_PLAYER);
+            case HIDE_FROM_MANY, UNHIDE_FROM_MANY -> hideFromManyPlayers(admin, data, payload.ids(),
+                    payload.target(), payload.action() == AdminLogBatchPayload.Kind.HIDE_FROM_MANY);
             default -> {
                 // NONE: nothing this build knows how to do, so nothing is changed.
             }
         }
+    }
+
+    /**
+     * Withholds every selected entry from every player a selector or a name list names.
+     *
+     * <p>The bulk form the "hide listed" button sends: one list of entries crossed with one list of
+     * players, skipping the pairs where the player never witnessed the entry.
+     */
+    private static void hideFromManyPlayers(ServerPlayer admin, BackUtilsData data, List<Long> ids,
+                                            String target, boolean hidden) {
+        if (target == null || target.isBlank()) {
+            reportFailure(admin, "No players given.");
+            return;
+        }
+        List<UUID> targets = targetsOf(admin, target);
+        if (targets.isEmpty()) {
+            reportFailure(admin, "Nothing matched, so nothing was changed.");
+            return;
+        }
+
+        int changed = 0;
+        for (long id : ids) {
+            ActionLogEntry entry = data.logs().find(id);
+            if (entry == null) continue;
+            for (UUID targetId : targets) {
+                if (hidden && !entry.accessList().contains(targetId)) continue;
+                if (hidden) {
+                    data.logs().hideFrom(id, targetId);
+                } else {
+                    data.logs().unhideFrom(id, targetId);
+                }
+                changed++;
+            }
+        }
+        report(admin, changed + " of " + ids.size() + " selected entries were changed for "
+                + targets.size() + " player(s): " + (hidden ? "hidden from them." : "visible to them."));
+    }
+
+    /** {@return the players a selector or a {@code ;}-separated name list names} */
+    private static List<UUID> targetsOf(ServerPlayer admin, String target) {
+        List<UUID> targets = new ArrayList<>();
+        if (target == null || target.isBlank()) return targets;
+
+        if (target.startsWith("@")) {
+            try {
+                var selector = new net.minecraft.commands.arguments.selector.EntitySelectorParser(
+                        new com.mojang.brigadier.StringReader(target), true).parse();
+                for (ServerPlayer matched : selector.findPlayers(admin.createCommandSourceStack())) {
+                    targets.add(matched.getUUID());
+                }
+            } catch (Exception e) {
+                reportFailure(admin, "That selector could not be read: " + e.getMessage());
+                return List.of();
+            }
+            return targets;
+        }
+
+        for (String name : target.split(";")) {
+            String trimmed = name.trim();
+            if (trimmed.isEmpty()) continue;
+            UUID id = resolveUuid(admin, trimmed);
+            if (id != null) targets.add(id);
+        }
+        return targets;
     }
 
     /** Removes every selected entry that is still there. */
@@ -350,27 +416,7 @@ public final class AdminNetwork {
             return;
         }
 
-        List<UUID> targets = new ArrayList<>();
-        if (target.startsWith("@")) {
-            try {
-                var selector = new net.minecraft.commands.arguments.selector.EntitySelectorParser(
-                        new com.mojang.brigadier.StringReader(target), true).parse();
-                for (ServerPlayer matched : selector.findPlayers(admin.createCommandSourceStack())) {
-                    targets.add(matched.getUUID());
-                }
-            } catch (Exception e) {
-                reportFailure(admin, "That selector could not be read: " + e.getMessage());
-                return;
-            }
-        } else {
-            for (String name : target.split(";")) {
-                String trimmed = name.trim();
-                if (trimmed.isEmpty()) continue;
-                UUID id = resolveUuid(admin, trimmed);
-                if (id != null) targets.add(id);
-            }
-        }
-
+        List<UUID> targets = targetsOf(admin, target);
         if (targets.isEmpty()) {
             reportFailure(admin, "Nothing matched, so nothing was changed.");
             return;

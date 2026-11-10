@@ -36,7 +36,15 @@ public record AdminLogBatchPayload(Kind action, List<Long> ids, String target)
         HIDE_FOR_EVERYONE,
         UNHIDE_FOR_EVERYONE,
         /** Nothing at all, which is how a number from another build is read. */
-        NONE
+        NONE,
+        /**
+         * Withholds every selected entry from a set of players: a Minecraft selector such as
+         * {@code @a[distance=..10]}, or a {@code ;}-separated list of names. Appended after
+         * {@link #NONE} rather than inserted, so no existing kind's ordinal moved.
+         */
+        HIDE_FROM_MANY,
+        /** Gives every selected entry back to a set of players, in the same two forms. */
+        UNHIDE_FROM_MANY
     }
 
     public static final CustomPacketPayload.Type<AdminLogBatchPayload> TYPE =
