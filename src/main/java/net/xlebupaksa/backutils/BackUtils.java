@@ -18,6 +18,7 @@ import net.xlebupaksa.backutils.client.ClientSetup;
 import net.xlebupaksa.backutils.commands.arguments.TolerantDoubleArgument;
 import net.xlebupaksa.backutils.commands.BackUtilsCommands;
 import net.xlebupaksa.backutils.commands.ChatCommands;
+import net.xlebupaksa.backutils.commands.AdminChatCommand;
 import net.xlebupaksa.backutils.commands.MeCommand;
 import net.xlebupaksa.backutils.commands.MusicCommands;
 import net.xlebupaksa.backutils.commands.ProfileCommands;
@@ -67,6 +68,7 @@ public class BackUtils {
         NeoForge.EVENT_BUS.register(new MeCommand());
         NeoForge.EVENT_BUS.register(new BackUtilsCommands());
         NeoForge.EVENT_BUS.register(new ChatCommands());
+        NeoForge.EVENT_BUS.register(new AdminChatCommand());
         NeoForge.EVENT_BUS.register(new MusicCommands());
         NeoForge.EVENT_BUS.register(new ProfileCommands());
         NeoForge.EVENT_BUS.register(new RollCommands());

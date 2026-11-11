@@ -1,6 +1,6 @@
 # Background Utilities
 
-A NeoForge mod for roleplay servers: a witness-based action log, two chat channels, chat and
+A NeoForge mod for roleplay servers: a witness-based action log, three chat channels, chat and
 display-name profiles written in markup, an operator item editor, a banner line that stays beside the
 log, and a pair of tools for placing and removing visual effects.
 
@@ -42,9 +42,11 @@ log, and a pair of tools for placing and removing visual effects.
 - **Chat channels.** A plain message goes to local chat, which reaches the players around you; a
   leading `!` sends it to global chat. Staff read every local line wherever they are — an operator in
   another world is still the person a complaint about a line is made to — while everyone else hears
-  only what is said near them. Each channel has its own separator and can be open to everyone or
-  restricted to staff, and a player can be silenced in local chat, in global chat, for actions, or for
-  private messages.
+  only what is said near them. `/adm <message>` is the operators' own channel: a normal chat line,
+  with the sender's profile and separator, sent to every operator online and to nobody else. Local
+  and global each have their own separator and can be open to everyone or restricted to staff; the
+  admin channel is always staff-only and has a separator of its own. A player can be silenced in
+  local chat, in global chat, for actions, or for private messages.
 - **Profiles.** Players write their own chat formats — colour, weight, gradients, animations, an
   optional typing sound — in the corner menu. Operators write display names and manage any player's
   profiles from the administrator menu. A player's markup is checked against an allow-list; an
@@ -156,7 +158,9 @@ vanilla command away from the people who have it.
   says who is hidden. Kept in memory, so a restart shows every name again
 - `/backutils banner` — the text every player draws beside the log, shown as it was typed;
   `set <text>` sets it in chat's own markup (`\n` starts a new line) and `clear` draws nothing
-- `/chat radius`, `global`, `local`, `separator local|global`, `silence <names...> [<kind> [<true|false>]]`
+- `/adm <message>` — a normal chat line in the operators' channel; only permission level 2 and
+  above can send it or be shown it
+- `/chat radius`, `global`, `local`, `separator local|global|admin`, `silence <names...> [<kind> [<true|false>]]`
   — the list is names separated by spaces or commas, or `@a` for every player online; a kind is
   `actions`, `local_chat`, `global_chat` or `msg`, and writing one silences it, while `false` after it
   lifts that one again. A name on its own asks what a player is silenced in

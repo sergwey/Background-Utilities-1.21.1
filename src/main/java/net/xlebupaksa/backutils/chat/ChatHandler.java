@@ -51,7 +51,41 @@ public class ChatHandler {
      * The permission level that makes a player staff here: the level the commands and the menus ask
      * for, so "staff" means one thing in this mod rather than two.
      */
-    private static final int STAFF_LEVEL = 2;
+    public static final int STAFF_LEVEL = 2;
+
+    /** The channels a line can be said in. */
+    private enum Channel {
+        LOCAL(SilenceKind.LOCAL_CHAT, "backutils.channel.local", "local"),
+        GLOBAL(SilenceKind.GLOBAL_CHAT, "backutils.channel.global", "global"),
+        /** Staff only in both directions: operators write it, and only operators are sent it. */
+        ADMIN(null, "backutils.channel.admin", "admin");
+
+        private final SilenceKind silence;
+        private final String nameKey;
+        private final String label;
+
+        Channel(SilenceKind silence, String nameKey, String label) {
+            this.silence = silence;
+            this.nameKey = nameKey;
+            this.label = label;
+        }
+
+        /** {@return true when this channel is closed to everyone below staff level} */
+        private boolean staffOnly() {
+            return switch (this) {
+                case ADMIN -> true;
+                case GLOBAL -> BackUtilsConfig.isGlobalChatStaffOnly();
+                case LOCAL -> BackUtilsConfig.isLocalChatStaffOnly();
+            };
+        }
+
+        /** {@return the separator between the displayed name and the message} */
+        private String separator() {
+            return this == ADMIN
+                    ? BackUtilsConfig.getAdminSeparator()
+                    : BackUtilsConfig.separatorFor(this == GLOBAL);
+        }
+    }
 
     /** What a raw chat message turns into. */
     public enum Route { GLOBAL_CHAT, ACTION, SILENT_ACTION, LOCAL_CHAT }
@@ -246,15 +280,26 @@ public class ChatHandler {
      * @return true when the line was delivered, false when the channel refused it, having said why
      */
     private static boolean sayInChannel(ServerPlayer player, String text, boolean global) {
+        return say(player, text, global ? Channel.GLOBAL : Channel.LOCAL);
+    }
+
+    /**
+     * Says a normal chat line in the admin channel: the sender's own profile format and separator,
+     * sent to every operator online and to nobody else.
+     *
+     * <p>The command that reaches this is restricted to operators as well, so this is staff talking
+     * to staff rather than a way around local chat. The line is otherwise composed exactly as a
+     * local or global one is — the same profile, item triggers, typing sound and markup.
+     *
+     * @return true when the line was delivered, false when it was refused or had no server
+     */
+    public static boolean sayInAdminChannel(ServerPlayer player, String text) {
+        return say(player, text, Channel.ADMIN);
+    }
+
+    private static boolean say(ServerPlayer player, String text, Channel channel) {
         MinecraftServer server = player.getServer();
         if (server == null) return false;
-
-        SilenceKind kind = global ? SilenceKind.GLOBAL_CHAT : SilenceKind.LOCAL_CHAT;
-        String channel = global ? "global" : "local";
-        // The word for the channel is localised too, so a refusal reads in the player's own language
-        // rather than naming the channel in English inside a translated sentence.
-        Component channelName = Component.translatable(
-                global ? "backutils.channel.global" : "backutils.channel.local");
 
         String message = normalise(text);
         if (message.isEmpty()) {
@@ -263,22 +308,23 @@ public class ChatHandler {
             return false;
         }
 
-        // Both refusals tell the sender why: a message that vanishes with no explanation reads as a
-        // bug rather than as moderation.
-        boolean staffOnly = global
-                ? BackUtilsConfig.isGlobalChatStaffOnly()
-                : BackUtilsConfig.isLocalChatStaffOnly();
-        if (staffOnly && !player.hasPermissions(STAFF_LEVEL)) {
+        // The admin channel is staff-only by definition, and the two public channels are staff-only
+        // only while their switch says so.
+        if (channel.staffOnly() && !player.hasPermissions(STAFF_LEVEL)) {
             player.sendSystemMessage(notice(Component.translatable("backutils.chat.staff_only",
-                    channelName)), false);
+                    Component.translatable(channel.nameKey))), false);
             return false;
         }
 
-        SilenceState silence = silenceOf(player);
-        if (silence != null && silence.silenced(kind)) {
-            player.sendSystemMessage(notice(Component.translatable("backutils.chat.silenced",
-                    channelName)), false);
-            return false;
+        // The admin channel is the operators' own and has no silence kind; a moderation silence is
+        // about the roleplay channels, not about whether staff can coordinate.
+        if (channel.silence != null) {
+            SilenceState silence = silenceOf(player);
+            if (silence != null && silence.silenced(channel.silence)) {
+                player.sendSystemMessage(notice(Component.translatable("backutils.chat.silenced",
+                        Component.translatable(channel.nameKey))), false);
+                return false;
+            }
         }
 
         // The attachment is registered with a default, so it never answers null.
@@ -288,7 +334,7 @@ public class ChatHandler {
 
         Component component = composeMessage(
                 ProfileText.resolve(snapshot.displayedName(), playerName),
-                BackUtilsConfig.separatorFor(global),
+                channel.separator(),
                 snapshot.chatFormat(),
                 playerName,
                 message,
@@ -299,9 +345,9 @@ public class ChatHandler {
                 player);
 
         // The console record keeps the real account name and the channel.
-        BackUtils.LOGGER.info("[{}] {}: {}", channel, playerName, message);
+        BackUtils.LOGGER.info("[{}] {}: {}", channel.label, playerName, message);
 
-        for (ServerPlayer recipient : audience(server, player, global)) {
+        for (ServerPlayer recipient : audience(server, player, channel)) {
             recipient.sendSystemMessage(component, false);
         }
         return true;
@@ -310,13 +356,22 @@ public class ChatHandler {
     /**
      * {@return everyone who should receive this message}
      *
-     * <p>Global chat is every player, because it is global. Local chat is the sender, the staff, and
+     * <p>Global chat is every player, because it is global. The admin channel is every operator,
+     * wherever they are, because it is the staff's own. Local chat is the sender, the staff, and
      * the players near enough — see {@link #hearsLocal}, which is where that rule is written down.
      */
     private static List<ServerPlayer> audience(MinecraftServer server, ServerPlayer sender,
-                                               boolean global) {
+                                               Channel channel) {
         List<ServerPlayer> list = server.getPlayerList().getPlayers();
-        if (global) return list;
+        if (channel == Channel.GLOBAL) return list;
+
+        if (channel == Channel.ADMIN) {
+            List<ServerPlayer> audience = new ArrayList<>();
+            for (ServerPlayer candidate : list) {
+                if (hearsAdmin(candidate.hasPermissions(STAFF_LEVEL))) audience.add(candidate);
+            }
+            return audience;
+        }
 
         double radius = BackUtilsConfig.getLocalChatRadius();
         double limit = radius * radius;
@@ -329,6 +384,16 @@ public class ChatHandler {
             }
         }
         return audience;
+    }
+
+    /**
+     * {@return true when this player is to hear an admin-channel line}
+     *
+     * <p>The whole of the admin audience rule, in one place: the permission level is the only thing
+     * that decides, and it decides both directions — the command is gated on the same level.
+     */
+    static boolean hearsAdmin(boolean isStaff) {
+        return isStaff;
     }
 
     /**

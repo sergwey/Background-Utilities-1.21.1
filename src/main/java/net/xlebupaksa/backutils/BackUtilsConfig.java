@@ -74,6 +74,11 @@ public final class BackUtilsConfig {
                     "the two channels be told apart at a glance.")
             .define("globalChatSeparator", " » ");
 
+    public static final ModConfigSpec.ConfigValue<String> ADMIN_CHAT_SEPARATOR = BUILDER
+            .comment("String placed between the displayed name and a message in the ADMIN",
+                    "channel: /adm, which only operators can send to or read.")
+            .define("adminChatSeparator", " [ADMIN] ");
+
     // ------------------------------------------------------------------
     // Roleplay action log
     // ------------------------------------------------------------------
@@ -439,6 +444,19 @@ public final class BackUtilsConfig {
     public static void setGlobalSeparator(String value) {
         GLOBAL_CHAT_SEPARATOR.set(value);
         GLOBAL_CHAT_SEPARATOR.save();
+    }
+
+    public static String getAdminSeparator() {
+        try {
+            return ADMIN_CHAT_SEPARATOR.get();
+        } catch (Exception e) {
+            return " [ADMIN] ";
+        }
+    }
+
+    public static void setAdminSeparator(String value) {
+        ADMIN_CHAT_SEPARATOR.set(value);
+        ADMIN_CHAT_SEPARATOR.save();
     }
 
     public static String separatorFor(boolean global) {

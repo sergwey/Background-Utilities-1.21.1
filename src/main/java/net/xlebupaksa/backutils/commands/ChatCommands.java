@@ -33,13 +33,13 @@ import java.util.concurrent.CompletableFuture;
  * /chat radius &lt;blocks&gt;
  * /chat global &lt;true|false&gt;
  * /chat local &lt;true|false&gt;
- * /chat separator [local|global] &lt;value&gt;
+ * /chat separator [local|global|admin] &lt;value&gt;
  * /chat silence &lt;names...&gt; [&lt;kind&gt; &lt;true|false&gt;]
  * </pre>
  *
  * <p>{@code global} and {@code local} are channel-wide; {@code silence} is per player and per kind,
  * so a player can be muted in one channel and not the other. The separators live here because there
- * is one per channel.
+ * is one per channel, the admin channel included.
  *
  * <p>{@code silence} takes a list — names separated by spaces or commas, or {@code @a} for everyone
  * online — read by {@link SilenceTargets}. Every name in it is resolved before the first row is
@@ -77,7 +77,10 @@ public class ChatCommands {
                                         .executes(ctx -> separatorSet(ctx, false))))
                         .then(Commands.literal("global")
                                 .then(Commands.argument("value", StringArgumentType.greedyString())
-                                        .executes(ctx -> separatorSet(ctx, true)))))
+                                        .executes(ctx -> separatorSet(ctx, true))))
+                        .then(Commands.literal("admin")
+                                .then(Commands.argument("value", StringArgumentType.greedyString())
+                                        .executes(this::separatorSetAdmin))))
 
                 .then(Commands.literal("silence")
                         .then(Commands.argument("targets", StringArgumentType.greedyString())
@@ -144,7 +147,8 @@ public class ChatCommands {
     private int separatorShow(CommandContext<CommandSourceStack> ctx) {
         ctx.getSource().sendSuccess(() -> Component.literal(
                 "Separators — local: [" + BackUtilsConfig.getSeparator() + "]"
-                        + ", global: [" + BackUtilsConfig.getGlobalSeparator() + "]"), false);
+                        + ", global: [" + BackUtilsConfig.getGlobalSeparator() + "]"
+                        + ", admin: [" + BackUtilsConfig.getAdminSeparator() + "]"), false);
         return 1;
     }
 
@@ -164,6 +168,20 @@ public class ChatCommands {
             String channel = global ? "Global" : "Local";
             ctx.getSource().sendSuccess(() -> Component.literal(
                     channel + " chat separator set to: [" + value + "]"), false);
+            return 1;
+        } catch (Exception e) {
+            ctx.getSource().sendFailure(Component.literal("Error: " + e.getMessage()));
+            return 0;
+        }
+    }
+
+    private int separatorSetAdmin(CommandContext<CommandSourceStack> ctx) {
+        try {
+            String value = MarkupUtil.balance(
+                    unquote(StringArgumentType.getString(ctx, "value")));
+            BackUtilsConfig.setAdminSeparator(value);
+            ctx.getSource().sendSuccess(() -> Component.literal(
+                    "Admin chat separator set to: [" + value + "]"), false);
             return 1;
         } catch (Exception e) {
             ctx.getSource().sendFailure(Component.literal("Error: " + e.getMessage()));
@@ -301,9 +319,11 @@ public class ChatCommands {
                     "  global chat: " + access(BackUtilsConfig.isGlobalChatStaffOnly()),
                     "  local chat:  " + access(BackUtilsConfig.isLocalChatStaffOnly()),
                     "  separators:  local [" + BackUtilsConfig.getSeparator() + "]"
-                            + ", global [" + BackUtilsConfig.getGlobalSeparator() + "]",
+                            + ", global [" + BackUtilsConfig.getGlobalSeparator() + "]"
+                            + ", admin [" + BackUtilsConfig.getAdminSeparator() + "]",
                     "  actions:     " + (BackUtilsConfig.isActionLoggingEnabled() ? "on" : "off"),
                     "  '!' before a message sends it to global chat.",
+                    "  '/adm' sends a line to the operators' own channel.",
                     "  '^text^' performs a silent action; '*text*' a normal one."));
         }
 
