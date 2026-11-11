@@ -36,7 +36,8 @@ import java.util.Optional;
  * <p>Every group is off until its checkbox is ticked. A group that is off removes the components it
  * owns; a group that is on writes them. The one component the editor never takes ownership of is a
  * potion's base potion and custom colour: when custom effects are written, those two are carried
- * over from the item rather than cleared.
+ * over from the item rather than cleared. The effects themselves go into both FOOD and
+ * POTION_CONTENTS, because eating reads the first and a potion-like use reads the second.
  */
 public final class AdvancedItemProperties {
 
@@ -155,11 +156,6 @@ public final class AdvancedItemProperties {
             stack.remove(DataComponents.POTION_CONTENTS);
         } else {
             FoodProperties previous = stack.get(DataComponents.FOOD);
-            stack.set(DataComponents.FOOD, new FoodProperties(
-                    Math.max(0, nutrition), Math.max(0.0f, saturation), canAlwaysEat,
-                    Math.max(0.05f, eatSeconds),
-                    previous == null ? Optional.empty() : previous.usingConvertsTo(),
-                    previous == null ? List.of() : previous.effects()));
 
             List<MobEffectInstance> resolved = new ArrayList<>();
             for (Effect effect : effects) {
@@ -171,6 +167,23 @@ public final class AdvancedItemProperties {
                         clamp(effect.amplifier(), 0, 255), effect.ambient(), effect.visible(),
                         effect.showIcon()));
             }
+
+            // Ordinary food reads its effects from FOOD, not from POTION_CONTENTS. Writing only the
+            // potion component made a list that a potion item would use but that eating ignored, so
+            // the same instances go into both lists. The potion component is still written because
+            // a potion-like item's own use path reads it, and the old base potion and colour travel
+            // through unchanged; the chance of a food effect is one, because the screen has no
+            // probability field to lose.
+            List<FoodProperties.PossibleEffect> foodEffects = new ArrayList<>();
+            for (MobEffectInstance effect : resolved) {
+                foodEffects.add(new FoodProperties.PossibleEffect(() -> effect, 1.0f));
+            }
+            stack.set(DataComponents.FOOD, new FoodProperties(
+                    Math.max(0, nutrition), Math.max(0.0f, saturation), canAlwaysEat,
+                    Math.max(0.05f, eatSeconds),
+                    previous == null ? Optional.empty() : previous.usingConvertsTo(),
+                    foodEffects));
+
             if (resolved.isEmpty() && basePotion.isEmpty() && customColor.isEmpty()) {
                 stack.remove(DataComponents.POTION_CONTENTS);
             } else {
