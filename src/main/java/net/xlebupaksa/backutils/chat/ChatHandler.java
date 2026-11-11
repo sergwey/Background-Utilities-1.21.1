@@ -85,18 +85,6 @@ public class ChatHandler {
                     ? BackUtilsConfig.getAdminSeparator()
                     : BackUtilsConfig.separatorFor(this == GLOBAL);
         }
-
-        /**
-         * {@return the name in front of a line in this channel}
-         *
-         * <p>The admin channel names the real account, not the roleplay profile: an operator needs to
-         * know which account is speaking, and a display name can be changed or shared. The other two
-         * channels keep the profile's displayed name.
-         */
-        private String prefix(ProfileSnapshot snapshot, String playerName) {
-            String displayed = ProfileText.resolve(snapshot.displayedName(), playerName);
-            return chatName(this == ADMIN, displayed, playerName);
-        }
     }
 
     /** What a raw chat message turns into. */
@@ -296,12 +284,13 @@ public class ChatHandler {
     }
 
     /**
-     * Says a normal chat line in the admin channel: the sender's own profile format and separator,
-     * sent to every operator online and to nobody else.
+     * Says a plain line in the admin channel: the real account name, the channel separator and
+     * exactly what was typed, sent to every operator online and to nobody else.
      *
-     * <p>The command that reaches this is restricted to operators as well, so this is staff talking
-     * to staff rather than a way around local chat. The line is otherwise composed exactly as a
-     * local or global one is — the same profile, item triggers, typing sound and markup.
+     * <p>No chat profile is consulted. A profile's format could colour, typewrite or replace parts
+     * of the line and its sound would play for staff as if the line were roleplay chat; the admin
+     * channel is there to carry the words themselves. The command that reaches this is restricted to
+     * operators as well, so this is staff talking to staff rather than a way around local chat.
      *
      * @return true when the line was delivered, false when it was refused or had no server
      */
@@ -339,22 +328,29 @@ public class ChatHandler {
             }
         }
 
-        // The attachment is registered with a default, so it never answers null.
-        ProfileSnapshot snapshot = player.getData(ModAttachments.PROFILE.get());
-
         String playerName = player.getName().getString();
 
-        Component component = composeMessage(
-                channel.prefix(snapshot, playerName),
-                channel.separator(),
-                snapshot.chatFormat(),
-                playerName,
-                message,
-                snapshot.chatSound(),
-                BackUtilsConfig.isTypingEnabled(),
-                BackUtilsConfig.getTypingSpeed(),
-                BackUtilsConfig.getTypingPitch(),
-                player);
+        // The admin channel is deliberately not a profile line: it is the literal account name, the
+        // channel's separator and exactly what was typed. A profile's colour, typewriter, sound and
+        // item triggers would all be ways for the staff line to say something other than the words.
+        Component component;
+        if (channel == Channel.ADMIN) {
+            component = Component.literal(plainAdminLine(playerName, channel.separator(), message));
+        } else {
+            // The attachment is registered with a default, so it never answers null.
+            ProfileSnapshot snapshot = player.getData(ModAttachments.PROFILE.get());
+            component = composeMessage(
+                    ProfileText.resolve(snapshot.displayedName(), playerName),
+                    channel.separator(),
+                    snapshot.chatFormat(),
+                    playerName,
+                    message,
+                    snapshot.chatSound(),
+                    BackUtilsConfig.isTypingEnabled(),
+                    BackUtilsConfig.getTypingSpeed(),
+                    BackUtilsConfig.getTypingPitch(),
+                    player);
+        }
 
         // The console record keeps the real account name and the channel.
         BackUtils.LOGGER.info("[{}] {}: {}", channel.label, playerName, message);
@@ -409,14 +405,16 @@ public class ChatHandler {
     }
 
     /**
-     * {@return the name in front of a line}, the real account name in the admin channel and the
-     * profile's displayed name everywhere else.
+     * {@return the admin channel's whole line, literally: the real account name, the channel's
+     * separator, and exactly what was typed}
      *
-     * <p>A fact rather than a whole snapshot, so the rule can be stated without a server or a
-     * profile, and so the admin channel cannot silently drift back to the display name.
+     * <p>A plain string rather than a component so the rule can be checked without a game. It is
+     * deliberately not run through a profile's chat format, which could colour, typewrite or replace
+     * any part of it, and it asks for no item lookup: in the staff channel an {@code [item]} is the
+     * word, not the thing.
      */
-    static String chatName(boolean admin, String displayedName, String playerName) {
-        return admin ? playerName : displayedName;
+    static String plainAdminLine(String playerName, String separator, String message) {
+        return playerName + separator + message;
     }
 
     /**

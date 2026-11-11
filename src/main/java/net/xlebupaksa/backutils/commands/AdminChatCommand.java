@@ -14,15 +14,15 @@ import net.xlebupaksa.backutils.chat.ChatHandler;
 /**
  * {@code /adm <message>} — the operators' own chat channel.
  *
- * <p>It is ordinary chat in every respect except the audience: the sender's profile format and
- * separator, markup, item triggers, typing sound and console record all go through
- * {@link ChatHandler}, which is what makes it the same line a player would have said in local chat.
- * The only thing that differs is that the command is gated at staff level, and the same level is the
- * audience, so nobody below it can write here and nobody below it is sent what is written.
+ * <p>The line is plain: the real account name, the admin channel's separator and exactly what was
+ * typed. There is no chat profile format, typewriter, sound or item lookup, so nothing can restyle
+ * or replace the words. {@link ChatHandler} does the delivery and the console record, and the same
+ * staff level that gates the command is the audience, so nobody below it can write here and nobody
+ * below it is sent what is written.
  *
  * <p>The command is hidden from console and command blocks rather than explained to them: the line
- * starts with a player's displayed name and chat profile, and there is no player behind those. A
- * command source that is not a player therefore does not see it at all.
+ * starts with a player's account name, and there is no player behind those. A command source that is
+ * not a player therefore does not see it at all.
  */
 public class AdminChatCommand {
 
