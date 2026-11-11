@@ -76,6 +76,14 @@ public final class MarkupWrap {
         for (Token token : tokenise(text)) {
             switch (token.kind()) {
                 case TAG -> {
+                    // The space belongs to the text before the tag, not inside it. Appending the
+                    // tag first would put a pending space inside a following <u>, and the name in
+                    // an action line would then be underlined from the blank before it.
+                    if (pendingSpace) {
+                        row.append(' ');
+                        visible++;
+                        pendingSpace = false;
+                    }
                     trackOpenTags(open, token.raw());
                     row.append(token.raw());
                 }
