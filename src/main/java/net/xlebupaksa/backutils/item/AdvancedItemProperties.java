@@ -253,7 +253,9 @@ public final class AdvancedItemProperties {
         // A damageable item cannot stack. The screen sets the field to one when durability is
         // ticked, and this is the same rule on the way in rather than a second, softer one.
         int size = durability ? 1 : clamp(maxStackSize, 1, 99);
-        stack.set(DataComponents.MAX_STACK_SIZE, size);
+        if (misc || durability) {
+            stack.set(DataComponents.MAX_STACK_SIZE, size);
+        }
     }
 
     /** {@return why this draft cannot be written, or null when it can} */
