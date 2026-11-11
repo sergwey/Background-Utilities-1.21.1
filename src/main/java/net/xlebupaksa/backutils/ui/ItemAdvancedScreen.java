@@ -209,12 +209,11 @@ public class ItemAdvancedScreen extends Screen {
                     rebuild();
                 }, this::enchantmentsBody);
 
-        UIElement misc = new UIElement();
-        misc.layout(l -> l.widthPercent(100).heightAuto()
-                .flexDirection(FlexDirection.COLUMN).gapAll(2));
-        misc.addChild(sectionHeader("backutils.item_editor.group.misc"));
-        misc.addChild(miscBody());
-        content.addChild(misc);
+        addGroup("backutils.item_editor.group.misc", properties.misc,
+                () -> {
+                    properties.misc = !properties.misc;
+                    rebuild();
+                }, this::miscBody);
         relayout();
     }
 
@@ -255,14 +254,6 @@ public class ItemAdvancedScreen extends Screen {
         block.addChild(header);
         if (open) block.addChild(body.build());
         content.addChild(block);
-    }
-
-    private UIElement sectionHeader(String key) {
-        Label label = new Label();
-        label.setText(Component.translatable(key));
-        label.textStyle(t -> t.fontSize(9f).textShadow(false).textColor(PLAIN));
-        label.layout(l -> l.widthPercent(100).height(18));
-        return label;
     }
 
     @FunctionalInterface

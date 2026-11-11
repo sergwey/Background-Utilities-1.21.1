@@ -74,6 +74,7 @@ public final class AdvancedItemProperties {
     public boolean fireResistant;
     public boolean glint;
     public boolean hideAdditionalTooltip;
+    public boolean misc;
     public int maxStackSize = 64;
 
     /** {@return a draft read from the item, with a group ticked only when its component is there} */
@@ -127,6 +128,7 @@ public final class AdvancedItemProperties {
         Boolean glint = stack.get(DataComponents.ENCHANTMENT_GLINT_OVERRIDE);
         out.glint = Boolean.TRUE.equals(glint);
         out.hideAdditionalTooltip = stack.get(DataComponents.HIDE_ADDITIONAL_TOOLTIP) != null;
+        out.misc = out.fireResistant || out.glint || out.hideAdditionalTooltip;
 
         Integer stackSize = stack.get(DataComponents.MAX_STACK_SIZE);
         out.maxStackSize = stackSize != null ? stackSize : stack.getMaxStackSize();
