@@ -148,7 +148,7 @@ public final class Rolls {
                 : (russian ? REMEMBERED_ANONYMOUS_RU : REMEMBERED_ANONYMOUS);
         String text = fillWith(template, max, "", String.valueOf(result));
         if (reason != null && !reason.isBlank()) {
-            text = text + (russian ? " (за — " : " (for - ") + reason.trim() + ")";
+            text = text + (russian ? " — " : " for ") + reason.trim();
         }
         return text;
     }

@@ -35,7 +35,7 @@ log, and a pair of tools for placing and removing visual effects.
   own log, with the real number, and the whole line is withheld from everyone else for the server's
   configured delay (three minutes by default). When the delay is up, the player and everyone who
   witnessed the roll around the roller remember it — “You remembered that Dev's dice showed 87/100
-  (for - a search)” — in their log; a witness who is offline at that moment finds it in their memory
+  for a search” — in their log; a witness who is offline at that moment finds it in their memory
   when they next open the log.
 - **Chat channels.** A plain message goes to local chat, which reaches the players around you; a
   leading `!` sends it to global chat. Staff read every local line wherever they are — an operator in
