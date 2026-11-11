@@ -8,7 +8,6 @@ import net.xlebupaksa.backutils.BackUtilsConfig;
 import net.xlebupaksa.backutils.data.ActionLogEntry;
 import net.xlebupaksa.backutils.data.BackUtilsData;
 import net.xlebupaksa.backutils.data.LogData;
-import net.xlebupaksa.backutils.data.MarkupUtil;
 import net.xlebupaksa.backutils.network.RoleplayLogBroadcaster;
 import net.xlebupaksa.backutils.network.RoleplayLogNetwork;
 import net.xlebupaksa.backutils.network.RoleplayLogPayload;
@@ -27,8 +26,9 @@ import java.util.concurrent.atomic.AtomicLong;
  *
  * <p>A hidden roll writes nothing when it is rolled. It waits in {@code pending_hidden_roll} until
  * the configured delay is up, then enters the log as the line its witnesses remember; the roller
- * alone gets an early, private copy with the number in the administrator's note. That is what keeps
- * the result from reaching a player through the history or the ten-second catch-up sweep.
+ * alone gets an early, private copy with the result in it. That is what keeps the result from
+ * reaching a player through the history or the ten-second catch-up sweep, without ever showing
+ * anybody an obfuscated line.
  */
 public final class Rolls {
 
@@ -41,12 +41,6 @@ public final class Rolls {
 
     /** Which end of the range a result landed on, if either. */
     public enum Extreme { NONE, LOW, HIGH }
-
-    /**
-     * What the administrator's private copy shows where the result is: the public line never carries
-     * the number before its moment, and this is only ever sent to the one who ran the command.
-     */
-    private static final String HIDDEN_RESULT = "<obfuscate>???</obfuscate>";
 
     /** What a witness remembers when a hidden roll's time is up. */
     private static final String REMEMBERED_NAMED =
@@ -80,13 +74,13 @@ public final class Rolls {
         if (hidden) return hold(roller, subjects, max, reason);
 
         if (subjects.isEmpty()) {
-            Integer rolled = record(roller, null, roller, max, reason, false);
+            Integer rolled = record(roller, null, roller, max, reason);
             return rolled == null ? List.of() : List.of(rolled);
         }
 
         List<Integer> results = new ArrayList<>(subjects.size());
         for (ServerPlayer subject : subjects) {
-            Integer rolled = record(subject, subject, roller, max, reason, false);
+            Integer rolled = record(subject, subject, roller, max, reason);
             if (rolled != null) results.add(rolled);
         }
         return List.copyOf(results);
@@ -160,20 +154,21 @@ public final class Rolls {
     }
 
     /**
-     * Sends the roller the only early copy of the result: a private line in their own log, with the
-     * number in the administrator's gray note. It is not stored, and it makes no sound.
+     * Sends the roller the only early copy of the result: their own log's line, with the real number
+     * and in gray so it reads as a private copy. It is not stored, and it makes no sound.
      */
     private static void echo(ServerPlayer roller, ServerPlayer subject, int result, int max,
                              String reason) {
         if (!RoleplayLogNetwork.canReceive(roller)) return;
 
-        String line = line(subject != null, reason, result, max, true);
+        String line = line(subject != null, reason, result, max);
         // The stored line is resolved per reader when it is sent from the log; this one is not a row,
         // so the name placeholders have to be filled here or the administrator reads "{player}".
         String shown = ActionLogEntry.resolve(line,
                 subject == null ? "" : subject.getName().getString());
-        String text = RoleplayLog.present(
-                MarkupUtil.withNote(shown, "rolled " + result + "/" + max));
+        // Gray because it is the operator's private copy, not a line the players were given; the
+        // number itself is in the text, where the administrator asked to read it.
+        String text = RoleplayLog.present("<color col=#8a8a8a>" + shown + "</color>");
         PacketDistributor.sendToPlayer(roller, new RoleplayLogPayload(
                 ECHO_ID.getAndDecrement(), text, "", 0.0f, 1.0f, true));
     }
@@ -187,7 +182,7 @@ public final class Rolls {
             long id = data.logs().revealPendingRoll(pending);
             if (id <= 0) continue;
             RoleplayLogBroadcaster.deliver(server, id, pending.accessList(),
-                    soundFor(pending.result(), pending.maxRoll(), false),
+                    soundFor(pending.result(), pending.maxRoll()),
                     (float) BackUtilsConfig.getRollSoundVolume(),
                     (float) BackUtilsConfig.getRollSoundPitch(), true);
         }
@@ -202,7 +197,7 @@ public final class Rolls {
      * @param roller   the one who asked for it, who reads and hears it wherever they are
      */
     private static Integer record(ServerPlayer anchor, ServerPlayer subject, ServerPlayer roller,
-                                  int max, String reason, boolean hidden) {
+                                  int max, String reason) {
         MinecraftServer server = anchor.getServer();
         BackUtilsData data = BackUtils.data();
         if (server == null || data == null) return null;
@@ -215,23 +210,17 @@ public final class Rolls {
         // is said in chat.
         if (!audience.contains(roller.getUUID())) audience.add(roller.getUUID());
 
-        String sound = soundFor(result, max, hidden);
-
         long id = data.logs().record(
                 subject == null ? null : subject.getUUID(), who,
-                dress(line(subject != null, reason, result, max, hidden), result, max, hidden),
+                dress(line(subject != null, reason, result, max), result, max),
                 audience,
                 anchor.level().dimension().location().toString(),
-                anchor.getX(), anchor.getY(), anchor.getZ(),
-                // The administrator's copy, and the only copy, of a result the line hides.
-                hidden ? "rolled " + result + "/" + max : "");
-        RoleplayLogBroadcaster.deliver(server, id, audience, sound,
+                anchor.getX(), anchor.getY(), anchor.getZ(), "");
+        RoleplayLogBroadcaster.deliver(server, id, audience, soundFor(result, max),
                 (float) BackUtilsConfig.getRollSoundVolume(),
                 (float) BackUtilsConfig.getRollSoundPitch(), true);
 
-        // The console keeps the truth whatever the line shows, which is what a hidden roll is for.
-        BackUtils.LOGGER.info("[{}] {} rolled {}/{}{}",
-                hidden ? "hidden roll" : "roll",
+        BackUtils.LOGGER.info("[roll] {} rolled {}/{}{}",
                 subject == null ? anchor.getName().getString() + " (nobody named)" : who,
                 result, max, reason == null || reason.isBlank() ? "" : " for " + reason);
         return result;
@@ -246,8 +235,7 @@ public final class Rolls {
     }
 
     /** {@return the wording the config gives that end, or empty for the ordinary line} */
-    public static String dressFormat(int result, int max, boolean hidden) {
-        if (hidden) return "";
+    public static String dressFormat(int result, int max) {
         return switch (extreme(result, max)) {
             case LOW -> BackUtilsConfig.getRollMinFormat();
             case HIGH -> BackUtilsConfig.getRollMaxFormat();
@@ -260,24 +248,14 @@ public final class Rolls {
      *
      * <p>The treatment wraps the finished line rather than replacing it, so how a line is worded —
      * with or without a reason — stays decided in one place.
-     *
-     * <p>A hidden roll is never dressed. Red and shaking, or neon rainbow, says which number came
-     * up — for a roll out of a hundred it says the number outright — and that is the one thing a
-     * hidden roll exists to prevent.
      */
-    public static String dress(String line, int result, int max, boolean hidden) {
-        String format = dressFormat(result, max, hidden);
+    public static String dress(String line, int result, int max) {
+        String format = dressFormat(result, max);
         return format == null || format.isBlank() ? line : format.replace(LINE, line).trim();
     }
 
-    /**
-     * {@return the sound this result plays: the one for its end, or the ordinary roll sound}
-     *
-     * <p>A hidden roll keeps the ordinary sound whatever it rolled. The two ends have sounds of
-     * their own, and hearing one would give the number away as plainly as the colour would.
-     */
-    public static String soundFor(int result, int max, boolean hidden) {
-        if (hidden) return BackUtilsConfig.getRollSound();
+    /** {@return the sound this result plays: the one for its end, or the ordinary roll sound} */
+    public static String soundFor(int result, int max) {
         return switch (extreme(result, max)) {
             case LOW -> BackUtilsConfig.getRollMinSound();
             case HIGH -> BackUtilsConfig.getRollMaxSound();
@@ -299,7 +277,7 @@ public final class Rolls {
      *
      * @param named whether the roll names a player, which is what decides the pair of formats
      */
-    public static String line(boolean named, String reason, int result, int max, boolean hidden) {
+    public static String line(boolean named, String reason, int result, int max) {
         boolean reasoned = reason != null && !reason.isBlank();
         String format;
         if (named) {
@@ -309,7 +287,7 @@ public final class Rolls {
             format = reasoned ? BackUtilsConfig.getRollFormatAnonymous()
                     : BackUtilsConfig.getRollFormatAnonymousNoReason();
         }
-        return fill(format, result, max, reason, hidden);
+        return fill(format, result, max, reason);
     }
 
     /**
@@ -318,14 +296,13 @@ public final class Rolls {
      * <p>Runs of spaces are collapsed and the ends trimmed: a format written around a placeholder
      * that turned out to be empty would otherwise leave a gap in the middle of the line.
      */
-    public static String fill(String format, int result, int max, String reason, boolean hidden) {
-        return fillWith(format, max, reason,
-                hidden ? HIDDEN_RESULT : String.valueOf(result));
+    public static String fill(String format, int result, int max, String reason) {
+        return fillWith(format, max, reason, String.valueOf(result));
     }
 
     /**
      * The same, with the text that stands in for the result given rather than read from the config:
-     * the settings tab previews a hidden result with the value being typed into the field.
+     * the settings tab previews a format with the sample result.
      */
     public static String fillWith(String format, int max, String reason, String resultText) {
         String text = format == null ? "" : format;
@@ -359,8 +336,7 @@ public final class Rolls {
      *
      * <p>Rendered through the same substitution the log renders with, names included, so a preview
      * cannot show a line the log would not. The two extremes are shown wrapped around the ordinary
-     * line, because that is what they wrap when a roll lands on one, and a hidden result is shown
-     * inside that line, because that is where it appears.
+     * line, because that is what they wrap when a roll lands on one.
      *
      * @return the line to preview, or empty when this key is not one of the formats
      */
@@ -368,12 +344,10 @@ public final class Rolls {
         if (format == null) return "";
 
         String text = switch (key) {
-            case "rollFormat" -> fill(format, SAMPLE_RESULT, SAMPLE_MAX, SAMPLE_REASON, false);
-            case "rollFormatNoReason" -> fill(format, SAMPLE_RESULT, SAMPLE_MAX, null, false);
-            case "rollFormatAnonymous" ->
-                    fill(format, SAMPLE_RESULT, SAMPLE_MAX, SAMPLE_REASON, false);
-            case "rollFormatAnonymousNoReason" ->
-                    fill(format, SAMPLE_RESULT, SAMPLE_MAX, null, false);
+            case "rollFormat" -> fill(format, SAMPLE_RESULT, SAMPLE_MAX, SAMPLE_REASON);
+            case "rollFormatNoReason" -> fill(format, SAMPLE_RESULT, SAMPLE_MAX, null);
+            case "rollFormatAnonymous" -> fill(format, SAMPLE_RESULT, SAMPLE_MAX, SAMPLE_REASON);
+            case "rollFormatAnonymousNoReason" -> fill(format, SAMPLE_RESULT, SAMPLE_MAX, null);
             case "rollMinFormat", "rollMaxFormat" -> format.replace(LINE, ordinarySample());
             default -> "";
         };
@@ -383,7 +357,7 @@ public final class Rolls {
     /** {@return the sample line the extremes wrap, already named} */
     private static String ordinarySample() {
         return ActionLogEntry.resolve(
-                fill(BackUtilsConfig.getRollFormatNoReason(), SAMPLE_RESULT, SAMPLE_MAX, null, false),
+                fill(BackUtilsConfig.getRollFormatNoReason(), SAMPLE_RESULT, SAMPLE_MAX, null),
                 SAMPLE_PLAYER);
     }
 }

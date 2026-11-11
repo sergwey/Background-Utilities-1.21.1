@@ -31,12 +31,12 @@ log, and a pair of tools for placing and removing visual effects.
   with configurable defaults. A roll that names nobody is worded as a line of its own, so it never
   reads as a sentence about a player who is not there. The line types itself out with a sound of its
   own, and the lowest and highest results get their own wording and their own sound. `/hroll` leaves
-  **nothing** for the players at roll time: the roller gets a private copy in their own log with the
-  number in the administrator's note, and the whole line is withheld for the server's configured
-  delay (three minutes by default). When the delay is up, the player and everyone who witnessed the
-  roll around the roller remember it — “You remembered that Dev's dice showed 87/100 (for - a
-  search)” — in their log; a witness who is offline at that moment finds it in their memory when
-  they next open the log.
+  **nothing** for the players at roll time: the roller gets a private gray copy of the line in their
+  own log, with the real number, and the whole line is withheld from everyone else for the server's
+  configured delay (three minutes by default). When the delay is up, the player and everyone who
+  witnessed the roll around the roller remember it — “You remembered that Dev's dice showed 87/100
+  (for - a search)” — in their log; a witness who is offline at that moment finds it in their memory
+  when they next open the log.
 - **Chat channels.** A plain message goes to local chat, which reaches the players around you; a
   leading `!` sends it to global chat. Staff read every local line wherever they are — an operator in
   another world is still the person a complaint about a line is made to — while everyone else hears
