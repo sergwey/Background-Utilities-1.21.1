@@ -94,7 +94,8 @@ public class LogData extends DataManager {
                     "actor_id TEXT, actor_name TEXT NOT NULL, contents TEXT NOT NULL, " +
                     "access_list TEXT NOT NULL, reveal_at INTEGER NOT NULL, " +
                     "dimension TEXT, x REAL, y REAL, z REAL, " +
-                    "result INTEGER NOT NULL, max_roll INTEGER NOT NULL);");
+                    "result INTEGER NOT NULL, max_roll INTEGER NOT NULL, " +
+                    "roller_id TEXT NOT NULL DEFAULT '', echo_id INTEGER NOT NULL DEFAULT 0);");
         } catch (SQLException e) {
             throw new RuntimeException("Could not open the action log database", e);
         }
@@ -102,6 +103,7 @@ public class LogData extends DataManager {
         addPositionColumns();
         addHidingColumns();
         addAdminNoteColumn();
+        addPendingEchoColumns();
         createIndexes();
     }
 
@@ -135,6 +137,25 @@ public class LogData extends DataManager {
                     Statement stmt = connection.createStatement()
             ) {
                 stmt.execute("ALTER TABLE action_log ADD COLUMN " + column);
+            } catch (SQLException e) {
+                // Already there, which is the normal case after the first start.
+            }
+        }
+    }
+
+    /**
+     * Adds the roller's account and the id of the private line they were sent, to a waiting table
+     * created before either existed. The echo id is what takes that line back off their screen when
+     * the remembered one arrives; zero means there is nothing to take back.
+     */
+    private void addPendingEchoColumns() {
+        for (String column : new String[]{"roller_id TEXT NOT NULL DEFAULT ''",
+                "echo_id INTEGER NOT NULL DEFAULT 0"}) {
+            try (
+                    Connection connection = openConnection();
+                    Statement stmt = connection.createStatement()
+            ) {
+                stmt.execute("ALTER TABLE pending_hidden_roll ADD COLUMN " + column);
             } catch (SQLException e) {
                 // Already there, which is the normal case after the first start.
             }
@@ -349,30 +370,35 @@ public class LogData extends DataManager {
     /** One {@code /hroll} waiting for its moment: what to say, to whom, and when. */
     public record PendingRoll(long id, UUID actorId, String actorName, String contents,
                               List<UUID> accessList, long revealAt, String dimension,
-                              double x, double y, double z, int result, int maxRoll) {}
+                              double x, double y, double z, int result, int maxRoll,
+                              UUID rollerId, long echoId) {}
 
     /** Stores a hidden roll until {@code revealAt} (wall-clock milliseconds). */
     public long addPendingRoll(UUID actorId, String actorName, String contents,
                                List<UUID> accessList, long revealAt, String dimension,
-                               double x, double y, double z, int result, int maxRoll) {
+                               double x, double y, double z, int result, int maxRoll,
+                               UUID rollerId, long echoId) {
         return insertAndGetId(
                 "INSERT INTO pending_hidden_roll (actor_id, actor_name, contents, access_list, " +
-                        "reveal_at, dimension, x, y, z, result, max_roll) " +
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        "reveal_at, dimension, x, y, z, result, max_roll, roller_id, echo_id) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 actorId == null ? "" : actorId.toString(),
                 actorName == null ? "" : actorName,
                 contents,
                 AccessList.encode(accessList),
                 revealAt,
                 dimension,
-                x, y, z, result, maxRoll);
+                x, y, z, result, maxRoll,
+                rollerId == null ? "" : rollerId.toString(),
+                echoId);
     }
 
     /** {@return the hidden rolls whose moment has come, oldest deadline first} */
     public List<PendingRoll> duePendingRolls(long now) {
         return query(
                 "SELECT pending_id, actor_id, actor_name, contents, access_list, reveal_at, " +
-                        "dimension, x, y, z, result, max_roll FROM pending_hidden_roll " +
+                        "dimension, x, y, z, result, max_roll, roller_id, echo_id " +
+                        "FROM pending_hidden_roll " +
                         "WHERE reveal_at <= ? ORDER BY reveal_at ASC, pending_id ASC",
                 rs -> new PendingRoll(
                         rs.getLong("pending_id"),
@@ -386,7 +412,9 @@ public class LogData extends DataManager {
                         rs.getDouble("y"),
                         rs.getDouble("z"),
                         rs.getInt("result"),
-                        rs.getInt("max_roll")),
+                        rs.getInt("max_roll"),
+                        uuidOrNull(rs.getString("roller_id")),
+                        rs.getLong("echo_id")),
                 now);
     }
 

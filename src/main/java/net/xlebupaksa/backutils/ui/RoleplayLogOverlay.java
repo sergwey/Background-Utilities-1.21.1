@@ -185,6 +185,11 @@ public final class RoleplayLogOverlay {
         trimToLimit();
     }
 
+    /** Takes one transient line off the corner again, by the id it was sent with. */
+    public void remove(long id) {
+        entries.removeIf(entry -> entry.id == id);
+    }
+
     /** {@return the typing speed, read back out of the typewriter tag} */
     private static double speedOf(List<String> rows) {
         for (String row : rows) {

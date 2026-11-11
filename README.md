@@ -36,7 +36,9 @@ log, and a pair of tools for placing and removing visual effects.
   configured delay (three minutes by default). When the delay is up, the player and everyone who
   witnessed the roll around the roller remember it — “You remembered that Dev's dice showed 87/100
   for a search” — in their log; a witness who is offline at that moment finds it in their memory
-  when they next open the log.
+  when they next open the log. The remembered wording and the sound it plays are settings of their
+  own, with separate lowest and highest variants, so a hidden roll can be colour, shake or ring out
+  on an extreme without using the public roll's wording.
 - **Chat channels.** A plain message goes to local chat, which reaches the players around you; a
   leading `!` sends it to global chat. Staff read every local line wherever they are — an operator in
   another world is still the person a complaint about a line is made to — while everyone else hears

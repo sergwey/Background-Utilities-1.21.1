@@ -36,6 +36,23 @@ public final class BackUtilsConfig {
             "На кубике выпало: {result}/{max_roll} — {reason}!";
     private static final String ROLL_FORMAT_ANONYMOUS_NO_REASON_RU =
             "На кубике выпало: {result}/{max_roll}!";
+    /** The same four wordings for a line a witness remembers after the hidden roll's delay. */
+    private static final String HIDDEN_ROLL_FORMAT_DEFAULT =
+            "You remembered that {player_possessive} dice showed {result}/{max_roll} for {reason}";
+    private static final String HIDDEN_ROLL_FORMAT_NO_REASON_DEFAULT =
+            "You remembered that {player_possessive} dice showed {result}/{max_roll}";
+    private static final String HIDDEN_ROLL_FORMAT_ANONYMOUS_DEFAULT =
+            "You remembered that the dice showed {result}/{max_roll} for {reason}";
+    private static final String HIDDEN_ROLL_FORMAT_ANONYMOUS_NO_REASON_DEFAULT =
+            "You remembered that the dice showed {result}/{max_roll}";
+    private static final String HIDDEN_ROLL_FORMAT_RU =
+            "Вы вспомнили, что кубик {player} показал {result}/{max_roll} — {reason}";
+    private static final String HIDDEN_ROLL_FORMAT_NO_REASON_RU =
+            "Вы вспомнили, что кубик {player} показал {result}/{max_roll}";
+    private static final String HIDDEN_ROLL_FORMAT_ANONYMOUS_RU =
+            "Вы вспомнили, что на кубике выпало {result}/{max_roll} — {reason}";
+    private static final String HIDDEN_ROLL_FORMAT_ANONYMOUS_NO_REASON_RU =
+            "Вы вспомнили, что на кубике выпало {result}/{max_roll}";
     private static final String MIN_ROLL_FORMAT =
             "<color col=#ff0000><shake><glitch>{line}</glitch></shake></color>";
     private static final String MAX_ROLL_FORMAT = "<neon><rainbow>{line}</rainbow></neon>";
@@ -138,6 +155,55 @@ public final class BackUtilsConfig {
             .comment("How long a /hroll line is withheld before its witnesses remember it.",
                     "In seconds, up to ten minutes. 0 remembers it on the next server tick.")
             .defineInRange("hiddenRollDelay", 180, 0, 600);
+
+    /**
+     * The line a witness remembers after a hidden roll, in the same four shapes as the public roll:
+     * naming somebody or nobody, each with and without a reason. It is composed when the roll is
+     * made and stored, so a witness's memory says what the server said at the time.
+     */
+    public static final ModConfigSpec.ConfigValue<String> HIDDEN_ROLL_FORMAT = BUILDER
+            .comment("The line a witness remembers after a hidden roll that has a reason.",
+                    "Placeholders: {player}, {player_possessive}, {result}, {max_roll}, {reason}.",
+                    "Ember's markup tags work here.")
+            .define("hiddenRollFormat", HIDDEN_ROLL_FORMAT_DEFAULT);
+
+    public static final ModConfigSpec.ConfigValue<String> HIDDEN_ROLL_FORMAT_NO_REASON = BUILDER
+            .comment("The same, for a remembered roll given no reason.")
+            .define("hiddenRollFormatNoReason", HIDDEN_ROLL_FORMAT_NO_REASON_DEFAULT);
+
+    public static final ModConfigSpec.ConfigValue<String> HIDDEN_ROLL_FORMAT_ANONYMOUS = BUILDER
+            .comment("The remembered line for a hidden roll that names nobody, with a reason.",
+                    "Placeholders: {result}, {max_roll}, {reason}; the player placeholders",
+                    "are empty in this line.")
+            .define("hiddenRollFormatAnonymous", HIDDEN_ROLL_FORMAT_ANONYMOUS_DEFAULT);
+
+    public static final ModConfigSpec.ConfigValue<String> HIDDEN_ROLL_FORMAT_ANONYMOUS_NO_REASON =
+            BUILDER
+                    .comment("The same, for such a roll given no reason.")
+                    .define("hiddenRollFormatAnonymousNoReason",
+                            HIDDEN_ROLL_FORMAT_ANONYMOUS_NO_REASON_DEFAULT);
+
+    public static final ModConfigSpec.ConfigValue<String> HIDDEN_ROLL_FORMAT_MIN = BUILDER
+            .comment("Wraps the remembered line when the lowest number comes up. {line} is",
+                    "that line. The default is red, shaking and glitching; empty for none.")
+            .define("hiddenRollMinFormat", MIN_ROLL_FORMAT);
+
+    public static final ModConfigSpec.ConfigValue<String> HIDDEN_ROLL_FORMAT_MAX = BUILDER
+            .comment("The same for the highest number. The default is neon rainbow.")
+            .define("hiddenRollMaxFormat", MAX_ROLL_FORMAT);
+
+    public static final ModConfigSpec.ConfigValue<String> HIDDEN_ROLL_SOUND = BUILDER
+            .comment("Played when a hidden roll is remembered. A full sound id; empty for",
+                    "silence.")
+            .define("hiddenRollSound", ROLL_SOUND_DEFAULT);
+
+    public static final ModConfigSpec.ConfigValue<String> HIDDEN_ROLL_MIN_SOUND = BUILDER
+            .comment("Played instead, when the lowest number comes up.")
+            .define("hiddenRollMinSound", MIN_ROLL_SOUND_DEFAULT);
+
+    public static final ModConfigSpec.ConfigValue<String> HIDDEN_ROLL_MAX_SOUND = BUILDER
+            .comment("Played instead, when the highest number comes up.")
+            .define("hiddenRollMaxSound", MAX_ROLL_SOUND_DEFAULT);
 
     /**
      * The line as it reads on the lowest and the highest roll, wrapped around the ordinary line so
@@ -507,6 +573,103 @@ public final class BackUtilsConfig {
     public static void setHiddenRollDelay(int value) {
         HIDDEN_ROLL_DELAY.set(Math.max(0, Math.min(600, value)));
         HIDDEN_ROLL_DELAY.save();
+    }
+
+    public static String getHiddenRollFormat() {
+        String stored = stored(HIDDEN_ROLL_FORMAT);
+        if (stored != null && !stored.equals(HIDDEN_ROLL_FORMAT_DEFAULT)) return stored;
+        return russian() ? HIDDEN_ROLL_FORMAT_RU : HIDDEN_ROLL_FORMAT_DEFAULT;
+    }
+
+    public static void setHiddenRollFormat(String value) {
+        HIDDEN_ROLL_FORMAT.set(value);
+        HIDDEN_ROLL_FORMAT.save();
+    }
+
+    public static String getHiddenRollFormatNoReason() {
+        String stored = stored(HIDDEN_ROLL_FORMAT_NO_REASON);
+        if (stored != null && !stored.equals(HIDDEN_ROLL_FORMAT_NO_REASON_DEFAULT)) return stored;
+        return russian() ? HIDDEN_ROLL_FORMAT_NO_REASON_RU
+                : HIDDEN_ROLL_FORMAT_NO_REASON_DEFAULT;
+    }
+
+    public static void setHiddenRollFormatNoReason(String value) {
+        HIDDEN_ROLL_FORMAT_NO_REASON.set(value);
+        HIDDEN_ROLL_FORMAT_NO_REASON.save();
+    }
+
+    public static String getHiddenRollFormatAnonymous() {
+        String stored = stored(HIDDEN_ROLL_FORMAT_ANONYMOUS);
+        if (stored != null && !stored.equals(HIDDEN_ROLL_FORMAT_ANONYMOUS_DEFAULT)) return stored;
+        return russian() ? HIDDEN_ROLL_FORMAT_ANONYMOUS_RU
+                : HIDDEN_ROLL_FORMAT_ANONYMOUS_DEFAULT;
+    }
+
+    public static void setHiddenRollFormatAnonymous(String value) {
+        HIDDEN_ROLL_FORMAT_ANONYMOUS.set(value);
+        HIDDEN_ROLL_FORMAT_ANONYMOUS.save();
+    }
+
+    public static String getHiddenRollFormatAnonymousNoReason() {
+        String stored = stored(HIDDEN_ROLL_FORMAT_ANONYMOUS_NO_REASON);
+        if (stored != null && !stored.equals(HIDDEN_ROLL_FORMAT_ANONYMOUS_NO_REASON_DEFAULT)) {
+            return stored;
+        }
+        return russian() ? HIDDEN_ROLL_FORMAT_ANONYMOUS_NO_REASON_RU
+                : HIDDEN_ROLL_FORMAT_ANONYMOUS_NO_REASON_DEFAULT;
+    }
+
+    public static void setHiddenRollFormatAnonymousNoReason(String value) {
+        HIDDEN_ROLL_FORMAT_ANONYMOUS_NO_REASON.set(value);
+        HIDDEN_ROLL_FORMAT_ANONYMOUS_NO_REASON.save();
+    }
+
+    /** {@return the hidden roll's lowest treatment, which may be empty for none} */
+    public static String getHiddenRollMinFormat() {
+        return textAllowingEmpty(HIDDEN_ROLL_FORMAT_MIN, MIN_ROLL_FORMAT);
+    }
+
+    public static void setHiddenRollMinFormat(String value) {
+        HIDDEN_ROLL_FORMAT_MIN.set(value);
+        HIDDEN_ROLL_FORMAT_MIN.save();
+    }
+
+    /** {@return the hidden roll's highest treatment, which may be empty for none} */
+    public static String getHiddenRollMaxFormat() {
+        return textAllowingEmpty(HIDDEN_ROLL_FORMAT_MAX, MAX_ROLL_FORMAT);
+    }
+
+    public static void setHiddenRollMaxFormat(String value) {
+        HIDDEN_ROLL_FORMAT_MAX.set(value);
+        HIDDEN_ROLL_FORMAT_MAX.save();
+    }
+
+    /** {@return the sound a remembered hidden roll plays, which may be empty for silence} */
+    public static String getHiddenRollSound() {
+        return textAllowingEmpty(HIDDEN_ROLL_SOUND, ROLL_SOUND_DEFAULT);
+    }
+
+    public static void setHiddenRollSound(String value) {
+        HIDDEN_ROLL_SOUND.set(value);
+        HIDDEN_ROLL_SOUND.save();
+    }
+
+    public static String getHiddenRollMinSound() {
+        return textAllowingEmpty(HIDDEN_ROLL_MIN_SOUND, MIN_ROLL_SOUND_DEFAULT);
+    }
+
+    public static void setHiddenRollMinSound(String value) {
+        HIDDEN_ROLL_MIN_SOUND.set(value);
+        HIDDEN_ROLL_MIN_SOUND.save();
+    }
+
+    public static String getHiddenRollMaxSound() {
+        return textAllowingEmpty(HIDDEN_ROLL_MAX_SOUND, MAX_ROLL_SOUND_DEFAULT);
+    }
+
+    public static void setHiddenRollMaxSound(String value) {
+        HIDDEN_ROLL_MAX_SOUND.set(value);
+        HIDDEN_ROLL_MAX_SOUND.save();
     }
 
     /** {@return the lowest roll's treatment, which may be empty for no treatment at all} */

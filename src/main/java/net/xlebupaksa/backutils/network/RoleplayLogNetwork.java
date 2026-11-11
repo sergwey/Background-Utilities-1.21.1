@@ -44,6 +44,11 @@ public final class RoleplayLogNetwork {
                 RoleplayLogNetwork::onLine);
 
         registrar.playToClient(
+                RoleplayLogRemovePayload.TYPE,
+                RoleplayLogRemovePayload.STREAM_CODEC,
+                RoleplayLogNetwork::onRemove);
+
+        registrar.playToClient(
                 LogHistoryPayload.TYPE,
                 LogHistoryPayload.STREAM_CODEC,
                 RoleplayLogNetwork::onHistory);
@@ -64,6 +69,11 @@ public final class RoleplayLogNetwork {
             net.xlebupaksa.backutils.client.ClientSounds.play(
                     payload.sound(), payload.volume(), payload.pitch());
         }
+    }
+
+    private static void onRemove(RoleplayLogRemovePayload payload, IPayloadContext context) {
+        if (!(context.player() instanceof net.minecraft.client.player.LocalPlayer)) return;
+        RoleplayLogOverlay.instance().remove(payload.id());
     }
 
     private static void onHistory(LogHistoryPayload payload, IPayloadContext context) {
@@ -117,6 +127,11 @@ public final class RoleplayLogNetwork {
      */
     public static boolean canReceive(ServerPlayer player) {
         return OptionalChannels.negotiated(player, RoleplayLogPayload.TYPE);
+    }
+
+    /** {@return true when this client registered the payload that takes a private line back} */
+    public static boolean canReceiveRemove(ServerPlayer player) {
+        return OptionalChannels.negotiated(player, RoleplayLogRemovePayload.TYPE);
     }
 
     /** Asks the server for the whole history visible to this player. */
