@@ -139,7 +139,7 @@
   "backutils.config.comment.rollFormatNoReason": "The same, for a roll given no reason.",
   "backutils.config.comment.rollFormatAnonymous": "The log line for a roll that names nobody. Placeholders: {result}, {max}.",
   "backutils.config.comment.rollFormatAnonymousNoReason": "The same, for such a roll given no reason.",
-  "backutils.config.comment.hiddenRollDelay": "How long a hidden roll waits before its witnesses remember it. In seconds; 0 reveals it on the next tick.",
+  "backutils.config.comment.hiddenRollDelay": "How long a hidden roll waits before its witnesses remember it. In seconds, up to 600; 0 reveals it on the next tick.",
   "backutils.config.comment.rollMinFormat": "Wraps the roll line when the lowest number comes up. {line} is that line.",
   "backutils.config.comment.rollMaxFormat": "The same for the highest number.",
   "backutils.config.comment.rollSound": "Played to everyone who witnesses the roll. A full sound id.",

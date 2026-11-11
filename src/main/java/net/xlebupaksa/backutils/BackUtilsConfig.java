@@ -136,8 +136,8 @@ public final class BackUtilsConfig {
      */
     public static final ModConfigSpec.IntValue HIDDEN_ROLL_DELAY = BUILDER
             .comment("How long a /hroll line is withheld before its witnesses remember it.",
-                    "In seconds. 0 remembers it on the next server tick.")
-            .defineInRange("hiddenRollDelay", 180, 0, 86400);
+                    "In seconds, up to ten minutes. 0 remembers it on the next server tick.")
+            .defineInRange("hiddenRollDelay", 180, 0, 600);
 
     /**
      * The line as it reads on the lowest and the highest roll, wrapped around the ordinary line so
@@ -505,7 +505,7 @@ public final class BackUtilsConfig {
     }
 
     public static void setHiddenRollDelay(int value) {
-        HIDDEN_ROLL_DELAY.set(Math.max(0, value));
+        HIDDEN_ROLL_DELAY.set(Math.max(0, Math.min(600, value)));
         HIDDEN_ROLL_DELAY.save();
     }
 

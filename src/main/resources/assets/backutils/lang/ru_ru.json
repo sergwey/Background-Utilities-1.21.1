@@ -139,7 +139,7 @@
   "backutils.config.comment.rollFormatNoReason": "То же для броска без причины.",
   "backutils.config.comment.rollFormatAnonymous": "Строка журнала для броска без имени. Подстановки: {result}, {max}.",
   "backutils.config.comment.rollFormatAnonymousNoReason": "То же для такого броска без причины.",
-  "backutils.config.comment.hiddenRollDelay": "Сколько секунд скрытый бросок ждёт, прежде чем свидетели вспомнят его. 0 — на следующем тике.",
+  "backutils.config.comment.hiddenRollDelay": "Сколько секунд скрытый бросок ждёт, прежде чем свидетели вспомнят его. До 600; 0 — на следующем тике.",
   "backutils.config.comment.rollMinFormat": "Оборачивает строку броска, когда выпадает минимум. {line} — эта строка.",
   "backutils.config.comment.rollMaxFormat": "То же для максимума.",
   "backutils.config.comment.rollSound": "Играет всем, кто видит бросок. Полный id звука.",

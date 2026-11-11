@@ -477,11 +477,20 @@ public final class AdminConfigTab {
     /** A slider for the coarse part of a number, and a field for the exact part. */
     private Slider.Horizontal sliderFor(AdminConfigPayload.Row setting) {
         Slider.Horizontal slider = new Slider.Horizontal();
-        slider.setRange((float) setting.min(), (float) setting.max());
-        slider.setValue(valueOf(setting.value(), setting.min()), false);
+        boolean curved = curvedSlider(setting.key());
+        // The timer is read in seconds up to ten minutes, and a straight track would spend most of
+        // its length on values nobody uses. Squaring the position, as the effect-distance slider
+        // does, gives the short delays the room where they are chosen.
+        slider.setRange(curved ? 0.0F : (float) setting.min(),
+                curved ? 1.0F : (float) setting.max());
+        slider.setValue(sliderPosition(setting.key(), valueOf(setting.value(), setting.min()),
+                setting.min(), setting.max()), false);
         slider.layout(l -> l.flex(1).height(12));
         slider.setOnValueChanged(value -> {
-            String text = number(String.valueOf(value), setting.min());
+            double chosen = curved
+                    ? sliderValue(setting.key(), value, setting.min(), setting.max())
+                    : value;
+            String text = number(String.valueOf(chosen), setting.min());
             // The field and the pending value both take the slider's text, so they cannot disagree.
             TextField field = fields.get(setting.key());
             if (field != null) field.setText(text, false);
@@ -489,6 +498,25 @@ public final class AdminConfigTab {
         });
         sliders.put(setting.key(), slider);
         return slider;
+    }
+
+    /** {@return true when a slider's position is squared rather than read as the value} */
+    private static boolean curvedSlider(String key) {
+        return "hiddenRollDelay".equals(key);
+    }
+
+    /** {@return the position on the track a number occupies} */
+    private static float sliderPosition(String key, double value, double min, double max) {
+        if (!curvedSlider(key) || max <= min) return (float) value;
+        double clamped = Math.max(min, Math.min(max, value));
+        return (float) Math.sqrt((clamped - min) / (max - min));
+    }
+
+    /** {@return the whole number a position on the track stands for} */
+    private static long sliderValue(String key, float position, double min, double max) {
+        if (!curvedSlider(key) || max <= min) return Math.round(position);
+        double t = Math.max(0.0, Math.min(1.0, position));
+        return Math.round(min + t * t * (max - min));
     }
 
     private TextField fieldFor(AdminConfigPayload.Row setting) {
@@ -514,7 +542,8 @@ public final class AdminConfigTab {
                     try {
                         double value = Double.parseDouble(text.trim());
                         if (value >= setting.min() && value <= setting.max()) {
-                            slider.setValue((float) value, false);
+                            slider.setValue(sliderPosition(setting.key(), value,
+                                    setting.min(), setting.max()), false);
                         }
                     } catch (NumberFormatException ignored) {
                         // Mid-typing: "-", "1e" and the like. Save is where it has to parse.
