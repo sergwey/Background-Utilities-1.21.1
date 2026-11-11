@@ -651,6 +651,7 @@ public final class AdminConfigTab {
         return switch (key) {
             case "localChatRadius", "logRadius" -> Text.of("backutils.config.unit.blocks");
             case "typingSpeed" -> Text.of("backutils.config.unit.chars.per.second");
+            case "hiddenRollDelay" -> Text.of("backutils.config.unit.seconds");
             default -> "";
         };
     }

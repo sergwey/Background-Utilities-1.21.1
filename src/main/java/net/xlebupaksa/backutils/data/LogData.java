@@ -4,6 +4,8 @@ import net.xlebupaksa.backutils.BackUtils;
 
 import java.nio.file.Path;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.List;
@@ -84,6 +86,15 @@ public class LogData extends DataManager {
                     "contents TEXT NOT NULL, " +
                     "created_at DATETIME DEFAULT (datetime('now', 'localtime'))" +
                     ");");
+            // A /hroll waits here until its witnesses remember it. It is a row of its own rather than
+            // a hidden action_log row, because nothing about the roll may be readable before the
+            // delay: a row in the log would be reachable through history and the catch-up sweep.
+            stmt.execute("CREATE TABLE IF NOT EXISTS pending_hidden_roll (" +
+                    "pending_id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                    "actor_id TEXT, actor_name TEXT NOT NULL, contents TEXT NOT NULL, " +
+                    "access_list TEXT NOT NULL, reveal_at INTEGER NOT NULL, " +
+                    "dimension TEXT, x REAL, y REAL, z REAL, " +
+                    "result INTEGER NOT NULL, max_roll INTEGER NOT NULL);");
         } catch (SQLException e) {
             throw new RuntimeException("Could not open the action log database", e);
         }
@@ -177,6 +188,8 @@ public class LogData extends DataManager {
         ) {
             stmt.execute("CREATE INDEX IF NOT EXISTS idx_action_log_actor " +
                     "ON action_log(actor_id);");
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_pending_hidden_roll_reveal " +
+                    "ON pending_hidden_roll(reveal_at);");
         } catch (SQLException e) {
             BackUtils.LOGGER.warn("Could not index action_log(actor_id)", e);
         }
@@ -327,5 +340,106 @@ public class LogData extends DataManager {
                 "SELECT COALESCE(MAX(log_id), 0) AS latest FROM action_log",
                 rs -> rs.getLong("latest"));
         return ids.isEmpty() ? 0L : ids.getFirst();
+    }
+
+    // ------------------------------------------------------------------
+    // Hidden rolls waiting to be remembered
+    // ------------------------------------------------------------------
+
+    /** One {@code /hroll} waiting for its moment: what to say, to whom, and when. */
+    public record PendingRoll(long id, UUID actorId, String actorName, String contents,
+                              List<UUID> accessList, long revealAt, String dimension,
+                              double x, double y, double z, int result, int maxRoll) {}
+
+    /** Stores a hidden roll until {@code revealAt} (wall-clock milliseconds). */
+    public long addPendingRoll(UUID actorId, String actorName, String contents,
+                               List<UUID> accessList, long revealAt, String dimension,
+                               double x, double y, double z, int result, int maxRoll) {
+        return insertAndGetId(
+                "INSERT INTO pending_hidden_roll (actor_id, actor_name, contents, access_list, " +
+                        "reveal_at, dimension, x, y, z, result, max_roll) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                actorId == null ? "" : actorId.toString(),
+                actorName == null ? "" : actorName,
+                contents,
+                AccessList.encode(accessList),
+                revealAt,
+                dimension,
+                x, y, z, result, maxRoll);
+    }
+
+    /** {@return the hidden rolls whose moment has come, oldest deadline first} */
+    public List<PendingRoll> duePendingRolls(long now) {
+        return query(
+                "SELECT pending_id, actor_id, actor_name, contents, access_list, reveal_at, " +
+                        "dimension, x, y, z, result, max_roll FROM pending_hidden_roll " +
+                        "WHERE reveal_at <= ? ORDER BY reveal_at ASC, pending_id ASC",
+                rs -> new PendingRoll(
+                        rs.getLong("pending_id"),
+                        uuidOrNull(rs.getString("actor_id")),
+                        rs.getString("actor_name"),
+                        rs.getString("contents"),
+                        AccessList.decode(rs.getString("access_list")),
+                        rs.getLong("reveal_at"),
+                        rs.getString("dimension"),
+                        rs.getDouble("x"),
+                        rs.getDouble("y"),
+                        rs.getDouble("z"),
+                        rs.getInt("result"),
+                        rs.getInt("max_roll")),
+                now);
+    }
+
+    /**
+     * Writes the remembered roll into the log and removes it from the waiting table, in one
+     * transaction: a crash between the two would otherwise remember the same roll twice.
+     *
+     * @return the new log id, or -1 when it could not be written
+     */
+    public long revealPendingRoll(PendingRoll pending) {
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try (PreparedStatement insert = connection.prepareStatement(
+                    "INSERT INTO action_log (access_list, contents, actor_id, actor_name, " +
+                            "dimension, x, y, z, admin_note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '')",
+                    Statement.RETURN_GENERATED_KEYS);
+                 PreparedStatement delete = connection.prepareStatement(
+                         "DELETE FROM pending_hidden_roll WHERE pending_id = ?")) {
+                insert.setString(1, AccessList.encode(pending.accessList()));
+                insert.setString(2, pending.contents());
+                insert.setString(3, pending.actorId() == null ? "" : pending.actorId().toString());
+                insert.setString(4, pending.actorName() == null ? "" : pending.actorName());
+                insert.setString(5, pending.dimension());
+                insert.setDouble(6, pending.x());
+                insert.setDouble(7, pending.y());
+                insert.setDouble(8, pending.z());
+                insert.executeUpdate();
+
+                long logId;
+                try (ResultSet keys = insert.getGeneratedKeys()) {
+                    logId = keys.next() ? keys.getLong(1) : -1L;
+                }
+
+                delete.setLong(1, pending.id());
+                delete.executeUpdate();
+                connection.commit();
+                return logId;
+            } catch (SQLException e) {
+                connection.rollback();
+                throw e;
+            }
+        } catch (SQLException e) {
+            BackUtils.LOGGER.error("Could not reveal hidden roll {}", pending.id(), e);
+            return -1L;
+        }
+    }
+
+    private static UUID uuidOrNull(String stored) {
+        if (stored == null || stored.isBlank()) return null;
+        try {
+            return UUID.fromString(stored);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 }

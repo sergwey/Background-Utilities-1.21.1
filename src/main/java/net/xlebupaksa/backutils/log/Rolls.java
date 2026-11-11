@@ -2,15 +2,21 @@ package net.xlebupaksa.backutils.log;
 
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import net.neoforged.neoforge.network.PacketDistributor;
 import net.xlebupaksa.backutils.BackUtils;
 import net.xlebupaksa.backutils.BackUtilsConfig;
 import net.xlebupaksa.backutils.data.ActionLogEntry;
 import net.xlebupaksa.backutils.data.BackUtilsData;
+import net.xlebupaksa.backutils.data.LogData;
+import net.xlebupaksa.backutils.data.MarkupUtil;
 import net.xlebupaksa.backutils.network.RoleplayLogBroadcaster;
+import net.xlebupaksa.backutils.network.RoleplayLogNetwork;
+import net.xlebupaksa.backutils.network.RoleplayLogPayload;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * The dice: what {@code /roll} and {@code /hroll} leave in the roleplay log.
@@ -19,9 +25,10 @@ import java.util.UUID;
  * it rather than filled in here, so every reader sees the roller's roleplay name and the roller
  * sees themselves underlined, exactly as an action does.
  *
- * <p>A hidden roll stores the obfuscated text as the line and the real number as the row's
- * administrator note. The note is the only copy of the truth, and the administrator log is the one
- * place that reads it, so nothing a witness is sent can carry the result.
+ * <p>A hidden roll writes nothing when it is rolled. It waits in {@code pending_hidden_roll} until
+ * the configured delay is up, then enters the log as the line its witnesses remember; the roller
+ * alone gets an early, private copy with the number in the administrator's note. That is what keeps
+ * the result from reaching a player through the history or the ten-second catch-up sweep.
  */
 public final class Rolls {
 
@@ -34,6 +41,28 @@ public final class Rolls {
 
     /** Which end of the range a result landed on, if either. */
     public enum Extreme { NONE, LOW, HIGH }
+
+    /**
+     * What the administrator's private copy shows where the result is: the public line never carries
+     * the number before its moment, and this is only ever sent to the one who ran the command.
+     */
+    private static final String HIDDEN_RESULT = "<obfuscate>???</obfuscate>";
+
+    /** What a witness remembers when a hidden roll's time is up. */
+    private static final String REMEMBERED_NAMED =
+            "You remembered that {player_possessive} dice showed {result}/{max_roll}";
+    private static final String REMEMBERED_ANONYMOUS =
+            "You remembered that the dice showed {result}/{max_roll}";
+    private static final String REMEMBERED_NAMED_RU =
+            "Вы вспомнили, что кубик {player} показал {result}/{max_roll}";
+    private static final String REMEMBERED_ANONYMOUS_RU =
+            "Вы вспомнили, что на кубике выпало {result}/{max_roll}";
+
+    /**
+     * The administrator's private echo ids. Negative, so a transient line cannot collide with a log
+     * row the client may already hold, and unique for the session, which is what the overlay dedupes on.
+     */
+    private static final AtomicLong ECHO_ID = new AtomicLong(-1L);
 
     private Rolls() {}
     /**
@@ -48,17 +77,120 @@ public final class Rolls {
         MinecraftServer server = roller.getServer();
         if (data == null || server == null) return List.of();
 
+        if (hidden) return hold(roller, subjects, max, reason);
+
         if (subjects.isEmpty()) {
-            Integer rolled = record(roller, null, roller, max, reason, hidden);
+            Integer rolled = record(roller, null, roller, max, reason, false);
             return rolled == null ? List.of() : List.of(rolled);
         }
 
         List<Integer> results = new ArrayList<>(subjects.size());
         for (ServerPlayer subject : subjects) {
-            Integer rolled = record(subject, subject, roller, max, reason, hidden);
+            Integer rolled = record(subject, subject, roller, max, reason, false);
             if (rolled != null) results.add(rolled);
         }
         return List.copyOf(results);
+    }
+
+    /**
+     * Holds one hidden roll per subject until its witnesses remember it, and gives the roller a
+     * private copy now.
+     *
+     * <p>The roller is the anchor, as the one who called for the roll: the line is remembered by the
+     * players around them, and by the player it names wherever that player is. Nothing is written to
+     * the log until the moment is up, because any row written now would be readable through the
+     * history and the catch-up sweep before the delay had passed.
+     */
+    private static List<Integer> hold(ServerPlayer roller, List<ServerPlayer> subjects,
+                                      int max, String reason) {
+        BackUtilsData data = BackUtils.data();
+        MinecraftServer server = roller.getServer();
+        if (data == null || server == null) return List.of();
+
+        long revealAt = System.currentTimeMillis()
+                + Math.max(0, BackUtilsConfig.getHiddenRollDelay()) * 1000L;
+        List<UUID> audience = RoleplayLog.witnesses(roller, BackUtilsConfig.getRollRadius());
+        String dimension = roller.level().dimension().location().toString();
+
+        List<Integer> results = new ArrayList<>(Math.max(1, subjects.size()));
+        if (subjects.isEmpty()) {
+            int result = roll(roller, max);
+            long pending = data.logs().addPendingRoll(null, "",
+                    remembered(false, result, max, reason), audience, revealAt, dimension,
+                    roller.getX(), roller.getY(), roller.getZ(), result, max);
+            if (pending <= 0) return List.of();
+            BackUtils.LOGGER.info("[hidden roll] {} rolled {}/{}{}",
+                    roller.getName().getString() + " (nobody named)", result, max,
+                    reason == null || reason.isBlank() ? "" : " for " + reason);
+            echo(roller, null, result, max, reason);
+            results.add(result);
+            return List.copyOf(results);
+        }
+
+        for (ServerPlayer subject : subjects) {
+            int result = roll(subject, max);
+            List<UUID> seen = new ArrayList<>(audience);
+            if (!seen.contains(subject.getUUID())) seen.add(subject.getUUID());
+
+            long pending = data.logs().addPendingRoll(subject.getUUID(),
+                    subject.getName().getString(), remembered(true, result, max, reason), seen,
+                    revealAt, dimension, roller.getX(), roller.getY(), roller.getZ(), result, max);
+            if (pending <= 0) continue;
+
+            BackUtils.LOGGER.info("[hidden roll] {} rolled {}/{}{}",
+                    subject.getName().getString(), result, max,
+                    reason == null || reason.isBlank() ? "" : " for " + reason);
+            echo(roller, subject, result, max, reason);
+            results.add(result);
+        }
+        return List.copyOf(results);
+    }
+
+    /** {@return the line a witness will remember, worded in the server's language} */
+    public static String remembered(boolean named, int result, int max, String reason) {
+        boolean russian = BackUtilsConfig.russian();
+        String template = named
+                ? (russian ? REMEMBERED_NAMED_RU : REMEMBERED_NAMED)
+                : (russian ? REMEMBERED_ANONYMOUS_RU : REMEMBERED_ANONYMOUS);
+        String text = fillWith(template, max, "", String.valueOf(result));
+        if (reason != null && !reason.isBlank()) {
+            text = text + (russian ? " (за — " : " (for - ") + reason.trim() + ")";
+        }
+        return text;
+    }
+
+    /**
+     * Sends the roller the only early copy of the result: a private line in their own log, with the
+     * number in the administrator's gray note. It is not stored, and it makes no sound.
+     */
+    private static void echo(ServerPlayer roller, ServerPlayer subject, int result, int max,
+                             String reason) {
+        if (!RoleplayLogNetwork.canReceive(roller)) return;
+
+        String line = line(subject != null, reason, result, max, true);
+        // The stored line is resolved per reader when it is sent from the log; this one is not a row,
+        // so the name placeholders have to be filled here or the administrator reads "{player}".
+        String shown = ActionLogEntry.resolve(line,
+                subject == null ? "" : subject.getName().getString());
+        String text = RoleplayLog.present(
+                MarkupUtil.withNote(shown, "rolled " + result + "/" + max));
+        PacketDistributor.sendToPlayer(roller, new RoleplayLogPayload(
+                ECHO_ID.getAndDecrement(), text, "", 0.0f, 1.0f, true));
+    }
+
+    /** Reveals every hidden roll whose moment has come, on the server thread. */
+    public static void revealDue(MinecraftServer server) {
+        BackUtilsData data = BackUtils.data();
+        if (data == null) return;
+
+        for (LogData.PendingRoll pending : data.logs().duePendingRolls(System.currentTimeMillis())) {
+            long id = data.logs().revealPendingRoll(pending);
+            if (id <= 0) continue;
+            RoleplayLogBroadcaster.deliver(server, id, pending.accessList(),
+                    soundFor(pending.result(), pending.maxRoll(), false),
+                    (float) BackUtilsConfig.getRollSoundVolume(),
+                    (float) BackUtilsConfig.getRollSoundPitch(), true);
+        }
     }
 
     /**
@@ -188,7 +320,7 @@ public final class Rolls {
      */
     public static String fill(String format, int result, int max, String reason, boolean hidden) {
         return fillWith(format, max, reason,
-                hidden ? BackUtilsConfig.getHiddenRollText() : String.valueOf(result));
+                hidden ? HIDDEN_RESULT : String.valueOf(result));
     }
 
     /**
@@ -217,8 +349,7 @@ public final class Rolls {
     public static boolean isFormat(String key) {
         return switch (key) {
             case "rollFormat", "rollFormatNoReason", "rollFormatAnonymous",
-                 "rollFormatAnonymousNoReason", "rollMinFormat", "rollMaxFormat",
-                 "hiddenRollText" -> true;
+                 "rollFormatAnonymousNoReason", "rollMinFormat", "rollMaxFormat" -> true;
             default -> false;
         };
     }
@@ -244,8 +375,6 @@ public final class Rolls {
             case "rollFormatAnonymousNoReason" ->
                     fill(format, SAMPLE_RESULT, SAMPLE_MAX, null, false);
             case "rollMinFormat", "rollMaxFormat" -> format.replace(LINE, ordinarySample());
-            case "hiddenRollText" -> fillWith(BackUtilsConfig.getRollFormatNoReason(),
-                    SAMPLE_MAX, null, format);
             default -> "";
         };
         return ActionLogEntry.resolve(text, SAMPLE_PLAYER);

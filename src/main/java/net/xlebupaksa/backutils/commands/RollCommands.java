@@ -23,14 +23,15 @@ import java.util.List;
 /**
  * {@code /roll} and {@code /hroll} — the dice, for staff only.
  *
- * <p>{@code /roll} leaves a line in the roleplay log naming the number; {@code /hroll} leaves the
- * same line with the number obfuscated, and the number itself where only an administrator reads it.
- * Neither posts anything to chat.
+ * <p>{@code /roll} leaves a line in the roleplay log naming the number. {@code /hroll} leaves
+ * nothing for the players at roll time: the roller gets a private copy with the result, and the
+ * whole line is held server-side until its witnesses remember it. Neither posts anything to chat.
  *
  * <p>The shapes, all optional from the right: no arguments rolls once for nobody, a bare number is
- * the maximum, and a player selector or name comes first, then the maximum, then the reason, which
- * is free text and takes the rest of the line. A first argument that is only digits is read as the
- * maximum, because no player can be named that way.
+ * the maximum, and one player selector — {@code @a[distance=..10,limit=10]} or a bare name — comes
+ * first, then the maximum, then the reason, which is free text and takes the rest of the line. The
+ * selector is one argument, not a run of names: a list of players is a selector or a single name. A
+ * first argument that is only digits is read as the maximum, because no player can be named that way.
  */
 public class RollCommands {
 
@@ -105,9 +106,10 @@ public class RollCommands {
                 return 0;
             }
 
-            // Nothing is said in chat, not even to the one who rolled: the line is in the action log,
-            // which they are a witness of, and the console holds the numbers. Failures above are the
-            // exception, since a command that silently does nothing reads as a broken one.
+            // Nothing is said in chat, not even to the one who rolled: /roll's line is in the action
+            // log, which they are a witness of, and /hroll's early copy is a private line in their
+            // own log rather than a command answer. Failures above are the exception, since a command
+            // that silently does nothing reads as a broken one.
             return results.size();
         } catch (Exception e) {
             ctx.getSource().sendFailure(Component.translatable("backutils.command.error",

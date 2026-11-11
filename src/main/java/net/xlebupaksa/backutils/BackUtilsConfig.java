@@ -36,7 +36,6 @@ public final class BackUtilsConfig {
             "На кубике выпало: {result}/{max_roll} — {reason}!";
     private static final String ROLL_FORMAT_ANONYMOUS_NO_REASON_RU =
             "На кубике выпало: {result}/{max_roll}!";
-    private static final String HIDDEN_ROLL_TEXT_DEFAULT = "<obfuscate>???</obfuscate>";
     private static final String MIN_ROLL_FORMAT =
             "<color col=#ff0000><shake><glitch>{line}</glitch></shake></color>";
     private static final String MAX_ROLL_FORMAT = "<neon><rainbow>{line}</rainbow></neon>";
@@ -88,8 +87,8 @@ public final class BackUtilsConfig {
 
     public static final ModConfigSpec.DoubleValue ROLL_RADIUS = BUILDER
             .comment("How far away a player may be and still witness a roll. Everyone within",
-                    "this distance of the player being rolled for is added to the entry's",
-                    "access list.")
+                    "this distance of the roll's anchor — the player being rolled for, or the",
+                    "roller for a hidden roll — is added to the entry's access list.")
             .defineInRange("rollRadius", 24.0D, 0.0D, 512.0D);
 
     /**
@@ -130,16 +129,15 @@ public final class BackUtilsConfig {
             .define("rollFormatAnonymousNoReason", ROLL_FORMAT_ANONYMOUS_NO_REASON_DEFAULT);
 
     /**
-     * What stands in for the result on a hidden roll. The default is Ember's own obfuscate tag, so
-     * the number is not merely unreadable but scrambled as it is drawn; the text inside it is what
-     * shows if the effect is ever unavailable. The long spelling is the one that carries the
-     * effect: {@code <obf>} is parsed and then does nothing.
+     * How long a hidden roll waits before its witnesses remember it.
+     *
+     * <p>Seconds by the wall clock: the number is a promise to the players, and a lagging or long
+     * server tick must not quietly shorten it. Zero remembers the roll on the next server tick.
      */
-    public static final ModConfigSpec.ConfigValue<String> ROLL_HIDDEN_TEXT = BUILDER
-            .comment("Shown instead of {result} on a hidden roll. The default scrambles it with",
-                    "Ember's <obfuscate> tag; the short <obf> spelling carries no effect, and",
-                    "plain text such as ??? works too.")
-            .define("hiddenRollText", HIDDEN_ROLL_TEXT_DEFAULT);
+    public static final ModConfigSpec.IntValue HIDDEN_ROLL_DELAY = BUILDER
+            .comment("How long a /hroll line is withheld before its witnesses remember it.",
+                    "In seconds. 0 remembers it on the next server tick.")
+            .defineInRange("hiddenRollDelay", 180, 0, 86400);
 
     /**
      * The line as it reads on the lowest and the highest roll, wrapped around the ordinary line so
@@ -498,17 +496,17 @@ public final class BackUtilsConfig {
         ROLL_FORMAT_ANONYMOUS_NO_REASON.save();
     }
 
-    public static String getHiddenRollText() {
+    public static int getHiddenRollDelay() {
         try {
-            return text(ROLL_HIDDEN_TEXT, HIDDEN_ROLL_TEXT_DEFAULT);
+            return HIDDEN_ROLL_DELAY.get();
         } catch (Exception e) {
-            return HIDDEN_ROLL_TEXT_DEFAULT;
+            return 180;
         }
     }
 
-    public static void setHiddenRollText(String value) {
-        ROLL_HIDDEN_TEXT.set(value);
-        ROLL_HIDDEN_TEXT.save();
+    public static void setHiddenRollDelay(int value) {
+        HIDDEN_ROLL_DELAY.set(Math.max(0, value));
+        HIDDEN_ROLL_DELAY.save();
     }
 
     /** {@return the lowest roll's treatment, which may be empty for no treatment at all} */
@@ -627,7 +625,7 @@ public final class BackUtilsConfig {
     }
 
     /** {@return true when the mod's own lines are worded in Russian} */
-    private static boolean russian() {
+    public static boolean russian() {
         return "ru_ru".equalsIgnoreCase(getMessagesLanguage());
     }
 

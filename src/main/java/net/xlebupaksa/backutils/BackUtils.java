@@ -25,6 +25,7 @@ import net.xlebupaksa.backutils.commands.RollCommands;
 import net.xlebupaksa.backutils.data.BackUtilsData;
 import net.xlebupaksa.backutils.data.ModAttachments;
 import net.xlebupaksa.backutils.log.LogCommands;
+import net.xlebupaksa.backutils.log.HiddenRollTicker;
 import net.xlebupaksa.backutils.log.RoleplayLogTicker;
 import net.xlebupaksa.backutils.effect.EffectReplay;
 import net.xlebupaksa.backutils.effect.EffectTicker;
@@ -73,6 +74,7 @@ public class BackUtils {
         NeoForge.EVENT_BUS.register(new PlayerProfileEvents());
         NeoForge.EVENT_BUS.register(new TabListNameHandler());
         NeoForge.EVENT_BUS.register(new RoleplayLogTicker());
+        NeoForge.EVENT_BUS.register(new HiddenRollTicker());
         NeoForge.EVENT_BUS.register(new MusicZoneTicker());
         // The effects that have run out of the time their tool gave them.
         NeoForge.EVENT_BUS.register(new EffectTicker());
