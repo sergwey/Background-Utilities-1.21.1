@@ -47,6 +47,7 @@ import net.xlebupaksa.backutils.client.BackUtilsClientConfig;
 import net.xlebupaksa.backutils.client.EffectToolSlot;
 import net.xlebupaksa.backutils.client.LiteralDrawing;
 import net.xlebupaksa.backutils.client.SymbolChatPanel;
+import net.xlebupaksa.backutils.item.AdvancedItemProperties;
 import net.xlebupaksa.backutils.item.ItemEdit;
 import net.xlebupaksa.backutils.network.EffectToolConfigPayload.Where;
 import net.xlebupaksa.backutils.network.ItemEditPayload;
@@ -268,6 +269,17 @@ public final class ItemEditorScreen extends Screen {
     /** The attributes as they are being edited, in the order the rows are shown in. */
     private final List<ItemEdit.Granted> attributes = new ArrayList<>();
 
+    /** The advanced draft, shared with the advanced screen and written by the main Apply. */
+    private AdvancedItemProperties advanced = new AdvancedItemProperties();
+
+    /** Set when this screen was reopened from the advanced screen, rather than read from the item. */
+    private boolean preset;
+    private boolean presetLoaded;
+    private String presetName;
+    private List<String> presetLore;
+    private List<ItemEdit.Granted> presetAttributes;
+    private AdvancedItemProperties presetAdvanced;
+
     private final UIElement root = new UIElement();
     private final UIElement panel = new UIElement();
     private final TextField name = new TextField();
@@ -440,6 +452,26 @@ public final class ItemEditorScreen extends Screen {
      */
     public static void openLocal(ItemStack stack, Consumer<ItemStack> apply, Supplier<Screen> back) {
         Minecraft.getInstance().setScreen(new ItemEditorScreen(stack, apply, back));
+    }
+
+    /**
+     * Reopens the editor after the advanced screen, keeping the basic fields exactly as they were.
+     *
+     * <p>A Screen cannot be put back on the stack without being initialised again, and initialising
+     * this one reads the item — which would discard a name or a line of lore the operator had typed
+     * and not yet applied. The reopened screen therefore carries the current field values in as its
+     * first state and does not read the item over them.
+     */
+    ItemEditorScreen reopen(AdvancedItemProperties properties) {
+        ItemEditorScreen next = source != null
+                ? new ItemEditorScreen(source)
+                : new ItemEditorScreen(localStack, localApply, localBack);
+        next.preset = true;
+        next.presetName = name.getText();
+        next.presetLore = itemLore();
+        next.presetAttributes = attributeList();
+        next.presetAdvanced = properties;
+        return next;
     }
 
     @Override
@@ -631,7 +663,14 @@ public final class ItemEditorScreen extends Screen {
         UIElement left = new UIElement();
         left.layout(l -> l.flex(1).minWidth(PICKER)
                 .flexDirection(FlexDirection.COLUMN).gapAll(GAP));
-        left.addChildren(styles, namePreview, lorePreview, attributeHeader, attributeRows);
+
+        Button advancedButton = new Button();
+        text(advancedButton.text, "backutils.item_editor.button.advanced", 9f);
+        advancedButton.layout(l -> l.widthPercent(100).height(LINE_HEIGHT));
+        advancedButton.setOnClick(e -> ItemAdvancedScreen.open(this, advanced));
+
+        left.addChildren(styles, namePreview, lorePreview, attributeHeader, attributeRows,
+                advancedButton);
 
         columns.addChildren(left, pickerColumn());
 
@@ -1277,12 +1316,33 @@ public final class ItemEditorScreen extends Screen {
 
     /** Fills the fields from the item as it stands, so the screen opens on what is there. */
     private void load() {
+        // A screen reopened from the advanced screen holds a draft. Its first init installs that
+        // draft, and later inits (a resize) leave it alone rather than reading the item over it.
+        if (preset) {
+            if (!presetLoaded) {
+                unrecorded(() -> {
+                    name.setText(presetName == null ? "" : presetName, false);
+                    lore.setLines(presetLore == null ? List.of() : presetLore);
+                    attributes.clear();
+                    if (presetAttributes != null) attributes.addAll(presetAttributes);
+                    advanced = presetAdvanced == null ? new AdvancedItemProperties() : presetAdvanced;
+                    refreshAttributes();
+                });
+                presetLoaded = true;
+                history.clear();
+                history.add(snapshot());
+                step = 0;
+            }
+            return;
+        }
+
         // Reading the item into the fields is not an edit — there is nothing behind it to go back to —
         // so it is made off the record and the state it arrives at becomes the only entry of the history
         // so far. Done on every load rather than on the first, because a load is always the item as it
         // stands being put on screen: see the note on the history field.
         unrecorded(() -> {
             ItemStack stack = stack();
+            advanced = AdvancedItemProperties.from(stack);
             Component current = stack == null ? null : stack.get(DataComponents.CUSTOM_NAME);
             // Through the conversion rather than through the text: an item's name carries its styling, and
             // reading only the words would mean that opening an item and pressing apply restyled it.
@@ -1336,7 +1396,7 @@ public final class ItemEditorScreen extends Screen {
                 source == null ? Where.PLAYER : source.where(),
                 source == null ? 0 : source.containerId(),
                 source == null ? 0 : source.slot(),
-                name.getText(), itemLore(), attributeList());
+                name.getText(), itemLore(), attributeList(), advanced);
         String problem = ItemEditPayload.problem(payload);
         if (problem != null) {
             // Nothing is written, so the item is untouched and this message is the whole of what happened.
@@ -1351,8 +1411,7 @@ public final class ItemEditorScreen extends Screen {
         // server writes an inventory's item with, and the screen the caller came from is put back.
         ItemStack current = this.stack();
         ItemStack edited = current == null ? ItemStack.EMPTY : current.copy();
-        ItemEditorNetwork.apply(edited, payload.name(), payload.withLore(), payload.lore(),
-                payload.withAttributes(), payload.attributes());
+        ItemEditorNetwork.apply(edited, payload);
         this.localApply.accept(edited);
         Minecraft.getInstance().setScreen(this.localBack == null ? null : this.localBack.get());
     }

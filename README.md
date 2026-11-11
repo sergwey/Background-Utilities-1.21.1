@@ -63,7 +63,11 @@ log, and a pair of tools for placing and removing visual effects.
 - **Item editor.** Operators rewrite an item's name, lore and attributes in one screen: the name and
   the lore in the form the item will show them, with a live preview of its tooltip and its own icon,
   short-named formatting buttons that wrap the selected text, and a colour picker beside them. The
-  markup is Ember's, so colours, gradients and animations stay animated on the item itself.
+  markup is Ember's, so colours, gradients and animations stay animated on the item itself. An
+  **Advanced properties...** button opens the second screen: its Properties tab changes consumable
+  stats and effects, durability, dyed colour, enchantments and a few miscellaneous flags; Behaviour
+  is reserved for command chains. The advanced edits share the main screen's draft, so the one Apply
+  writes both.
 - **Zone music.** `/playradius` and `/playbox` play a sound to the players inside a region, and
   `/stopzone` ends one.
 - **Menu music.** Opening the corner menu plays a track named in the server's config for the player

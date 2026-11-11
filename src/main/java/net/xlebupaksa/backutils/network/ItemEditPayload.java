@@ -8,6 +8,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.EquipmentSlotGroup;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.xlebupaksa.backutils.BackUtils;
+import net.xlebupaksa.backutils.item.AdvancedItemProperties;
 import net.xlebupaksa.backutils.item.ItemEdit;
 
 import java.util.ArrayList;
@@ -16,17 +17,18 @@ import java.util.List;
 /**
  * One client saying what the item it is looking at should become.
  *
- * <p><b>The whole edit, not a change to it.</b> An editor holds a name, a lore and a list of
- * attributes, and what an operator presses "apply" on is the state they have been looking at. Sending
- * the difference would mean a protocol that can arrive out of order, be applied twice, or describe a
- * change to something that is no longer there — and none of that can happen to a message that says
- * what the item is.
+ * <p><b>The whole edit, not a change to it.</b> An editor holds a name, a lore, a list of attributes
+ * and the advanced draft from its second screen, and what an operator presses "apply" on is the state
+ * they have been looking at. Sending the difference would mean a protocol that can arrive out of order,
+ * be applied twice, or describe a change to something that is no longer there — and none of that can
+ * happen to a message that says what the item is.
  *
- * <p><b>And a message says which of the three it is about.</b> Saying what the item is only works if
- * the whole of it is known, and a screen built one section at a time does not know the parts it cannot
- * show: a name edit sent as a whole item would be an edit that deletes the lore, because an empty lore
- * means "no lore" and not "I did not look". The two flags are what tell those apart, and they are why
- * the sections could be built in turn without the first one being destructive.
+ * <p><b>And a message says which of the original three sections it is about.</b> Saying what the item
+ * is only works if the whole of it is known, and a screen built one section at a time does not know
+ * the parts it cannot show: a name edit sent as a whole item would be an edit that deletes the lore,
+ * because an empty lore means "no lore" and not "I did not look". The flags are what tell those apart,
+ * and they are why the sections could be built in turn without the first one being destructive. The
+ * advanced draft travels whole and is applied last, so its own groups decide what they own.
  *
  * <p>Markup travels as text and is parsed by the server, which is fewer bytes and the right side of
  * the wire to be holding the component: a client that invents one has changed nothing that matters.
@@ -37,8 +39,14 @@ import java.util.List;
  */
 public record ItemEditPayload(EffectToolConfigPayload.Where where, int containerId, int slot,
                               String name, List<String> lore, List<ItemEdit.Granted> attributes,
-                              boolean withLore, boolean withAttributes)
+                              boolean withLore, boolean withAttributes,
+                              AdvancedItemProperties advanced)
         implements CustomPacketPayload {
+
+    /** Keeps a hand-built message from ever carrying no draft at all. */
+    public ItemEditPayload {
+        advanced = advanced == null ? new AdvancedItemProperties() : advanced;
+    }
 
     /** How long a name may be, and how long one line of lore may be. */
     private static final int MAX_TEXT = 512;
@@ -46,6 +54,11 @@ public record ItemEditPayload(EffectToolConfigPayload.Where where, int container
     /** How many lore lines and how many attributes one edit may carry. */
     private static final int MAX_LINES = 64;
     private static final int MAX_ATTRIBUTES = 32;
+    private static final int MAX_EFFECTS = 32;
+    private static final int MAX_ENCHANTMENTS = 32;
+
+    /** How long a component id may be. */
+    private static final int MAX_ID = 128;
 
     /** How long the name of an operation or a slot may be. */
     private static final int MAX_WORD = 32;
@@ -67,7 +80,17 @@ public record ItemEditPayload(EffectToolConfigPayload.Where where, int container
     public static ItemEditPayload full(EffectToolConfigPayload.Where where, int containerId, int slot,
                                        String name, List<String> lore,
                                        List<ItemEdit.Granted> attributes) {
-        return new ItemEditPayload(where, containerId, slot, name, lore, attributes, true, true);
+        return full(where, containerId, slot, name, lore, attributes,
+                new AdvancedItemProperties());
+    }
+
+    /** The same, with the advanced properties the editor's second screen holds. */
+    public static ItemEditPayload full(EffectToolConfigPayload.Where where, int containerId, int slot,
+                                       String name, List<String> lore,
+                                       List<ItemEdit.Granted> attributes,
+                                       AdvancedItemProperties advanced) {
+        return new ItemEditPayload(where, containerId, slot, name, lore, attributes, true, true,
+                advanced == null ? new AdvancedItemProperties() : advanced);
     }
 
     /**
@@ -100,7 +123,8 @@ public record ItemEditPayload(EffectToolConfigPayload.Where where, int container
         if (attributes != null && attributes.size() > MAX_ATTRIBUTES) {
             return "An item carries at most " + MAX_ATTRIBUTES + " attributes.";
         }
-        return null;
+        String advanced = payload.advanced() == null ? null : payload.advanced().problem();
+        return advanced;
     }
 
     private static void write(RegistryFriendlyByteBuf buf, ItemEditPayload payload) {
@@ -129,6 +153,56 @@ public record ItemEditPayload(EffectToolConfigPayload.Where where, int container
             buf.writeUtf(granted.operation().name(), MAX_WORD);
             buf.writeUtf(granted.slot().name(), MAX_WORD);
         }
+
+        writeAdvanced(buf, payload.advanced());
+    }
+
+    private static void writeAdvanced(RegistryFriendlyByteBuf buf, AdvancedItemProperties a) {
+        AdvancedItemProperties advanced = a == null ? new AdvancedItemProperties() : a;
+        buf.writeBoolean(advanced.consumable);
+        if (advanced.consumable) {
+            buf.writeVarInt(advanced.nutrition);
+            buf.writeFloat(advanced.saturation);
+            buf.writeBoolean(advanced.canAlwaysEat);
+            buf.writeFloat(advanced.eatSeconds);
+            int effects = Math.min(advanced.effects.size(), MAX_EFFECTS);
+            buf.writeVarInt(effects);
+            for (int i = 0; i < effects; i++) {
+                AdvancedItemProperties.Effect effect = advanced.effects.get(i);
+                buf.writeUtf(effect.id() == null ? "" : effect.id(), MAX_ID);
+                buf.writeVarInt(effect.durationTicks());
+                buf.writeVarInt(effect.amplifier());
+                buf.writeBoolean(effect.ambient());
+                buf.writeBoolean(effect.visible());
+                buf.writeBoolean(effect.showIcon());
+            }
+        }
+
+        buf.writeBoolean(advanced.durability);
+        if (advanced.durability) {
+            buf.writeVarInt(advanced.maxDamage);
+            buf.writeVarInt(advanced.currentDurability);
+            buf.writeBoolean(advanced.unbreakable);
+        }
+
+        buf.writeBoolean(advanced.dyed);
+        if (advanced.dyed) buf.writeInt(advanced.dyedColor);
+
+        buf.writeBoolean(advanced.enchantments);
+        if (advanced.enchantments) {
+            int count = Math.min(advanced.enchantmentLevels.size(), MAX_ENCHANTMENTS);
+            buf.writeVarInt(count);
+            for (int i = 0; i < count; i++) {
+                AdvancedItemProperties.EnchantmentLevel line = advanced.enchantmentLevels.get(i);
+                buf.writeUtf(line.id() == null ? "" : line.id(), MAX_ID);
+                buf.writeVarInt(line.level());
+            }
+        }
+
+        buf.writeBoolean(advanced.fireResistant);
+        buf.writeBoolean(advanced.glint);
+        buf.writeBoolean(advanced.hideAdditionalTooltip);
+        buf.writeVarInt(advanced.maxStackSize);
     }
 
     private static ItemEditPayload read(RegistryFriendlyByteBuf buf) {
@@ -158,8 +232,57 @@ public record ItemEditPayload(EffectToolConfigPayload.Where where, int container
                     operation(buf.readUtf(MAX_WORD)), group(buf.readUtf(MAX_WORD))));
         }
 
+        AdvancedItemProperties advanced = readAdvanced(buf);
         return new ItemEditPayload(where, containerId, slot, name, lore, attributes, withLore,
-                withAttributes);
+                withAttributes, advanced);
+    }
+
+    private static AdvancedItemProperties readAdvanced(RegistryFriendlyByteBuf buf) {
+        AdvancedItemProperties a = new AdvancedItemProperties();
+        a.consumable = buf.readBoolean();
+        if (a.consumable) {
+            a.nutrition = buf.readVarInt();
+            a.saturation = buf.readFloat();
+            a.canAlwaysEat = buf.readBoolean();
+            a.eatSeconds = buf.readFloat();
+            int effects = buf.readVarInt();
+            if (effects < 0 || effects > MAX_EFFECTS) {
+                throw new DecoderException("An item edit announced " + effects + " effects");
+            }
+            for (int i = 0; i < effects; i++) {
+                a.effects.add(new AdvancedItemProperties.Effect(
+                        buf.readUtf(MAX_ID), buf.readVarInt(), buf.readVarInt(),
+                        buf.readBoolean(), buf.readBoolean(), buf.readBoolean()));
+            }
+        }
+
+        a.durability = buf.readBoolean();
+        if (a.durability) {
+            a.maxDamage = buf.readVarInt();
+            a.currentDurability = buf.readVarInt();
+            a.unbreakable = buf.readBoolean();
+        }
+
+        a.dyed = buf.readBoolean();
+        if (a.dyed) a.dyedColor = buf.readInt();
+
+        a.enchantments = buf.readBoolean();
+        if (a.enchantments) {
+            int count = buf.readVarInt();
+            if (count < 0 || count > MAX_ENCHANTMENTS) {
+                throw new DecoderException("An item edit announced " + count + " enchantments");
+            }
+            for (int i = 0; i < count; i++) {
+                a.enchantmentLevels.add(new AdvancedItemProperties.EnchantmentLevel(
+                        buf.readUtf(MAX_ID), buf.readVarInt()));
+            }
+        }
+
+        a.fireResistant = buf.readBoolean();
+        a.glint = buf.readBoolean();
+        a.hideAdditionalTooltip = buf.readBoolean();
+        a.maxStackSize = buf.readVarInt();
+        return a;
     }
 
     /**

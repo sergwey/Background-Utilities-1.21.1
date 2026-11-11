@@ -27,14 +27,16 @@ import java.util.List;
 /**
  * Where an item edit becomes an item.
  *
- * <p>The server's side of the editor, and the whole of it: a name, a lore and a list of attributes,
- * written onto the stack in the slot the client named. <b>It is deliberately usable with no screen at
- * all</b> — the screen is the next thing built and this is what it will be built on, because a feature
- * that cannot be exercised without its own GUI can only be tested by looking at it.
+ * <p>The server's side of the editor: a name, a lore, a list of attributes, and the advanced
+ * properties drafted on the editor's second screen, written onto the stack in the slot the client
+ * named. <b>It is deliberately usable with no screen at all</b> — the screen is the next thing built
+ * and this is what it will be built on, because a feature that cannot be exercised without its own
+ * GUI can only be tested by looking at it.
  *
- * <p>Three components, because that is what these three things are on 1.21:
- * {@code minecraft:custom_name}, {@code minecraft:lore} and {@code minecraft:attribute_modifiers}. An
- * edit that leaves one of them empty <b>removes it</b> rather than writing an empty one: an item with
+ * <p>The original three sections are the components the editor started with:
+ * {@code minecraft:custom_name}, {@code minecraft:lore} and {@code minecraft:attribute_modifiers}. The
+ * advanced draft then sets or removes the components its Properties groups own. An edit that leaves
+ * one of the original three empty <b>removes it</b> rather than writing an empty one: an item with
  * no custom name is not an item whose name is nothing, and the two are drawn differently.
  */
 @EventBusSubscriber(modid = BackUtils.MOD_ID)
@@ -85,6 +87,14 @@ public final class ItemEditorNetwork {
             return;
         }
 
+        // The client checks the same bounds before sending, but the client is not trusted: a message
+        // can arrive from anything that can speak this channel.
+        String problem = ItemEditPayload.problem(payload);
+        if (problem != null) {
+            player.displayClientMessage(Component.literal(problem), false);
+            return;
+        }
+
         apply(slot.getItem(), payload);
         slot.setChanged();
         player.displayClientMessage(Component.translatable("backutils.item_editor.applied"), true);
@@ -94,6 +104,7 @@ public final class ItemEditorNetwork {
     public static void apply(ItemStack stack, ItemEditPayload payload) {
         apply(stack, payload.name(), payload.withLore(), payload.lore(), payload.withAttributes(),
                 payload.attributes());
+        payload.advanced().apply(stack);
     }
 
     /**
