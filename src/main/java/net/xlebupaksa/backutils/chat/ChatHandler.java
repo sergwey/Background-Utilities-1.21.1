@@ -85,6 +85,18 @@ public class ChatHandler {
                     ? BackUtilsConfig.getAdminSeparator()
                     : BackUtilsConfig.separatorFor(this == GLOBAL);
         }
+
+        /**
+         * {@return the name in front of a line in this channel}
+         *
+         * <p>The admin channel names the real account, not the roleplay profile: an operator needs to
+         * know which account is speaking, and a display name can be changed or shared. The other two
+         * channels keep the profile's displayed name.
+         */
+        private String prefix(ProfileSnapshot snapshot, String playerName) {
+            String displayed = ProfileText.resolve(snapshot.displayedName(), playerName);
+            return chatName(this == ADMIN, displayed, playerName);
+        }
     }
 
     /** What a raw chat message turns into. */
@@ -333,7 +345,7 @@ public class ChatHandler {
         String playerName = player.getName().getString();
 
         Component component = composeMessage(
-                ProfileText.resolve(snapshot.displayedName(), playerName),
+                channel.prefix(snapshot, playerName),
                 channel.separator(),
                 snapshot.chatFormat(),
                 playerName,
@@ -394,6 +406,17 @@ public class ChatHandler {
      */
     static boolean hearsAdmin(boolean isStaff) {
         return isStaff;
+    }
+
+    /**
+     * {@return the name in front of a line}, the real account name in the admin channel and the
+     * profile's displayed name everywhere else.
+     *
+     * <p>A fact rather than a whole snapshot, so the rule can be stated without a server or a
+     * profile, and so the admin channel cannot silently drift back to the display name.
+     */
+    static String chatName(boolean admin, String displayedName, String playerName) {
+        return admin ? playerName : displayedName;
     }
 
     /**
