@@ -202,6 +202,12 @@ public final class BackUtilsSettings {
                     BackUtilsConfig.HIDE_PLAYER_NAME_TAGS, BackUtilsConfig::hidesPlayerNameTags,
                     BackUtilsConfig::setHidePlayerNameTags),
 
+            // First in the group: it is the one setting an operator comes here to change after
+            // running /hroll, and the formats below it are long enough to push it off the screen.
+            number("hiddenRollDelay", "Hidden roll timer", Group.ROLLS,
+                    BackUtilsConfig.HIDDEN_ROLL_DELAY,
+                    () -> (double) BackUtilsConfig.getHiddenRollDelay(),
+                    value -> BackUtilsConfig.setHiddenRollDelay((int) Math.round(value))),
             number("rollMax", "Default maximum", Group.ROLLS,
                     BackUtilsConfig.ROLL_MAX, () -> (double) BackUtilsConfig.getRollMax(),
                     value -> BackUtilsConfig.setRollMax((int) Math.round(value))),
@@ -221,10 +227,6 @@ public final class BackUtilsSettings {
                     BackUtilsConfig.ROLL_FORMAT_ANONYMOUS_NO_REASON,
                     BackUtilsConfig::getRollFormatAnonymousNoReason,
                     BackUtilsConfig::setRollFormatAnonymousNoReason, MarkupUtil::balance),
-            number("hiddenRollDelay", "Hidden roll delay", Group.ROLLS,
-                    BackUtilsConfig.HIDDEN_ROLL_DELAY,
-                    () -> (double) BackUtilsConfig.getHiddenRollDelay(),
-                    value -> BackUtilsConfig.setHiddenRollDelay((int) Math.round(value))),
             text("rollMinFormat", "Lowest roll line", Group.ROLLS,
                     BackUtilsConfig.ROLL_FORMAT_MIN, BackUtilsConfig::getRollMinFormat,
                     BackUtilsConfig::setRollMinFormat, MarkupUtil::balance),

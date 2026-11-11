@@ -105,7 +105,7 @@
   "backutils.config.setting.rollFormatNoReason": "Бросок без причины",
   "backutils.config.setting.rollFormatAnonymous": "Бросок без имени",
   "backutils.config.setting.rollFormatAnonymousNoReason": "Бросок без имени и причины",
-  "backutils.config.setting.hiddenRollDelay": "Задержка скрытого броска",
+  "backutils.config.setting.hiddenRollDelay": "Таймер скрытого броска",
   "backutils.config.setting.rollMinFormat": "Минимальный бросок",
   "backutils.config.setting.rollMaxFormat": "Максимальный бросок",
   "backutils.config.setting.rollSound": "Звук броска",
