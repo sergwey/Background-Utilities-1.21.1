@@ -63,7 +63,31 @@ public final class HiddenEnchantments {
         collectNames(stack.get(DataComponents.ENCHANTMENTS), names, components);
         collectNames(stack.get(DataComponents.STORED_ENCHANTMENTS), names, components);
         if (names.isEmpty()) return;
-        lines.removeIf(line -> components.contains(line) || names.contains(line.getString()));
+        prune(lines, names, components);
+    }
+
+    /**
+     * Removes the matching lines and the blank separator that surrounded them.
+     *
+     * <p>The tooltip carries blank lines between sections. Removing only the enchantment lines leaves
+     * the separator behind, which is the one-line gap between the name and the next section that a
+     * hidden enchantment used to occupy.
+     */
+    static void prune(List<Component> lines, Set<String> names, Set<Component> components) {
+        for (int i = lines.size() - 1; i >= 0; i--) {
+            Component line = lines.get(i);
+            if (!components.contains(line) && !names.contains(line.getString())) continue;
+
+            lines.remove(i);
+            // The line that followed the removed one has shifted into this index. Remove at most one
+            // blank on each side, so a deliberately empty lore line further away is untouched.
+            if (i < lines.size() && isBlank(lines.get(i))) lines.remove(i);
+            if (i > 0 && isBlank(lines.get(i - 1))) lines.remove(i - 1);
+        }
+    }
+
+    private static boolean isBlank(Component line) {
+        return line.getString().isBlank();
     }
 
     private static void collectNames(ItemEnchantments enchantments, Set<String> names,
