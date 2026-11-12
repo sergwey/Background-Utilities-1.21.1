@@ -244,15 +244,19 @@ public class ItemAdvancedScreen extends Screen {
 
         group.addConfigurator(integer("backutils.item_editor.label.nutrition",
                 0, Integer.MAX_VALUE, () -> properties.nutrition,
-                value -> properties.nutrition = value));
+                value -> properties.nutrition = value)
+                .setTips(Component.translatable("backutils.item_editor.tooltip.nutrition")));
         group.addConfigurator(number("backutils.item_editor.label.saturation",
                 0.0f, Float.MAX_VALUE, () -> properties.saturation,
-                value -> properties.saturation = value));
+                value -> properties.saturation = value)
+                .setTips(Component.translatable("backutils.item_editor.tooltip.saturation")));
         group.addConfigurator(bool("backutils.item_editor.label.can_always_eat",
-                () -> properties.canAlwaysEat, value -> properties.canAlwaysEat = value));
+                () -> properties.canAlwaysEat, value -> properties.canAlwaysEat = value)
+                .setTips(Component.translatable("backutils.item_editor.tooltip.can_always_eat")));
         group.addConfigurator(number("backutils.item_editor.label.consume_seconds",
                 0.05f, 60.0f, () -> properties.eatSeconds,
-                value -> properties.eatSeconds = value));
+                value -> properties.eatSeconds = value)
+                .setTips(Component.translatable("backutils.item_editor.tooltip.consume_seconds")));
 
         ArrayConfiguratorGroup<AdvancedItemProperties.Effect> effects =
                 new ArrayConfiguratorGroup<>(
@@ -260,6 +264,7 @@ public class ItemAdvancedScreen extends Screen {
                         () -> properties.effects,
                         this::effectConfigurator,
                         true);
+        effects.setTips(Component.translatable("backutils.item_editor.tooltip.effects"));
         effects.setAddDefault(this::newEffect);
         effects.setCanRemove(true);
         effects.setCanReorder(false);
@@ -278,12 +283,15 @@ public class ItemAdvancedScreen extends Screen {
                 });
         group.addConfigurator(integer("backutils.item_editor.label.current_durability",
                 0, 1_000_000, () -> properties.currentDurability,
-                value -> properties.currentDurability = value));
+                value -> properties.currentDurability = value)
+                .setTips(Component.translatable("backutils.item_editor.tooltip.current_durability")));
         group.addConfigurator(integer("backutils.item_editor.label.max_durability",
                 1, 1_000_000, () -> properties.maxDamage,
-                value -> properties.maxDamage = value));
+                value -> properties.maxDamage = value)
+                .setTips(Component.translatable("backutils.item_editor.tooltip.max_durability")));
         group.addConfigurator(bool("backutils.item_editor.label.unbreakable",
-                () -> properties.unbreakable, value -> properties.unbreakable = value));
+                () -> properties.unbreakable, value -> properties.unbreakable = value)
+                .setTips(Component.translatable("backutils.item_editor.tooltip.unbreakable")));
     }
 
     private void buildDyed(ConfiguratorGroup root) {
@@ -299,6 +307,7 @@ public class ItemAdvancedScreen extends Screen {
         // The item stores no alpha, so do not offer a control that can only be overwritten on the
         // next tick. The selector still keeps its RGB channels; its alpha stays at the opaque value.
         color.colorSelector.alphaSlider.setDisplay(false);
+        color.setTips(Component.translatable("backutils.item_editor.tooltip.dyed_color"));
         group.addConfigurator(color);
     }
 
@@ -308,10 +317,12 @@ public class ItemAdvancedScreen extends Screen {
 
         ArrayConfiguratorGroup<AdvancedItemProperties.EnchantmentLevel> enchantments =
                 new ArrayConfiguratorGroup<>(
-                        Text.of("backutils.item_editor.label.list"), true,
+                        Text.of("backutils.item_editor.label.enchantment_list"), true,
                         () -> properties.enchantmentLevels,
                         this::enchantmentConfigurator,
                         true);
+        enchantments.setTips(Component.translatable(
+                "backutils.item_editor.tooltip.enchantment_list"));
         enchantments.setAddDefault(this::newEnchantment);
         enchantments.setCanRemove(true);
         enchantments.setCanReorder(false);
@@ -326,17 +337,21 @@ public class ItemAdvancedScreen extends Screen {
         ConfiguratorGroup group = section(root, "backutils.item_editor.group.misc",
                 () -> properties.misc, value -> properties.misc = value);
         group.addConfigurator(bool("backutils.item_editor.label.fire_resistant",
-                () -> properties.fireResistant, value -> properties.fireResistant = value));
+                () -> properties.fireResistant, value -> properties.fireResistant = value)
+                .setTips(Component.translatable("backutils.item_editor.tooltip.fire_resistant")));
         group.addConfigurator(bool("backutils.item_editor.label.glint",
-                () -> properties.glint, value -> properties.glint = value));
+                () -> properties.glint, value -> properties.glint = value)
+                .setTips(Component.translatable("backutils.item_editor.tooltip.glint")));
         group.addConfigurator(bool("backutils.item_editor.label.hide_enchants",
-                () -> properties.hideEnchants, value -> properties.hideEnchants = value));
+                () -> properties.hideEnchants, value -> properties.hideEnchants = value)
+                .setTips(Component.translatable("backutils.item_editor.tooltip.hide_enchants")));
         group.addConfigurator(bool("backutils.item_editor.label.cannot_be_placed",
                 () -> properties.cannotBePlaced, value -> properties.cannotBePlaced = value)
                 .setTips(Component.translatable("backutils.item_editor.tooltip.cannot_be_placed")));
         group.addConfigurator(integer("backutils.item_editor.label.max_stack_size",
                 1, 99, () -> properties.maxStackSize,
-                value -> properties.maxStackSize = value));
+                value -> properties.maxStackSize = value)
+                .setTips(Component.translatable("backutils.item_editor.tooltip.max_stack_size")));
     }
 
     private void buildAttributes(ConfiguratorGroup root) {
@@ -349,6 +364,7 @@ public class ItemAdvancedScreen extends Screen {
         attributes.setAddDefault(this::newAttribute);
         attributes.setCanRemove(true);
         attributes.setCanReorder(false);
+        attributes.setTips(Component.translatable("backutils.item_editor.tooltip.attributes"));
         attributes.setOnUpdate(list -> {
             parent.attributeDraft().clear();
             parent.attributeDraft().addAll(list);
@@ -429,14 +445,17 @@ public class ItemAdvancedScreen extends Screen {
                 () -> getter.get().id(),
                 id -> setter.accept(withId(getter.get(), id)),
                 firstEffectId(), false, effectIds(), Function.identity());
+        effectSelector.setTips(Component.translatable("backutils.item_editor.tooltip.effect"));
         group.addConfigurator(effectSelector);
         group.addConfigurator(number("backutils.item_editor.label.duration",
                 0.05f, 60.0f,
                 () -> getter.get().durationTicks() / 20.0f,
-                value -> setter.accept(withDuration(getter.get(), value))));
+                value -> setter.accept(withDuration(getter.get(), value)))
+                .setTips(Component.translatable("backutils.item_editor.tooltip.duration")));
         group.addConfigurator(integer("backutils.item_editor.label.level",
                 1, 256, () -> getter.get().amplifier() + 1,
-                value -> setter.accept(withAmplifier(getter.get(), value - 1))));
+                value -> setter.accept(withAmplifier(getter.get(), value - 1)))
+                .setTips(Component.translatable("backutils.item_editor.tooltip.level")));
         group.addConfigurator(bool("backutils.item_editor.label.ambient",
                 () -> getter.get().ambient(),
                 value -> setter.accept(withAmbient(getter.get(), value)))
@@ -466,11 +485,14 @@ public class ItemAdvancedScreen extends Screen {
                 id -> setter.accept(new AdvancedItemProperties.EnchantmentLevel(
                         id, getter.get().level())),
                 firstEnchantmentId(), false, enchantmentIds(), Function.identity());
+        enchantmentSelector.setTips(Component.translatable(
+                "backutils.item_editor.tooltip.enchantment"));
         group.addConfigurator(enchantmentSelector);
         group.addConfigurator(integer("backutils.item_editor.label.level",
                 1, 255, () -> getter.get().level(),
                 value -> setter.accept(new AdvancedItemProperties.EnchantmentLevel(
-                        getter.get().id(), value))));
+                        getter.get().id(), value)))
+                .setTips(Component.translatable("backutils.item_editor.tooltip.level")));
         return group;
     }
 
@@ -486,23 +508,27 @@ public class ItemAdvancedScreen extends Screen {
                 Text.of("backutils.item_editor.label.attribute"),
                 () -> getter.get().attribute().toString(),
                 id -> setter.accept(withAttribute(getter.get(), id)),
-                firstAttributeId(), false, attributeIds(), Function.identity()));
+                firstAttributeId(), false, attributeIds(), Function.identity())
+                .setTips(Component.translatable("backutils.item_editor.tooltip.attribute")));
         group.addConfigurator(number("backutils.item_editor.label.amount",
                 -1_000_000.0f, 1_000_000.0f,
                 () -> (float) getter.get().amount(),
-                value -> setter.accept(withAmount(getter.get(), value))));
+                value -> setter.accept(withAmount(getter.get(), value)))
+                .setTips(Component.translatable("backutils.item_editor.tooltip.amount")));
         group.addConfigurator(new SelectorConfigurator<>(
                 Text.of("backutils.item_editor.label.operation"),
                 () -> getter.get().operation().name(),
                 name -> setter.accept(withOperation(getter.get(), name)),
                 AttributeModifier.Operation.ADD_VALUE.name(), false,
-                operationIds(), Function.identity()));
+                operationIds(), Function.identity())
+                .setTips(Component.translatable("backutils.item_editor.tooltip.operation")));
         group.addConfigurator(new SelectorConfigurator<>(
                 Text.of("backutils.item_editor.label.slot"),
                 () -> getter.get().slot().name(),
                 name -> setter.accept(withSlot(getter.get(), name)),
                 EquipmentSlotGroup.ANY.name(), false,
-                slotIds(), Function.identity()));
+                slotIds(), Function.identity())
+                .setTips(Component.translatable("backutils.item_editor.tooltip.slot")));
         return group;
     }
 
