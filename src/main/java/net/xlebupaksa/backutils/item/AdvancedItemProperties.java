@@ -125,10 +125,14 @@ public final class AdvancedItemProperties {
         }
 
         out.fireResistant = stack.get(DataComponents.FIRE_RESISTANT) != null;
-        Boolean glint = stack.get(DataComponents.ENCHANTMENT_GLINT_OVERRIDE);
-        out.glint = Boolean.TRUE.equals(glint);
+        Boolean glintOverride = stack.get(DataComponents.ENCHANTMENT_GLINT_OVERRIDE);
+        // The checkbox is the item's glint, not whether a glint override exists. An enchanted item
+        // glints without an override, so it must open ticked and an untick must write "false"
+        // rather than merely removing the override — removing it turns the enchantment glint back
+        // on, which is the bug this distinction fixes.
+        out.glint = glintOverride == null ? hasEnchantments(stack) : glintOverride;
         out.hideEnchants = HiddenEnchantments.hidden(stack);
-        out.misc = out.fireResistant || out.glint || out.hideEnchants;
+        out.misc = out.fireResistant || glintOverride != null || out.hideEnchants;
 
         Integer stackSize = stack.get(DataComponents.MAX_STACK_SIZE);
         out.maxStackSize = stackSize != null ? stackSize : stack.getMaxStackSize();
@@ -241,6 +245,11 @@ public final class AdvancedItemProperties {
         }
         if (glint) {
             stack.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
+        } else if (hasEnchantments(stack)) {
+            // Removing the override on an enchanted item falls back to the default glint, so
+            // "off" has to be an explicit false. On an unenchanted item there is nothing to
+            // suppress and the component can go.
+            stack.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, false);
         } else {
             stack.remove(DataComponents.ENCHANTMENT_GLINT_OVERRIDE);
         }
@@ -256,6 +265,14 @@ public final class AdvancedItemProperties {
         if (misc || durability) {
             stack.set(DataComponents.MAX_STACK_SIZE, size);
         }
+    }
+
+    /** {@return true when either enchantment component on the stack has an entry} */
+    private static boolean hasEnchantments(ItemStack stack) {
+        ItemEnchantments normal = stack.get(DataComponents.ENCHANTMENTS);
+        if (normal != null && !normal.isEmpty()) return true;
+        ItemEnchantments stored = stack.get(DataComponents.STORED_ENCHANTMENTS);
+        return stored != null && !stored.isEmpty();
     }
 
     /** {@return why this draft cannot be written, or null when it can} */
