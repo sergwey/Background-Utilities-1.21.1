@@ -60,14 +60,15 @@ log, and a pair of tools for placing and removing visual effects.
   inventory. The delete tool takes away what is already placed — the effect under the crosshair, the
   effects on an entity, or everything hanging off its holder. Both fire a shot their holder hears and
   nobody else does. Both are found in the mod's own creative tab rather than given by a command.
-- **Item editor.** Operators rewrite an item's name, lore and attributes in one screen: the name and
-  the lore in the form the item will show them, with a live preview of its tooltip and its own icon,
-  short-named formatting buttons that wrap the selected text, and a colour picker beside them. The
-  markup is Ember's, so colours, gradients and animations stay animated on the item itself. An
-  **Advanced properties...** button opens the second screen: its Properties tab changes consumable
-  stats and effects, durability, dyed colour, enchantments and a few miscellaneous flags; Behaviour
-  is reserved for command chains. The advanced edits share the main screen's draft, so the one Apply
-  writes both.
+- **Item editor.** Operators rewrite an item's name and lore in one screen: the name and the lore in
+  the form the item will show them, with a live preview of its tooltip and its own icon, short-named
+  formatting buttons that wrap the selected text, and a colour picker beside them. The markup is
+  Ember's, so colours, gradients and animations stay animated on the item itself. An **Advanced
+  properties...** button opens the second screen: its Properties tab changes attributes, consumable
+  stats and effects, durability, dyed colour, enchantments and miscellaneous flags including a block
+  item that refuses to be placed; Behaviour is reserved for command chains. The advanced edits share
+  the main screen's draft, and the Apply at the top of the advanced screen is the same write as the
+  main screen's Apply, so either one writes the edit and the main one is not required first.
 - **Zone music.** `/playradius` and `/playbox` play a sound to the players inside a region, and
   `/stopzone` ends one.
 - **Menu music.** Opening the corner menu plays a track named in the server's config for the player

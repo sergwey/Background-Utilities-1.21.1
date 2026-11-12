@@ -331,6 +331,9 @@ public class ItemAdvancedScreen extends Screen {
                 () -> properties.glint, value -> properties.glint = value));
         group.addConfigurator(bool("backutils.item_editor.label.hide_enchants",
                 () -> properties.hideEnchants, value -> properties.hideEnchants = value));
+        group.addConfigurator(bool("backutils.item_editor.label.cannot_be_placed",
+                () -> properties.cannotBePlaced, value -> properties.cannotBePlaced = value)
+                .setTips(Component.translatable("backutils.item_editor.tooltip.cannot_be_placed")));
         group.addConfigurator(integer("backutils.item_editor.label.max_stack_size",
                 1, 99, () -> properties.maxStackSize,
                 value -> properties.maxStackSize = value));

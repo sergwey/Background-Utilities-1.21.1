@@ -74,6 +74,7 @@ public final class AdvancedItemProperties {
     public boolean fireResistant;
     public boolean glint;
     public boolean hideEnchants;
+    public boolean cannotBePlaced;
     public boolean misc;
     public int maxStackSize = 64;
 
@@ -132,7 +133,9 @@ public final class AdvancedItemProperties {
         // on, which is the bug this distinction fixes.
         out.glint = glintOverride == null ? hasEnchantments(stack) : glintOverride;
         out.hideEnchants = HiddenEnchantments.hidden(stack);
-        out.misc = out.fireResistant || glintOverride != null || out.hideEnchants;
+        out.cannotBePlaced = Unplaceable.is(stack);
+        out.misc = out.fireResistant || glintOverride != null || out.hideEnchants
+                || out.cannotBePlaced;
 
         Integer stackSize = stack.get(DataComponents.MAX_STACK_SIZE);
         out.maxStackSize = stackSize != null ? stackSize : stack.getMaxStackSize();
@@ -254,6 +257,7 @@ public final class AdvancedItemProperties {
             stack.remove(DataComponents.ENCHANTMENT_GLINT_OVERRIDE);
         }
         HiddenEnchantments.set(stack, hideEnchants);
+        Unplaceable.set(stack, cannotBePlaced);
         // The old editor wrote this vanilla flag for the same checkbox. It does not hide
         // enchantments, but it does hide the item's own additional details; the filter in
         // HiddenEnchantments replaces it, so a stack edited now must not keep both behaviours.

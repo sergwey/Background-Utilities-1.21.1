@@ -380,6 +380,8 @@
   "backutils.item_editor.label.fire_resistant": "Fire resistant",
   "backutils.item_editor.label.glint": "Enchantment glint",
   "backutils.item_editor.label.hide_enchants": "Hide enchantments",
+  "backutils.item_editor.label.cannot_be_placed": "Cannot be placed",
+  "backutils.item_editor.tooltip.cannot_be_placed": "Refuses to place this block item in survival, creative or adventure. Has no effect on items that are not blocks.",
   "backutils.item_editor.label.max_stack_size": "Max stack size",
   "backutils.item_editor.behaviour.placeholder": "Behaviour is not implemented yet.",
   "backutils.item_editor.label.name": "Name",
