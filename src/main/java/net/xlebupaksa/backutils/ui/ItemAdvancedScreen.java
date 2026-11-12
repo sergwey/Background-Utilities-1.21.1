@@ -328,18 +328,31 @@ public class ItemAdvancedScreen extends Screen {
         which.layout(l -> l.flex(1).height(LINE));
         which.setCandidates(effectIds());
         which.setValue(effect.id(), false);
-        which.setOnValueChanged(id -> setEffect(index, new AdvancedItemProperties.Effect(
-                id, effect.durationTicks(), effect.amplifier(), effect.ambient(),
-                effect.visible(), effect.showIcon())));
+        // Every handler reads the effect from the draft at the moment it runs. A handler that kept
+        // this row's first Effect would write its old id and flags back when a later field changed,
+        // which is how changing one flag could turn the row back into whatever it started as.
+        which.setOnValueChanged(id -> {
+            AdvancedItemProperties.Effect current = effectAt(index);
+            if (current != null) setEffect(index, new AdvancedItemProperties.Effect(
+                    id, current.durationTicks(), current.amplifier(), current.ambient(),
+                    current.visible(), current.showIcon()));
+        });
 
         TextField seconds = floatField(effect.durationTicks() / 20.0f, NUMBER_WIDTH,
-                value -> setEffect(index, new AdvancedItemProperties.Effect(
-                        effect.id(), Math.max(1, Math.round(value * 20.0f)),
-                        effect.amplifier(), effect.ambient(), effect.visible(), effect.showIcon())));
+                value -> {
+                    AdvancedItemProperties.Effect current = effectAt(index);
+                    if (current != null) setEffect(index, new AdvancedItemProperties.Effect(
+                            current.id(), Math.max(1, Math.round(value * 20.0f)),
+                            current.amplifier(), current.ambient(), current.visible(),
+                            current.showIcon()));
+                });
         TextField level = intField(effect.amplifier() + 1, 42,
-                value -> setEffect(index, new AdvancedItemProperties.Effect(
-                        effect.id(), effect.durationTicks(), Math.max(0, value - 1),
-                        effect.ambient(), effect.visible(), effect.showIcon())));
+                value -> {
+                    AdvancedItemProperties.Effect current = effectAt(index);
+                    if (current != null) setEffect(index, new AdvancedItemProperties.Effect(
+                            current.id(), current.durationTicks(), Math.max(0, value - 1),
+                            current.ambient(), current.visible(), current.showIcon()));
+                });
 
         Button remove = new Button();
         text(remove.text, "backutils.item_editor.button.remove", 9f);
@@ -356,29 +369,53 @@ public class ItemAdvancedScreen extends Screen {
                 caption("backutils.item_editor.label.level_short", 26), remove);
         block.addChild(row);
 
+        String ambientKey = "backutils.item_editor.label.ambient";
+        String particlesKey = "backutils.item_editor.label.particles";
+        String iconKey = "backutils.item_editor.label.icon";
+
+        Button ambient = check(ambientKey, effect.ambient(), () -> {});
+        ambient.setOnClick(e -> {
+            AdvancedItemProperties.Effect current = effectAt(index);
+            if (current == null) return;
+            boolean now = !current.ambient();
+            setEffect(index, new AdvancedItemProperties.Effect(current.id(),
+                    current.durationTicks(), current.amplifier(), now,
+                    current.visible(), current.showIcon()));
+            setCheck(ambient, ambientKey, now);
+        });
+
+        Button particles = check(particlesKey, effect.visible(), () -> {});
+        particles.setOnClick(e -> {
+            AdvancedItemProperties.Effect current = effectAt(index);
+            if (current == null) return;
+            boolean now = !current.visible();
+            setEffect(index, new AdvancedItemProperties.Effect(current.id(),
+                    current.durationTicks(), current.amplifier(), current.ambient(),
+                    now, current.showIcon()));
+            setCheck(particles, particlesKey, now);
+        });
+
+        Button icon = check(iconKey, effect.showIcon(), () -> {});
+        icon.setOnClick(e -> {
+            AdvancedItemProperties.Effect current = effectAt(index);
+            if (current == null) return;
+            boolean now = !current.showIcon();
+            setEffect(index, new AdvancedItemProperties.Effect(current.id(),
+                    current.durationTicks(), current.amplifier(), current.ambient(),
+                    current.visible(), now));
+            setCheck(icon, iconKey, now);
+        });
+
         UIElement flags = new UIElement();
         flags.layout(rowLayout());
-        flags.addChildren(
-                check("backutils.item_editor.label.ambient", effect.ambient(), () -> {
-                    setEffect(index, new AdvancedItemProperties.Effect(effect.id(),
-                            effect.durationTicks(), effect.amplifier(), !effect.ambient(),
-                            effect.visible(), effect.showIcon()));
-                    rebuild();
-                }),
-                check("backutils.item_editor.label.particles", effect.visible(), () -> {
-                    setEffect(index, new AdvancedItemProperties.Effect(effect.id(),
-                            effect.durationTicks(), effect.amplifier(), effect.ambient(),
-                            !effect.visible(), effect.showIcon()));
-                    rebuild();
-                }),
-                check("backutils.item_editor.label.icon", effect.showIcon(), () -> {
-                    setEffect(index, new AdvancedItemProperties.Effect(effect.id(),
-                            effect.durationTicks(), effect.amplifier(), effect.ambient(),
-                            effect.visible(), !effect.showIcon()));
-                    rebuild();
-                }));
+        flags.addChildren(ambient, particles, icon);
         block.addChild(flags);
         return block;
+    }
+
+    private AdvancedItemProperties.Effect effectAt(int index) {
+        return index >= 0 && index < properties.effects.size()
+                ? properties.effects.get(index) : null;
     }
 
     private void setEffect(int index, AdvancedItemProperties.Effect effect) {
@@ -533,8 +570,8 @@ public class ItemAdvancedScreen extends Screen {
             rebuild();
         }));
         body.addChild(check("backutils.item_editor.label.hide_enchants",
-                properties.hideAdditionalTooltip, () -> {
-                    properties.hideAdditionalTooltip = !properties.hideAdditionalTooltip;
+                properties.hideEnchants, () -> {
+                    properties.hideEnchants = !properties.hideEnchants;
                     rebuild();
                 }));
 
@@ -598,12 +635,17 @@ public class ItemAdvancedScreen extends Screen {
 
     private static Button check(String key, boolean on, Runnable action) {
         Button button = new Button();
-        button.setText(Component.literal((on ? "[x] " : "[ ] ") + Text.of(key)));
+        setCheck(button, key, on);
         button.textStyle(t -> t.fontSize(9f).textShadow(false)
                 .textColor(PLAIN).textAlignVertical(Vertical.CENTER));
         button.layout(l -> l.width(136).height(LINE));
         button.setOnClick(e -> action.run());
         return button;
+    }
+
+    /** Rewrites one checkmark without rebuilding the row its effect fields live in. */
+    private static void setCheck(Button button, String key, boolean on) {
+        button.setText(Component.literal((on ? "[x] " : "[ ] ") + Text.of(key)));
     }
 
     private static void text(TextElement element, String key, float size) {
