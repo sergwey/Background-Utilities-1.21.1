@@ -16,6 +16,8 @@ import com.lowdragmc.lowdraglib2.gui.ui.ModularUI;
 import com.lowdragmc.lowdraglib2.gui.ui.UI;
 import com.lowdragmc.lowdraglib2.gui.ui.UIElement;
 import com.lowdragmc.lowdraglib2.gui.ui.data.Horizontal;
+import com.lowdragmc.lowdraglib2.gui.ui.data.ScrollDisplay;
+import com.lowdragmc.lowdraglib2.gui.ui.data.ScrollerMode;
 import com.lowdragmc.lowdraglib2.gui.ui.data.Vertical;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.Button;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.Inspector;
@@ -75,6 +77,8 @@ public class ItemAdvancedScreen extends Screen {
     private TabView tabs;
     private Tab propertiesTab;
     private Tab behaviourTab;
+    private Inspector inspector;
+    private UIElement behaviourPanel;
     private ModularUI ui;
 
     private ItemAdvancedScreen(ItemEditorScreen parent, AdvancedItemProperties properties) {
@@ -124,10 +128,16 @@ public class ItemAdvancedScreen extends Screen {
         tabTop.layout(l -> l.widthPercent(100).height(28).flexShrink(0));
 
         Inspector inspector = new Inspector();
+        this.inspector = inspector;
         inspector.layout(l -> l.widthPercent(100).heightPercent(100));
+        inspector.scrollerView.scrollerStyle(s -> s.mode(ScrollerMode.VERTICAL)
+                .verticalScrollDisplay(ScrollDisplay.ALWAYS)
+                .horizontalScrollDisplay(ScrollDisplay.NEVER)
+                .adaptiveWidth(false).adaptiveHeight(false));
         inspector.inspect(IConfigurable.create(this::buildProperties));
 
         UIElement behaviour = new UIElement();
+        this.behaviourPanel = behaviour;
         behaviour.layout(l -> l.widthPercent(100).heightPercent(100).paddingAll(10)
                 .flexDirection(FlexDirection.COLUMN).alignItems(AlignItems.CENTER)
                 .justifyContent(AlignContent.CENTER));
@@ -173,6 +183,13 @@ public class ItemAdvancedScreen extends Screen {
         int tabsHeight = Math.max(40, this.height - PAD * 2 - 18 - 28 - 10 - 12);
         tabs.layout(l -> l.widthPercent(100).height(tabsHeight).minHeight(0));
         tabs.tabContentContainer(c -> c.layout(l -> l.minHeight(0)));
+        // The tab content container is sized by the TabView, but its children are not: a
+        // heightPercent inspector had no resolved parent height to take and grew to its rows
+        // instead, so the scroller never became taller than its content. Give it the content box
+        // explicitly, which is what gives the Inspector a viewport to scroll.
+        int contentHeight = Math.max(30, tabsHeight - 34);
+        inspector.layout(l -> l.widthPercent(100).height(contentHeight).minHeight(0));
+        behaviourPanel.layout(l -> l.widthPercent(100).height(contentHeight));
     }
 
     /**
