@@ -431,13 +431,16 @@ public class ItemAdvancedScreen extends Screen {
                 value -> setter.accept(withAmplifier(getter.get(), value - 1))));
         group.addConfigurator(bool("backutils.item_editor.label.ambient",
                 () -> getter.get().ambient(),
-                value -> setter.accept(withAmbient(getter.get(), value))));
+                value -> setter.accept(withAmbient(getter.get(), value)))
+                .setTips(Component.translatable("backutils.item_editor.tooltip.effect.ambient")));
         group.addConfigurator(bool("backutils.item_editor.label.particles",
                 () -> getter.get().visible(),
-                value -> setter.accept(withVisible(getter.get(), value))));
+                value -> setter.accept(withVisible(getter.get(), value)))
+                .setTips(Component.translatable("backutils.item_editor.tooltip.effect.particles")));
         group.addConfigurator(bool("backutils.item_editor.label.icon",
                 () -> getter.get().showIcon(),
-                value -> setter.accept(withIcon(getter.get(), value))));
+                value -> setter.accept(withIcon(getter.get(), value)))
+                .setTips(Component.translatable("backutils.item_editor.tooltip.effect.icon")));
         return group;
     }
 
