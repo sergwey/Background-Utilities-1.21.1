@@ -97,6 +97,12 @@ public final class ItemEditorNetwork {
 
         apply(slot.getItem(), payload);
         slot.setChanged();
+        // A hotbar item can be in both the menu the client has open and its inventory menu. Marking
+        // the slot changed alone waits for a later container sync, so a held item could visibly
+        // re-equip the next time an inventory was opened. Send both views now; the hand is drawn
+        // from the inventory menu even while another container is on screen.
+        player.containerMenu.broadcastChanges();
+        if (player.inventoryMenu != player.containerMenu) player.inventoryMenu.broadcastChanges();
         player.displayClientMessage(Component.translatable("backutils.item_editor.applied"), true);
     }
 
