@@ -291,9 +291,14 @@ public class ItemAdvancedScreen extends Screen {
                 () -> properties.dyed, value -> properties.dyed = value);
         ColorConfigurator color = new ColorConfigurator(
                 Text.of("backutils.item_editor.label.dyed_color"),
-                () -> properties.dyedColor,
+                // DyedItemColor is RGB only. The selector is ARGB, so give it an opaque alpha or its
+                // preview and popup start fully transparent and the chosen colour disappears.
+                () -> 0xFF000000 | (properties.dyedColor & 0xFFFFFF),
                 value -> properties.dyedColor = value & 0xFFFFFF,
-                0xFFFFFF, true);
+                0xFFFFFFFF, true);
+        // The item stores no alpha, so do not offer a control that can only be overwritten on the
+        // next tick. The selector still keeps its RGB channels; its alpha stays at the opaque value.
+        color.colorSelector.alphaSlider.setDisplay(false);
         group.addConfigurator(color);
     }
 
