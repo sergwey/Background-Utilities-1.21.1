@@ -73,7 +73,7 @@ public final class AdvancedItemProperties {
     /** Misc group. */
     public boolean fireResistant;
     public boolean glint;
-    public boolean hideAdditionalTooltip;
+    public boolean hideEnchants;
     public boolean misc;
     public int maxStackSize = 64;
 
@@ -127,8 +127,8 @@ public final class AdvancedItemProperties {
         out.fireResistant = stack.get(DataComponents.FIRE_RESISTANT) != null;
         Boolean glint = stack.get(DataComponents.ENCHANTMENT_GLINT_OVERRIDE);
         out.glint = Boolean.TRUE.equals(glint);
-        out.hideAdditionalTooltip = stack.get(DataComponents.HIDE_ADDITIONAL_TOOLTIP) != null;
-        out.misc = out.fireResistant || out.glint || out.hideAdditionalTooltip;
+        out.hideEnchants = HiddenEnchantments.hidden(stack);
+        out.misc = out.fireResistant || out.glint || out.hideEnchants;
 
         Integer stackSize = stack.get(DataComponents.MAX_STACK_SIZE);
         out.maxStackSize = stackSize != null ? stackSize : stack.getMaxStackSize();
@@ -244,11 +244,11 @@ public final class AdvancedItemProperties {
         } else {
             stack.remove(DataComponents.ENCHANTMENT_GLINT_OVERRIDE);
         }
-        if (hideAdditionalTooltip) {
-            stack.set(DataComponents.HIDE_ADDITIONAL_TOOLTIP, Unit.INSTANCE);
-        } else {
-            stack.remove(DataComponents.HIDE_ADDITIONAL_TOOLTIP);
-        }
+        HiddenEnchantments.set(stack, hideEnchants);
+        // The old editor wrote this vanilla flag for the same checkbox. It does not hide
+        // enchantments, but it does hide the item's own additional details; the filter in
+        // HiddenEnchantments replaces it, so a stack edited now must not keep both behaviours.
+        stack.remove(DataComponents.HIDE_ADDITIONAL_TOOLTIP);
 
         // A damageable item cannot stack. The screen sets the field to one when durability is
         // ticked, and this is the same rule on the way in rather than a second, softer one.

@@ -201,7 +201,7 @@ public record ItemEditPayload(EffectToolConfigPayload.Where where, int container
 
         buf.writeBoolean(advanced.fireResistant);
         buf.writeBoolean(advanced.glint);
-        buf.writeBoolean(advanced.hideAdditionalTooltip);
+        buf.writeBoolean(advanced.hideEnchants);
         buf.writeBoolean(advanced.misc);
         buf.writeVarInt(advanced.maxStackSize);
     }
@@ -281,7 +281,7 @@ public record ItemEditPayload(EffectToolConfigPayload.Where where, int container
 
         a.fireResistant = buf.readBoolean();
         a.glint = buf.readBoolean();
-        a.hideAdditionalTooltip = buf.readBoolean();
+        a.hideEnchants = buf.readBoolean();
         a.misc = buf.readBoolean();
         a.maxStackSize = buf.readVarInt();
         return a;

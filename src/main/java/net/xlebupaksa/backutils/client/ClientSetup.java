@@ -4,6 +4,7 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.common.NeoForge;
 import net.xlebupaksa.backutils.clientchest.ChestCommand;
 import net.xlebupaksa.backutils.clientchest.ChestCreativeButton;
+import net.xlebupaksa.backutils.item.HiddenEnchantments;
 import net.xlebupaksa.backutils.ui.AdminCornerHandler;
 import net.xlebupaksa.backutils.ui.ChatScreenOverlayHandler;
 
@@ -37,6 +38,9 @@ public final class ClientSetup {
         NeoForge.EVENT_BUS.register(FrozenClient.class);
         // Space over an item in an inventory, which opens the item editor on it.
         NeoForge.EVENT_BUS.register(ItemEditorGesture.class);
+        // The item editor's "Hide enchants" marker is a tooltip filter, not a component: the
+        // vanilla hide flag does not cover the enchantment lines 1.21.1 adds after it.
+        NeoForge.EVENT_BUS.addListener(HiddenEnchantments::onTooltip);
         // The client chest: a library of items that follows the player between servers, the command
         // that opens it, and the button that opens it from the creative inventory.
         NeoForge.EVENT_BUS.register(ChestCommand.class);
