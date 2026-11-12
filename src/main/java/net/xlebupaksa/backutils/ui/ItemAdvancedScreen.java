@@ -29,18 +29,21 @@ import com.lowdragmc.lowdraglib2.gui.ui.event.UIEvent;
 import dev.vfyjxf.taffy.style.AlignContent;
 import dev.vfyjxf.taffy.style.AlignItems;
 import dev.vfyjxf.taffy.style.FlexDirection;
-import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.EquipmentSlotGroup;
+import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 import net.xlebupaksa.backutils.item.AdvancedItemProperties;
+import net.xlebupaksa.backutils.item.ItemEdit;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -51,8 +54,9 @@ import java.util.function.Supplier;
  * The item editor's Advanced screen: Properties, with Behaviour kept as the second tab to come.
  *
  * <p>The screen edits the draft held by the main editor rather than the item. Back returns to that
- * editor with the draft in place, and the main Apply is the one press that writes the item, so a
- * name or a lore line that has not been applied yet is not thrown away by coming here.
+ * editor with the draft in place, and the Apply at the top writes the same edit a main Apply would,
+ * without having to go back first; the main Apply is still the one that remains on screen. A name or
+ * a lore line that has not been applied yet is therefore not thrown away by coming here.
  *
  * <p>The property rows are LDLib2 configurators inside an {@link Inspector}, and the tabs are the
  * library's {@link TabView}. That is the same machinery Photon's inspector uses: a group heading
@@ -114,18 +118,22 @@ public class ItemAdvancedScreen extends Screen {
                 .textAlignHorizontal(Horizontal.CENTER).textAlignVertical(Vertical.CENTER));
         title.layout(l -> l.flex(1).height(18));
 
-        UIElement titleSpacer = new UIElement();
-        titleSpacer.layout(l -> l.width(82).height(LINE));
+        Button apply = new Button();
+        text(apply.text, "backutils.item_editor.button.apply", 9f);
+        apply.layout(l -> l.width(82).height(LINE));
+        apply.setOnClick(e -> {
+            if (parent != null) parent.applyFromAdvanced();
+        });
 
         UIElement titleRow = new UIElement();
         titleRow.layout(l -> l.widthPercent(100).height(18).flexShrink(0)
-                .flexDirection(FlexDirection.ROW).alignItems(AlignItems.CENTER).gapAll(6));
-        titleRow.addChildren(back, title, titleSpacer);
+                .flexDirection(FlexDirection.ROW).alignItems(AlignItems.CENTER).gapAll(4));
+        titleRow.addChildren(back, title, apply);
 
-        // TabView draws its tab strip above its own content box, not inside that box. The spacer
-        // gives that strip a place of its own so it cannot sit on top of the Back/title row.
+        // TabView draws its tab strip above its own content box, not inside that box. A fixed,
+        // small strip keeps it from claiming a tall blank band above the properties.
         UIElement tabTop = new UIElement();
-        tabTop.layout(l -> l.widthPercent(100).height(28).flexShrink(0));
+        tabTop.layout(l -> l.widthPercent(100).height(2).flexShrink(0));
 
         Inspector inspector = new Inspector();
         this.inspector = inspector;
@@ -149,6 +157,8 @@ public class ItemAdvancedScreen extends Screen {
         behaviour.addChild(behaviourLabel);
 
         tabs = new TabView();
+        tabs.tabHeaderContainer.layout(l -> l.height(16).paddingAll(0));
+        tabs.tabScroller.layout(l -> l.height(16).marginBottom(0));
         tabs.layout(l -> l.widthPercent(100).flex(1).minHeight(0));
         propertiesTab = new Tab().setText(Text.of("backutils.item_editor.tab.properties"), false);
         behaviourTab = new Tab().setText(Text.of("backutils.item_editor.tab.behaviour"), false);
@@ -179,15 +189,15 @@ public class ItemAdvancedScreen extends Screen {
         root.layout(l -> l.width(this.width).height(this.height)
                 .flexDirection(FlexDirection.COLUMN));
         panel.layout(l -> l.width(this.width).height(this.height).paddingAll(PAD)
-                .flexDirection(FlexDirection.COLUMN).gapAll(4));
-        int tabsHeight = Math.max(40, this.height - PAD * 2 - 18 - 28 - 10 - 12);
+                .flexDirection(FlexDirection.COLUMN).gapAll(2));
+        int tabsHeight = Math.max(40, this.height - PAD * 2 - 18 - 2 - 10 - 6);
         tabs.layout(l -> l.widthPercent(100).height(tabsHeight).minHeight(0));
-        tabs.tabContentContainer(c -> c.layout(l -> l.minHeight(0)));
+        tabs.tabContentContainer(c -> c.layout(l -> l.paddingAll(2).minHeight(0)));
         // The tab content container is sized by the TabView, but its children are not: a
         // heightPercent inspector had no resolved parent height to take and grew to its rows
         // instead, so the scroller never became taller than its content. Give it the content box
         // explicitly, which is what gives the Inspector a viewport to scroll.
-        int contentHeight = Math.max(30, tabsHeight - 34);
+        int contentHeight = Math.max(30, tabsHeight - 20);
         inspector.layout(l -> l.widthPercent(100).height(contentHeight).minHeight(0));
         behaviourPanel.layout(l -> l.widthPercent(100).height(contentHeight));
     }
@@ -225,6 +235,7 @@ public class ItemAdvancedScreen extends Screen {
         buildDyed(root);
         buildEnchantments(root);
         buildMisc(root);
+        buildAttributes(root);
     }
 
     private void buildConsumable(ConfiguratorGroup root) {
@@ -283,7 +294,8 @@ public class ItemAdvancedScreen extends Screen {
                 () -> properties.dyedColor,
                 value -> properties.dyedColor = value & 0xFFFFFF,
                 0xFFFFFF, true);
-        group.addConfigurator(color);    }
+        group.addConfigurator(color);
+    }
 
     private void buildEnchantments(ConfiguratorGroup root) {
         ConfiguratorGroup group = section(root, "backutils.item_editor.group.enchantments",
@@ -317,6 +329,24 @@ public class ItemAdvancedScreen extends Screen {
         group.addConfigurator(integer("backutils.item_editor.label.max_stack_size",
                 1, 99, () -> properties.maxStackSize,
                 value -> properties.maxStackSize = value));
+    }
+
+    private void buildAttributes(ConfiguratorGroup root) {
+        if (parent == null) return;
+        ArrayConfiguratorGroup<ItemEdit.Granted> attributes = new ArrayConfiguratorGroup<>(
+                Text.of("backutils.item_editor.label.attributes"), true,
+                () -> parent.attributeDraft(),
+                this::attributeConfigurator,
+                true);
+        attributes.setAddDefault(this::newAttribute);
+        attributes.setCanRemove(true);
+        attributes.setCanReorder(false);
+        attributes.setOnUpdate(list -> {
+            parent.attributeDraft().clear();
+            parent.attributeDraft().addAll(list);
+            parent.attributeDraftChanged();
+        });
+        root.addConfigurator(attributes);
     }
 
     // ------------------------------------------------------------------
@@ -433,6 +463,38 @@ public class ItemAdvancedScreen extends Screen {
         return group;
     }
 
+    private Configurator attributeConfigurator(Supplier<ItemEdit.Granted> getter,
+            Consumer<ItemEdit.Granted> setter) {
+        ConfiguratorGroup group = new ConfiguratorGroup("", false);
+        group.hideTitle();
+        group.configuratorContainer(container -> container
+                .layout(l -> l.paddingAll(0).marginLeft(0).gapAll(1))
+                .style(s -> s.backgroundTexture(IGuiTexture.EMPTY)));
+
+        group.addConfigurator(new SelectorConfigurator<>(
+                Text.of("backutils.item_editor.label.attribute"),
+                () -> getter.get().attribute().toString(),
+                id -> setter.accept(withAttribute(getter.get(), id)),
+                firstAttributeId(), false, attributeIds(), Function.identity()));
+        group.addConfigurator(number("backutils.item_editor.label.amount",
+                -1_000_000.0f, 1_000_000.0f,
+                () -> (float) getter.get().amount(),
+                value -> setter.accept(withAmount(getter.get(), value))));
+        group.addConfigurator(new SelectorConfigurator<>(
+                Text.of("backutils.item_editor.label.operation"),
+                () -> getter.get().operation().name(),
+                name -> setter.accept(withOperation(getter.get(), name)),
+                AttributeModifier.Operation.ADD_VALUE.name(), false,
+                operationIds(), Function.identity()));
+        group.addConfigurator(new SelectorConfigurator<>(
+                Text.of("backutils.item_editor.label.slot"),
+                () -> getter.get().slot().name(),
+                name -> setter.accept(withSlot(getter.get(), name)),
+                EquipmentSlotGroup.ANY.name(), false,
+                slotIds(), Function.identity()));
+        return group;
+    }
+
     private static BooleanConfigurator bool(String key, Supplier<Boolean> getter,
             Consumer<Boolean> setter) {
         BooleanConfigurator configurator =
@@ -485,6 +547,77 @@ public class ItemAdvancedScreen extends Screen {
         String next = enchantmentIds().stream().filter(id -> !used.contains(id)).findFirst()
                 .orElse(firstEnchantmentId());
         return new AdvancedItemProperties.EnchantmentLevel(next, 1);
+    }
+
+    private ItemEdit.Granted newAttribute() {
+        List<String> used = new ArrayList<>();
+        if (parent != null) {
+            for (ItemEdit.Granted granted : parent.attributeDraft()) {
+                used.add(granted.attribute().toString());
+            }
+        }
+        String next = attributeIds().stream().filter(id -> !used.contains(id)).findFirst()
+                .orElse(firstAttributeId());
+        return new ItemEdit.Granted(ResourceLocation.parse(next), 1.0D,
+                AttributeModifier.Operation.ADD_VALUE, EquipmentSlotGroup.ANY);
+    }
+
+    private static ItemEdit.Granted withAttribute(ItemEdit.Granted granted, String id) {
+        ResourceLocation attribute = ResourceLocation.tryParse(id == null ? "" : id);
+        return attribute == null ? granted
+                : new ItemEdit.Granted(attribute, granted.amount(), granted.operation(),
+                        granted.slot());
+    }
+
+    private static ItemEdit.Granted withAmount(ItemEdit.Granted granted, float amount) {
+        return new ItemEdit.Granted(granted.attribute(), amount, granted.operation(),
+                granted.slot());
+    }
+
+    private static ItemEdit.Granted withOperation(ItemEdit.Granted granted, String name) {
+        return new ItemEdit.Granted(granted.attribute(), granted.amount(),
+                operation(name), granted.slot());
+    }
+
+    private static ItemEdit.Granted withSlot(ItemEdit.Granted granted, String name) {
+        return new ItemEdit.Granted(granted.attribute(), granted.amount(), granted.operation(),
+                slot(name));
+    }
+
+    private static AttributeModifier.Operation operation(String name) {
+        try {
+            return AttributeModifier.Operation.valueOf(name);
+        } catch (IllegalArgumentException unknown) {
+            return AttributeModifier.Operation.ADD_VALUE;
+        }
+    }
+
+    private static EquipmentSlotGroup slot(String name) {
+        try {
+            return EquipmentSlotGroup.valueOf(name);
+        } catch (IllegalArgumentException unknown) {
+            return EquipmentSlotGroup.ANY;
+        }
+    }
+
+    private static String firstAttributeId() {
+        List<String> ids = attributeIds();
+        return ids.isEmpty() ? "minecraft:generic.attack_damage" : ids.getFirst();
+    }
+
+    private static List<String> attributeIds() {
+        return BuiltInRegistries.ATTRIBUTE.keySet().stream()
+                .map(ResourceLocation::toString)
+                .sorted()
+                .toList();
+    }
+
+    private static List<String> operationIds() {
+        return Arrays.stream(AttributeModifier.Operation.values()).map(Enum::name).toList();
+    }
+
+    private static List<String> slotIds() {
+        return Arrays.stream(EquipmentSlotGroup.values()).map(Enum::name).toList();
     }
 
     private static AdvancedItemProperties.Effect withId(

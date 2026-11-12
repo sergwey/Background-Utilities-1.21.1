@@ -13,7 +13,6 @@ import com.lowdragmc.lowdraglib2.gui.ui.elements.Button;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.ColorSelector;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.Label;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.ScrollerView;
-import com.lowdragmc.lowdraglib2.gui.ui.elements.Selector;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.TextArea;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.TextElement;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.TextField;
@@ -35,8 +34,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
 import java.util.Optional;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.entity.EquipmentSlotGroup;
-import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.ItemAttributeModifiers;
@@ -55,7 +52,6 @@ import net.xlebupaksa.backutils.network.ItemEditorNetwork;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
@@ -80,8 +76,8 @@ import java.util.function.Supplier;
  * that is what this editor writes: the default style says white and not italic, so what the preview shows
  * and what the item shows is what the operator typed and not what the game would have done with it.
  *
- * <p><b>The panel is two columns.</b> Everything that is read stands on the left — the fields, the preview
- * and the attributes — and the picker stands in a column of its own at the panel's right edge, with the row
+ * <p><b>The panel is two columns.</b> Everything that is read stands on the left — the fields and the
+ * preview — and the picker stands in a column of its own at the panel's right edge, with the row
  * of formatting buttons ending against its left edge and the preview beginning on the row under them, where
  * the picker is still being drawn beside it. That column is reserved for the whole of the preview's height
  * and not only for the picker: the preview's width has to be the same on the row beside the picker and on
@@ -93,7 +89,7 @@ import java.util.function.Supplier;
  * its row, the button that closes the editor at its left end where the title used to be, and the button that
  * writes the item at its right end where the way out used to be — Apply having moved up from the foot of a
  * panel that scrolls, so that the one button that saves the work is not something an operator with a long
- * attribute list has to scroll to find. The two buttons do exactly what they did before they changed places:
+ * advanced-properties list has to scroll to find. The two buttons do exactly what they did before they changed places:
  * this one writes and stays open, that one closes and writes nothing — with one thing asked first, because
  * markup the library will draw as its characters is worth a word before it is written: see {@link #commit}.
  *
@@ -194,7 +190,7 @@ public final class ItemEditorScreen extends Screen {
      * rather than by a widget: the height has to be the same number in both places, or the text is clipped by
      * one of them and overflows the other. It is only what the layout starts with — the first frame to draw it
      * measures the wrapped text and asks for the room that takes, so that a tooltip of two lines does not leave
-     * the attribute list at the foot of the screen with a screenful of nothing above it. The name's box is the
+     * the rows below it with a screenful of nothing above them. The name's box is the
      * icon's, and needs no constant of its own.
      */
     private static final int LORE_PREVIEW_HEIGHT = 126;
@@ -297,7 +293,6 @@ public final class ItemEditorScreen extends Screen {
 
     /** The library's colour picker, the same component the profile editor puts on screen. */
     private final ColorSelector picker = new ColorSelector();
-    private final UIElement attributeRows = new UIElement();
 
     /** The space the name is drawn in, and the space the lore is drawn in underneath it. */
     private final UIElement namePreview = new UIElement();
@@ -605,27 +600,6 @@ public final class ItemEditorScreen extends Screen {
         namePreview.setAllowHitTest(false);
         lorePreview.setAllowHitTest(false);
 
-        attributeRows.layout(l -> l.widthPercent(100)
-                .flexDirection(FlexDirection.COLUMN).gapAll(2));
-
-        Button addAttribute = new Button();
-        text(addAttribute.text, "backutils.item_editor.button.add_attribute", 9f);
-        addAttribute.layout(l -> l.width(90).height(LINE_HEIGHT));
-        addAttribute.setOnClick(e -> {
-            addAttribute();
-            fill();
-        });
-
-        // The header of the list names what the item grants and adds a row to it, and holds nothing else now
-        // that the button that writes the item has gone up to the top of the panel. The spacer keeps the two
-        // of them at the left, where the captions of the rows above stand.
-        UIElement spacer = new UIElement();
-        spacer.layout(l -> l.flex(1));
-
-        UIElement attributeHeader = new UIElement();
-        attributeHeader.layout(row());
-        attributeHeader.addChildren(caption("backutils.item_editor.label.attributes"), addAttribute, spacer);
-
         // The symbol button stands at the right, just under the lore field: it fills whichever field has the
         // caret, and the lore is where most of the text that wants a symbol is typed.
         UIElement symbolSpacer = new UIElement();
@@ -669,14 +643,13 @@ public final class ItemEditorScreen extends Screen {
         advancedButton.layout(l -> l.widthPercent(100).height(LINE_HEIGHT));
         advancedButton.setOnClick(e -> ItemAdvancedScreen.open(this, advanced));
 
-        left.addChildren(styles, namePreview, lorePreview, attributeHeader, attributeRows,
-                advancedButton);
+        left.addChildren(styles, namePreview, lorePreview, advancedButton);
 
         columns.addChildren(left, pickerColumn());
 
         // Everything is inside a scroller, so the panel scrolls rather than cutting off whatever does not
-        // fit: the attribute list grows with the item, and a screen that can show three of them is a screen
-        // that cannot edit the fourth.
+        // fit: the advanced properties grow with the item, and a screen that can show three of them is a
+        // screen that cannot edit the fourth.
         ScrollerView scroller = new ScrollerView();
         scroller.layout(l -> l.widthPercent(100).flex(1).minHeight(0));
         scroller.viewPort.style(style -> style.backgroundTexture(IGuiTexture.EMPTY));
@@ -1113,166 +1086,27 @@ public final class ItemEditorScreen extends Screen {
         return List.copyOf(attributes);
     }
 
-    // ------------------------------------------------------------------
-    // The attributes
-    // ------------------------------------------------------------------
-
-    /** {@return every attribute this game has}, by the id the game knows it by, in a stable order */
-    private static List<String> attributeIds() {
-        return BuiltInRegistries.ATTRIBUTE.keySet().stream()
-                .map(ResourceLocation::toString)
-                .sorted()
-                .toList();
-    }
-
     /**
-     * Adds one attribute to the list.
+     * The mutable attribute draft, shared with the advanced screen.
      *
-     * <p>The first one this item does not already grant, so that adding a row twice does not make a row
-     * that does nothing: {@link ItemEdit#putAttribute} replaces an attribute rather than repeating it,
-     * and a new row naming one the item has would be a row that silently rewrote it.
+     * <p>The attribute rows moved to Advanced with the rest of the item's extra properties, but the
+     * list itself still belongs to this screen: it is what {@link #send()} serialises and what the
+     * main Apply writes. The advanced screen changes this list through {@link #attributeDraft()} and
+     * then calls {@link #attributeDraftChanged()}.
      */
-    private void addAttribute() {
-        List<String> used = new ArrayList<>();
-        for (ItemEdit.Granted granted : attributes) used.add(granted.attribute().toString());
+    List<ItemEdit.Granted> attributeDraft() {
+        return attributes;
+    }
 
-        String next = null;
-        for (String id : attributeIds()) {
-            if (!used.contains(id)) {
-                next = id;
-                break;
-            }
-        }
-        if (next == null) next = attributeIds().isEmpty() ? "" : attributeIds().get(0);
-        if (next.isEmpty()) return;
-
-        ItemEdit.Granted granted = new ItemEdit.Granted(ResourceLocation.parse(next), 1.0D,
-                AttributeModifier.Operation.ADD_VALUE, EquipmentSlotGroup.ANY);
-        List<ItemEdit.Granted> added = ItemEdit.putAttribute(attributes, granted);
-        attributes.clear();
-        attributes.addAll(added);
-        refreshAttributes();
+    /** Records one step after the advanced screen has changed the attribute draft. */
+    void attributeDraftChanged() {
         record();
     }
 
-    /** Rebuilds the attribute rows from the list, which is the only state the section keeps. */
-    private void refreshAttributes() {
-        // A row's widgets go with the rebuild, and one of them may be the field the keyboard is in: an
-        // undo of a typed amount takes the row away from under its own caret. The focus is let go of
-        // first, because the UI would otherwise keep sending keys to a field that is no longer in the
-        // tree, which is a field that does nothing with them and says nothing about why.
-        if (attributeRows.isAncestorOf(ui.getFocusedElement())) ui.clearFocus();
-        attributeRows.clearAllChildren();
-        for (int i = 0; i < attributes.size(); i++) {
-            attributeRows.addChild(attributeRow(i));
-        }
+    /** The advanced screen's Apply, which is the main Apply without having to go back first. */
+    void applyFromAdvanced() {
+        commit();
     }
-
-    /** {@return one attribute: which one, how much, how it applies, and where it applies} */
-    private UIElement attributeRow(int index) {
-        ItemEdit.Granted granted = attributes.get(index);
-
-        Selector<String> which = new Selector<>();
-        which.layout(l -> l.flex(1).height(LINE_HEIGHT));
-        which.setCandidates(attributeIds());
-        which.setValue(granted.attribute().toString(), false);
-        which.setOnValueChanged(id -> setAttribute(index, id, granted.amount(),
-                granted.operation(), granted.slot()));
-
-        TextField amount = new TextField();
-        amount.setText(whole(granted.amount()), false);
-        amount.layout(l -> l.width(AMOUNT_WIDTH).height(LINE_HEIGHT));
-        amount.setTextResponder(value -> setAttribute(index, granted.attribute().toString(),
-                number(value, granted.amount()), granted.operation(), granted.slot()));
-
-        Selector<String> operation = new Selector<>();
-        operation.layout(l -> l.width(OPTION_WIDTH).height(LINE_HEIGHT));
-        operation.setCandidates(Arrays.stream(AttributeModifier.Operation.values())
-                .map(Enum::name).toList());
-        operation.setValue(granted.operation().name(), false);
-        operation.setOnValueChanged(chosen -> setAttribute(index, granted.attribute().toString(),
-                granted.amount(), operation(chosen), granted.slot()));
-
-        Selector<String> slot = new Selector<>();
-        slot.layout(l -> l.width(OPTION_WIDTH).height(LINE_HEIGHT));
-        slot.setCandidates(Arrays.stream(EquipmentSlotGroup.values()).map(Enum::name).toList());
-        slot.setValue(granted.slot().name(), false);
-        slot.setOnValueChanged(chosen -> setAttribute(index, granted.attribute().toString(),
-                granted.amount(), granted.operation(), slot(chosen)));
-
-        UIElement row = new UIElement();
-        row.layout(l -> l.widthPercent(100).height(LINE_HEIGHT)
-                .flexDirection(FlexDirection.ROW)
-                .alignItems(AlignItems.CENTER)
-                .gapAll(2));
-        row.addChildren(which, amount, operation, slot, symbol("x", () -> removeAttribute(index)));
-        return row;
-    }
-
-    /** Puts one changed attribute back into the list, in the place the row it came from stands. */
-    private void setAttribute(int index, String attribute, double amount,
-                              AttributeModifier.Operation operation, EquipmentSlotGroup slot) {
-        if (index < 0 || index >= attributes.size()) return;
-        ResourceLocation id = ResourceLocation.tryParse(attribute == null ? "" : attribute);
-        if (id == null) return;
-        attributes.set(index, new ItemEdit.Granted(id, amount, operation, slot));
-        // Every way a row can be changed arrives here — the name chosen, the amount typed, the operation
-        // and the slot — so this is the one place a step of the attribute list is kept.
-        record();
-    }
-
-    private void removeAttribute(int index) {
-        if (index < 0 || index >= attributes.size()) return;
-        attributes.remove(index);
-        refreshAttributes();
-        fill();
-        record();
-    }
-
-    /**
-     * {@return a number as the box should show it}, without a trailing zero on a whole number
-     *
-     * <p>A modifier's amount arrives as a {@code double} that began as a {@code float}, because that is what
-     * an item's own attributes are written with: a diamond sword's attack speed is {@code -2.4f}, and the
-     * double that is made of it prints in full as {@code -2.4000000953674316} — a number that overruns the
-     * box and tells an operator nothing. Written as the float it was, it reads {@code -2.4} again. An amount
-     * that is not a float's value keeps every digit it has rather than being rounded to one it never was.
-     */
-    private static String whole(double amount) {
-        if (amount == Math.rint(amount)) return String.valueOf((long) amount);
-        float asFloat = (float) amount;
-        // A float promoted back to a double has exactly the value the float had, so this compares the amount
-        // with itself written the shorter way, and nothing is lost when it does not match.
-        return Double.compare(asFloat, amount) == 0 ? String.valueOf(asFloat) : String.valueOf(amount);
-    }
-
-    /** {@return what a box holds as a number}, or the value it had when it does not read as one */
-    private static double number(String text, double was) {
-        try {
-            return Double.parseDouble(text == null ? "" : text.trim());
-        } catch (NumberFormatException notANumber) {
-            return was;
-        }
-    }
-
-    /** {@return the operation a name stands for}, read as adding a value when it means nothing */
-    private static AttributeModifier.Operation operation(String name) {
-        try {
-            return AttributeModifier.Operation.valueOf(name);
-        } catch (IllegalArgumentException unknown) {
-            return AttributeModifier.Operation.ADD_VALUE;
-        }
-    }
-
-    /** {@return the slot group a name stands for}, read the same way and for the same reason */
-    private static EquipmentSlotGroup slot(String name) {
-        try {
-            return EquipmentSlotGroup.valueOf(name);
-        } catch (IllegalArgumentException unknown) {
-            return EquipmentSlotGroup.ANY;
-        }
-    }
-
     // ------------------------------------------------------------------
     // The panel
     // ------------------------------------------------------------------
@@ -1326,7 +1160,6 @@ public final class ItemEditorScreen extends Screen {
                     attributes.clear();
                     if (presetAttributes != null) attributes.addAll(presetAttributes);
                     advanced = presetAdvanced == null ? new AdvancedItemProperties() : presetAdvanced;
-                    refreshAttributes();
                 });
                 presetLoaded = true;
                 history.clear();
@@ -1366,7 +1199,6 @@ public final class ItemEditorScreen extends Screen {
                             entry.modifier().operation(), entry.slot()));
                 }
             }
-            refreshAttributes();
         });
 
         history.clear();
@@ -1599,7 +1431,6 @@ public final class ItemEditorScreen extends Screen {
             picker.setColor(state.colour(), false);
             attributes.clear();
             attributes.addAll(state.attributes());
-            refreshAttributes();
             mark = state.mark();
             marked = state.marked();
             // The rows the preview draws are keyed on the text they were wrapped from, which has just
