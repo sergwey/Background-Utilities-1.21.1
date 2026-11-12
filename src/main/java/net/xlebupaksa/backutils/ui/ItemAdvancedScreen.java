@@ -9,6 +9,7 @@ import com.lowdragmc.lowdraglib2.configurator.ui.Configurator;
 import com.lowdragmc.lowdraglib2.configurator.ui.ConfiguratorGroup;
 import com.lowdragmc.lowdraglib2.configurator.ui.NumberConfigurator;
 import com.lowdragmc.lowdraglib2.configurator.ui.SelectorConfigurator;
+import com.lowdragmc.lowdraglib2.configurator.ui.StringConfigurator;
 import com.lowdragmc.lowdraglib2.gui.texture.ColorRectTexture;
 import com.lowdragmc.lowdraglib2.gui.texture.IGuiTexture;
 import com.lowdragmc.lowdraglib2.gui.texture.Icons;
@@ -40,6 +41,7 @@ import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 import net.xlebupaksa.backutils.item.AdvancedItemProperties;
+import net.xlebupaksa.backutils.item.ItemBehaviour;
 import net.xlebupaksa.backutils.item.ItemEdit;
 
 import java.util.ArrayList;
@@ -51,7 +53,7 @@ import java.util.function.IntConsumer;
 import java.util.function.Supplier;
 
 /**
- * The item editor's Advanced screen: Properties, with Behaviour kept as the second tab to come.
+ * The item editor's Advanced screen: Properties, and Behaviour as an ordered command list per trigger.
  *
  * <p>The screen edits the draft held by the main editor rather than the item. Back returns to that
  * editor with the draft in place, and the Apply at the top writes the same edit a main Apply would,
@@ -82,7 +84,7 @@ public class ItemAdvancedScreen extends Screen {
     private Tab propertiesTab;
     private Tab behaviourTab;
     private Inspector inspector;
-    private UIElement behaviourPanel;
+    private Inspector behaviourInspector;
     private ModularUI ui;
 
     private ItemAdvancedScreen(ItemEditorScreen parent, AdvancedItemProperties properties) {
@@ -144,17 +146,14 @@ public class ItemAdvancedScreen extends Screen {
                 .adaptiveWidth(false).adaptiveHeight(false));
         inspector.inspect(IConfigurable.create(this::buildProperties));
 
-        UIElement behaviour = new UIElement();
-        this.behaviourPanel = behaviour;
-        behaviour.layout(l -> l.widthPercent(100).heightPercent(100).paddingAll(10)
-                .flexDirection(FlexDirection.COLUMN).alignItems(AlignItems.CENTER)
-                .justifyContent(AlignContent.CENTER));
-        Label behaviourLabel = new Label();
-        behaviourLabel.setText(Component.translatable("backutils.item_editor.behaviour.placeholder"));
-        behaviourLabel.textStyle(t -> t.fontSize(9f).textColor(MUTED).textShadow(false)
-                .textAlignHorizontal(Horizontal.CENTER));
-        behaviourLabel.layout(l -> l.widthPercent(100).height(20));
-        behaviour.addChild(behaviourLabel);
+        Inspector behaviour = new Inspector();
+        this.behaviourInspector = behaviour;
+        behaviour.layout(l -> l.widthPercent(100).heightPercent(100));
+        behaviour.scrollerView.scrollerStyle(s -> s.mode(ScrollerMode.VERTICAL)
+                .verticalScrollDisplay(ScrollDisplay.ALWAYS)
+                .horizontalScrollDisplay(ScrollDisplay.NEVER)
+                .adaptiveWidth(false).adaptiveHeight(false));
+        behaviour.inspect(IConfigurable.create(this::buildBehaviour));
 
         tabs = new TabView();
         tabs.tabHeaderContainer.layout(l -> l.height(16).paddingAll(0));
@@ -199,7 +198,7 @@ public class ItemAdvancedScreen extends Screen {
         // explicitly, which is what gives the Inspector a viewport to scroll.
         int contentHeight = Math.max(30, tabsHeight - 20);
         inspector.layout(l -> l.widthPercent(100).height(contentHeight).minHeight(0));
-        behaviourPanel.layout(l -> l.widthPercent(100).height(contentHeight));
+        behaviourInspector.layout(l -> l.widthPercent(100).height(contentHeight).minHeight(0));
     }
 
     /**
@@ -236,6 +235,59 @@ public class ItemAdvancedScreen extends Screen {
         buildEnchantments(root);
         buildMisc(root);
         buildAttributes(root);
+    }
+
+    private void buildBehaviour(ConfiguratorGroup root) {
+        addBehaviourTrigger(root, "backutils.item_editor.label.when_attacked",
+                properties.behaviour.attack, true,
+                "backutils.item_editor.tooltip.trigger.attack");
+        addBehaviourTrigger(root, "backutils.item_editor.label.when_used",
+                properties.behaviour.use, true,
+                "backutils.item_editor.tooltip.trigger.use");
+        addBehaviourTrigger(root, "backutils.item_editor.label.when_eaten",
+                properties.behaviour.eaten, false,
+                "backutils.item_editor.tooltip.trigger.eaten");
+    }
+
+    private void addBehaviourTrigger(ConfiguratorGroup root, String label,
+            ItemBehaviour.Trigger trigger, boolean cooldown, String tipKey) {
+        ToggleGroup group = new ToggleGroup(Text.of(label), !trigger.enabled, trigger.enabled,
+                value -> trigger.enabled = value);
+        group.setTips(Component.translatable(tipKey));
+
+        if (cooldown) {
+            group.addConfigurator(number("backutils.item_editor.label.cooldown_seconds",
+                    0.0f, ItemBehaviour.MAX_COOLDOWN_SECONDS,
+                    () -> trigger.cooldownSeconds,
+                    value -> trigger.cooldownSeconds = value)
+                    .setTips(Component.translatable(
+                            "backutils.item_editor.tooltip.trigger.cooldown")));
+        }
+
+        ArrayConfiguratorGroup<String> commands = new ArrayConfiguratorGroup<>(
+                Text.of("backutils.item_editor.label.commands"), true,
+                () -> trigger.commands,
+                this::commandConfigurator,
+                true);
+        commands.setAddDefault(() -> "");
+        commands.setCanRemove(true);
+        commands.setCanReorder(true);
+        commands.setTips(Component.translatable("backutils.item_editor.tooltip.commands"));
+        commands.setOnUpdate(list -> {
+            trigger.commands.clear();
+            trigger.commands.addAll(list);
+        });
+        group.addConfigurator(commands);
+        root.addConfigurator(group);
+    }
+
+    private Configurator commandConfigurator(Supplier<String> getter, Consumer<String> setter) {
+        StringConfigurator command =
+                new StringConfigurator("", getter, setter, "", true);
+        command.setTextValidator(value -> value == null
+                || value.length() <= ItemBehaviour.MAX_COMMAND_LENGTH);
+        command.textField.layout(l -> l.widthPercent(100).height(LINE));
+        return command;
     }
 
     private void buildConsumable(ConfiguratorGroup root) {
@@ -420,6 +472,9 @@ public class ItemAdvancedScreen extends Screen {
             for (UIElement element = event.target; element != null; element = element.getParent()) {
                 if (element == toggle) return;
             }
+            // Only the folder arrow collapses a group. Clicking the checkbox or the help icon must
+            // not also fold the group away under the pointer.
+            if (event.target != folderIcon) return;
             super.onLineContainerClick(event);
         }
     }

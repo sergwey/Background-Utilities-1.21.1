@@ -25,6 +25,7 @@ import net.xlebupaksa.backutils.commands.ProfileCommands;
 import net.xlebupaksa.backutils.commands.RollCommands;
 import net.xlebupaksa.backutils.data.BackUtilsData;
 import net.xlebupaksa.backutils.data.ModAttachments;
+import net.xlebupaksa.backutils.item.ItemBehaviourEvents;
 import net.xlebupaksa.backutils.item.Unplaceable;
 import net.xlebupaksa.backutils.log.LogCommands;
 import net.xlebupaksa.backutils.log.HiddenRollTicker;
@@ -65,6 +66,12 @@ public class BackUtils {
         NeoForge.EVENT_BUS.register(this);
         // A block item marked in Advanced refuses placement in every game mode.
         NeoForge.EVENT_BUS.addListener(Unplaceable::onPlace);
+        // Item behaviour commands run on the server as the player who used the item.
+        NeoForge.EVENT_BUS.addListener(ItemBehaviourEvents::onAttack);
+        NeoForge.EVENT_BUS.addListener(ItemBehaviourEvents::onUse);
+        NeoForge.EVENT_BUS.addListener(ItemBehaviourEvents::onUseStart);
+        NeoForge.EVENT_BUS.addListener(ItemBehaviourEvents::onPlace);
+        NeoForge.EVENT_BUS.addListener(ItemBehaviourEvents::onEaten);
         NeoForge.EVENT_BUS.register(new ChatHandler());
         // Private messages: a command rather than a line, so it is gated before it runs.
         NeoForge.EVENT_BUS.register(new PrivateMessageGate());

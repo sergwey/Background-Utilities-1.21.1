@@ -9,6 +9,7 @@ import net.minecraft.world.entity.EquipmentSlotGroup;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.xlebupaksa.backutils.BackUtils;
 import net.xlebupaksa.backutils.item.AdvancedItemProperties;
+import net.xlebupaksa.backutils.item.ItemBehaviour;
 import net.xlebupaksa.backutils.item.ItemEdit;
 
 import java.util.ArrayList;
@@ -205,6 +206,7 @@ public record ItemEditPayload(EffectToolConfigPayload.Where where, int container
         buf.writeBoolean(advanced.cannotBePlaced);
         buf.writeBoolean(advanced.misc);
         buf.writeVarInt(advanced.maxStackSize);
+        advanced.behaviour.write(buf);
     }
 
     private static ItemEditPayload read(RegistryFriendlyByteBuf buf) {
@@ -286,6 +288,7 @@ public record ItemEditPayload(EffectToolConfigPayload.Where where, int container
         a.cannotBePlaced = buf.readBoolean();
         a.misc = buf.readBoolean();
         a.maxStackSize = buf.readVarInt();
+        a.behaviour.copyFrom(ItemBehaviour.read(buf));
         return a;
     }
 

@@ -78,6 +78,9 @@ public final class AdvancedItemProperties {
     public boolean misc;
     public int maxStackSize = 64;
 
+    /** Behaviour tab: ordered commands run by the three item triggers. */
+    public final ItemBehaviour behaviour = new ItemBehaviour();
+
     /** {@return a draft read from the item, with a group ticked only when its component is there} */
     public static AdvancedItemProperties from(ItemStack stack) {
         AdvancedItemProperties out = new AdvancedItemProperties();
@@ -134,6 +137,7 @@ public final class AdvancedItemProperties {
         out.glint = glintOverride == null ? hasEnchantments(stack) : glintOverride;
         out.hideEnchants = HiddenEnchantments.hidden(stack);
         out.cannotBePlaced = Unplaceable.is(stack);
+        out.behaviour.copyFrom(ItemBehaviour.from(stack));
         out.misc = out.fireResistant || glintOverride != null || out.hideEnchants
                 || out.cannotBePlaced;
 
@@ -258,6 +262,7 @@ public final class AdvancedItemProperties {
         }
         HiddenEnchantments.set(stack, hideEnchants);
         Unplaceable.set(stack, cannotBePlaced);
+        behaviour.apply(stack);
         // The old editor wrote this vanilla flag for the same checkbox. It does not hide
         // enchantments, but it does hide the item's own additional details; the filter in
         // HiddenEnchantments replaces it, so a stack edited now must not keep both behaviours.
@@ -318,6 +323,8 @@ public final class AdvancedItemProperties {
                 }
             }
         }
+        String behaviourProblem = behaviour.problem();
+        if (behaviourProblem != null) return behaviourProblem;
         if (maxStackSize < 1 || maxStackSize > 99) {
             return "Maximum stack size must be between 1 and 99.";
         }
