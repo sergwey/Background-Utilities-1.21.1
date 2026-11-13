@@ -68,11 +68,11 @@ import java.util.Set;
  * cube is put around, which is why the colour is a parameter of the drawing rather than a constant
  * inside it.
  *
- * <p>Drawn inside the level's own frame, at the last stage after the level, so no later world pass can
- * paint over a marker that has to stay visible through geometry. It is the client of the player
- * holding the tool that draws it, in the first person view of that player alone: no part of this
- * reaches a server or another player, and the third person view is left alone because the tool is
- * aimed from an eye the holder has stepped away from there.
+ * <p>Drawn inside the level's own frame, at the stage after the translucent blocks, where the pose
+ * stack is the level's camera-relative one and the markers stay attached to the world. It is the
+ * client of the player holding the tool that draws it, in the first person view of that player
+ * alone: no part of this reaches a server or another player, and the third person view is left
+ * alone because the tool is aimed from an eye the holder has stepped away from there.
  *
  * <p>Where the effect goes is decided by {@link EffectToolPlacement}, which knows nothing of the
  * game; what the crosshair is on by {@link EffectToolAim}; and which effect the delete tool would
@@ -224,7 +224,7 @@ public final class EffectToolPreviewRenderer {
     @SubscribeEvent
     @SuppressWarnings("unused") // called by the event bus
     public static void onRenderLevelStage(RenderLevelStageEvent event) {
-        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_LEVEL) return;
+        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS) return;
 
         Minecraft minecraft = Minecraft.getInstance();
         Player player = minecraft.player;
