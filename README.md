@@ -69,7 +69,8 @@ log, and a pair of tools for placing and removing visual effects.
   item that refuses to be placed; Behaviour runs ordered commands on the server as the holder,
   with operator permission, when the item is used to attack, used or eaten, with a cooldown on the
   first two. The attack trigger can also run a second list as
-  the entity that was hit. The advanced edits share
+  the entity that was hit. Cooldowns belong to the stack rather than to the item type, and the
+  Enchantments group also sets the item's anvil level cost. The advanced edits share
   the main screen's draft, and the Apply at the top of the advanced screen is the same write as the
   main screen's Apply, so either one writes the edit and the main one is not required first.
 - **Zone music.** `/playradius` and `/playbox` play a sound to the players inside a region, and
@@ -177,6 +178,10 @@ vanilla command away from the people who have it.
 - `/roll`, `/hroll` — `[selector] [maximum] [reason]`, each part optional. `/hroll` withholds the
   whole line for the server's configured delay and then the players who witnessed it remember it
 - `/playradius`, `/playbox`, `/stopzone`, `/log <targets> <message>`
+- `/execute raycast entity|pos|block <distance> ignoreAll|hitAny|hitSolid [run <command>]` — turns
+  the executing entity's view into the command source: an entity, the exact hit point, or the centre
+  of the hit block. `ignoreAll` ignores blocks, `hitAny` stops at any non-air block, `hitSolid` only
+  at full blocks, and `-1` uses the 256-block maximum
 - `/clientchest [<page>|<name>]`, `/cc [<page>|<name>]` — the client chest, pages counted from one;
   `import` moves a library left behind by NBT Editor into this one
 

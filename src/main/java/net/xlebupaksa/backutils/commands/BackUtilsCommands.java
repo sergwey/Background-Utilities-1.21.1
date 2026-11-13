@@ -42,6 +42,7 @@ public class BackUtilsCommands {
     @SuppressWarnings("unused") // called by the event bus
     public void onRegisterCommands(RegisterCommandsEvent event) {
         CommandDispatcher<CommandSourceStack> d = event.getDispatcher();
+        RaycastCommand.register(d);
 
         // /freeze [player] and /unfreeze [player] - holding a player still, and letting them go. No
         // player named is the sender, which is how an operator checks what being held is like before
