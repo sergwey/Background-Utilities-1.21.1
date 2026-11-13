@@ -561,17 +561,15 @@ public final class EffectToolPreviewRenderer {
     private static void drawCube(PoseStack poses, MultiBufferSource.BufferSource buffers, Cube cube,
                                  Level level, Vec3 camera, Rgb colour, Quaternionf rotation) {
         boolean[] buried = new boolean[Face.ALL.size()];
-        boolean behindWall = false;
+        boolean behindWall = occludedFromCamera(level, camera, cube.centre());
         int buriedCount = 0;
         for (int i = 0; i < Face.ALL.size(); i++) {
-            // Per face. Forcing every face blue when the centre happened to be in a block made a
-            // cube that only rested on the surface look entirely buried, and hid the red hover on
-            // exactly the markers whose sides were still visible. A face is also blue when a block
-            // stands between it and the camera: the cube is drawn through walls, so this is how the
-            // drawing says which parts of it are behind one.
-            boolean occluded = occludedFromCamera(level, camera, cube.faceCentre(Face.ALL.get(i)));
-            buried[i] = occludes(level, cube.probe(Face.ALL.get(i))) || occluded;
-            behindWall |= occluded;
+            // A face is buried when the block just beyond it is opaque. A cube wholly behind a wall
+            // is blue on every face as well, but that is one decision for the whole cube: applying
+            // the camera test per face made a cube in the open blue just because one edge was near
+            // the ground.
+            buried[i] = occludes(level, cube.probe(Face.ALL.get(i)));
+            if (behindWall) buried[i] = true;
             if (buried[i]) buriedCount++;
         }
 
@@ -928,8 +926,11 @@ public final class EffectToolPreviewRenderer {
                     ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE,
                     CollisionContext.empty()));
             if (hit.getType() == HitResult.Type.MISS) return false;
-            if (level.getBlockState(hit.getBlockPos()).canOcclude()) return true;
+            // A surface hit exactly at the target is the target resting on the block, not a block
+            // standing in front of it. Treating that as concealed made every marker on the ground
+            // wholly blue.
             if (hit.getLocation().distanceToSqr(end) < 1.0E-6D) return false;
+            if (level.getBlockState(hit.getBlockPos()).canOcclude()) return true;
             start = hit.getLocation().add(end.subtract(start).normalize().scale(0.01D));
         }
         return false;
