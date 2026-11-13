@@ -66,8 +66,9 @@ log, and a pair of tools for placing and removing visual effects.
   Ember's, so colours, gradients and animations stay animated on the item itself. An **Advanced
   properties...** button opens the second screen: its Properties tab changes attributes, consumable
   stats and effects, durability, dyed colour, enchantments and miscellaneous flags including a block
-  item that refuses to be placed; Behaviour runs ordered commands when the item is used to attack,
-  used or eaten, with a cooldown on the first two. The attack trigger can also run a second list as
+  item that refuses to be placed; Behaviour runs ordered commands on the server as the holder,
+  with operator permission, when the item is used to attack, used or eaten, with a cooldown on the
+  first two. The attack trigger can also run a second list as
   the entity that was hit. The advanced edits share
   the main screen's draft, and the Apply at the top of the advanced screen is the same write as the
   main screen's Apply, so either one writes the edit and the main one is not required first.

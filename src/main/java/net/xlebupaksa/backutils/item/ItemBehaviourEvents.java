@@ -18,10 +18,11 @@ import java.util.UUID;
 /**
  * Runs an item's behaviour commands on the server.
  *
- * <p>All three triggers execute as the player who owns the action, not as the server console: the
- * command source is the player's own, so the commands can do exactly what that player could do and
- * no more. The item editor is an operator tool, but a command written into an item is not a way
- * around permissions.
+ * <p>All three triggers execute on the server as the player who owns the action, not as the server
+ * console: the command source is the player's own, so its entity, position and rotation are what
+ * the command sees. The source is lifted to operator permission because the commands were written
+ * by an operator in the item editor; this is what lets an ordinary player use an item that an
+ * operator configured without every command failing on its own permissions.
  *
  * <p>The attack and use triggers use the item cooldown, which is per player and per item type. That
  * is the same cooldown the client draws over the hotbar slot, so the operator sees why the trigger
@@ -37,6 +38,15 @@ public final class ItemBehaviourEvents {
      * treated as the same use.
      */
     private static final Map<UUID, Long> LAST_USE_TICK = new HashMap<>();
+
+    /**
+     * Behaviour commands are configured by an operator in the item editor, so they run with
+     * operator permission even when the player holding the item is not an operator. The source is
+     * still that player's own: their entity, position and rotation are what the command sees. This
+     * is what lets an item be handed to an ordinary player without every trigger failing on
+     * permission.
+     */
+    private static final int BEHAVIOUR_PERMISSION = 4;
 
     private ItemBehaviourEvents() {}
 
@@ -101,10 +111,12 @@ public final class ItemBehaviourEvents {
         MinecraftServer server = player.getServer();
         if (server == null) return;
         if (hasCommands) {
-            execute(server, player.createCommandSourceStack(), trigger.commands);
+            execute(server, player.createCommandSourceStack().withPermission(BEHAVIOUR_PERMISSION),
+                    trigger.commands);
         }
         if (hasTargetCommands && !target.isRemoved()) {
-            execute(server, target.createCommandSourceStack(), trigger.targetCommands);
+            execute(server, target.createCommandSourceStack().withPermission(BEHAVIOUR_PERMISSION),
+                    trigger.targetCommands);
         }
 
         if (useCooldown && trigger.cooldownSeconds > 0.0f) {
