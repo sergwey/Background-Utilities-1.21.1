@@ -17,7 +17,7 @@ import java.util.List;
  *
  * <p>The three triggers are kept apart because they have different meanings and only two of them
  * have a cooldown. The commands are a list rather than one string: order is part of the behaviour,
- * and a list is the thing both the editor and {@link #run} can preserve.
+ * and a list is the thing both the editor and the event executor can preserve.
  *
  * <p>The data lives in {@code minecraft:custom_data}, next to the other item editor markers, so it
  * travels with the stack, survives a save and does not need a component of its own. Like those

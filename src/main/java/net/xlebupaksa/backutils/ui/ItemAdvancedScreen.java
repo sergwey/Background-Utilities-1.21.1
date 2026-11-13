@@ -389,13 +389,23 @@ public class ItemAdvancedScreen extends Screen {
             properties.enchantmentLevels.clear();
             properties.enchantmentLevels.addAll(list);
             // Adding an enchantment is itself a request to write enchantments; leaving the group
-            // unticked would silently remove the line again on Apply.
-            if (!list.isEmpty()) properties.enchantments = true;
+            // unticked would silently remove the line again on Apply. Move the visible checkbox
+            // with the draft so the screen and the write agree.
+            if (!list.isEmpty()) {
+                properties.enchantments = true;
+                ((ToggleGroup) group).setOn(true);
+            }
         });
         group.addConfigurator(enchantments);
         group.addConfigurator(integer("backutils.item_editor.label.anvil_cost",
                 -1, 39, () -> properties.anvilCost,
-                value -> properties.anvilCost = value)
+                value -> {
+                    properties.anvilCost = value;
+                    if (value >= 0) {
+                        properties.enchantments = true;
+                        ((ToggleGroup) group).setOn(true);
+                    }
+                })
                 .setTips(Component.translatable(
                         "backutils.item_editor.tooltip.anvil_cost")));
     }
@@ -480,6 +490,11 @@ public class ItemAdvancedScreen extends Screen {
                 setCollapse(!value);
             });
             lineContainer.addChild(toggle);
+        }
+
+        /** Moves the checkbox without firing the user-change callback. */
+        void setOn(boolean on) {
+            toggle.setOn(on, false);
         }
 
         @Override
