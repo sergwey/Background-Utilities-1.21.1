@@ -11,9 +11,10 @@ import net.neoforged.neoforge.event.level.BlockEvent;
  * A block item that refuses to be placed.
  *
  * <p>The marker lives in {@code minecraft:custom_data}, like the hidden-enchantment marker, because
- * it has to survive a save and has to travel with the stack when it is copied. It is checked in
- * {@link BlockEvent.EntityPlaceEvent}, before the block is written, so it is the same refusal in
- * survival, creative and adventure, and no item is consumed.
+ * it has to survive a save and has to travel with the stack when it is copied. The refusal itself
+ * happens earlier, in {@code BlockItem.place}, so the client never predicts a block it will not be
+ * allowed to keep; the server-side {@link BlockEvent.EntityPlaceEvent} check remains as a fallback
+ * for a placement that reaches it by another route.
  *
  * <p>Both hands are checked rather than trying to work out which one the game used: the placement
  * event does not carry the stack, and refusing a marked stack in the other hand is safer than
