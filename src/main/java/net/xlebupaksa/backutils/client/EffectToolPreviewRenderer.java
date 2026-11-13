@@ -151,6 +151,21 @@ public final class EffectToolPreviewRenderer {
     private static final Rgb ACCURATE = new Rgb(0.85F, 0.55F, 0.95F);
 
     /**
+     * A depth state that really turns the depth test off.
+     *
+     * <p>{@link RenderStateShard#NO_DEPTH_TEST} is not that: it is the {@code "always"} shard with
+     * function 519, and its setup/clear methods deliberately do nothing for 519. It therefore leaves
+     * whatever depth test the previous pass left enabled, which is why the markers disappeared behind
+     * solid blocks. A shard with any other function calls {@link RenderSystem#disableDepthTest()} on
+     * setup and {@link RenderSystem#enableDepthTest()} on clear.
+     *
+     * <p>Declared before {@link #CUBE}: Java initialises static fields in textual order, and a null
+     * shard passed to {@code CompositeState} is the crash this ordering prevents.
+     */
+    private static final RenderStateShard.DepthTestStateShard THROUGH_WALLS =
+            new RenderStateShard.DepthTestStateShard("backutils_through_walls", 0);
+
+    /**
      * What the cube is drawn with: a flat colour with no texture, no light and no culling, blended,
      * drawn through the world and writing no depth.
      *
@@ -196,18 +211,6 @@ public final class EffectToolPreviewRenderer {
      */
     private static final RenderType OUTLINE = lines("backutils_effect_tool_outline",
             RenderStateShard.LEQUAL_DEPTH_TEST);
-
-    /**
-     * A depth state that really turns the depth test off.
-     *
-     * <p>{@link RenderStateShard#NO_DEPTH_TEST} is not that: it is the {@code "always"} shard with
-     * function 519, and its setup/clear methods deliberately do nothing for 519. It therefore leaves
-     * whatever depth test the previous pass left enabled, which is why the markers disappeared behind
-     * solid blocks. A shard with any other function calls {@link RenderSystem#disableDepthTest()} on
-     * setup and {@link RenderSystem#enableDepthTest()} on clear.
-     */
-    private static final RenderStateShard.DepthTestStateShard THROUGH_WALLS =
-            new RenderStateShard.DepthTestStateShard("backutils_through_walls", 0);
 
     /**
      * The same with the depth test off: the part of the outline that a block stands in front of,
