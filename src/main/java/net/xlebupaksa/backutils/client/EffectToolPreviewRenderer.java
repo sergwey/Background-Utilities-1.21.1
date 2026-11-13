@@ -151,23 +151,13 @@ public final class EffectToolPreviewRenderer {
     private static final Rgb ACCURATE = new Rgb(0.85F, 0.55F, 0.95F);
 
     /**
-     * A depth state that really turns the depth test off.
-     *
-     * <p>{@link RenderStateShard#NO_DEPTH_TEST} is not that: it is the {@code "always"} shard with
-     * function 519, and its setup/clear methods deliberately do nothing for 519. It therefore leaves
-     * whatever depth test the previous pass left enabled, which is why the markers disappeared behind
-     * solid blocks. A shard with any other function calls {@link RenderSystem#disableDepthTest()} on
-     * setup and {@link RenderSystem#enableDepthTest()} on clear.
-     *
-     * <p>Declared before {@link #CUBE}: Java initialises static fields in textual order, and a null
-     * shard passed to {@code CompositeState} is the crash this ordering prevents.
-     */
-    private static final RenderStateShard.DepthTestStateShard THROUGH_WALLS =
-            new RenderStateShard.DepthTestStateShard("backutils_through_walls", 0);
-
-    /**
      * What the cube is drawn with: a flat colour with no texture, no light and no culling, blended,
      * drawn through the world and writing no depth.
+     *
+     * <p>{@link RenderStateShard#NO_DEPTH_TEST} is not enough on its own: it is the {@code "always"}
+     * shard with function 519, whose setup/clear are no-ops, so it leaves the previous pass's depth
+     * test enabled. {@link #drawCube} and {@link #drawOutline} therefore call
+     * {@link RenderSystem#disableDepthTest()} around their own drawing.
      *
      * <p>Not writing depth is what lets the faces of one cube blend into a volume instead of hiding
      * one another; no culling means a face is drawn whichever side of it the player is standing on;
@@ -210,14 +200,14 @@ public final class EffectToolPreviewRenderer {
      * never drawn.
      */
     private static final RenderType OUTLINE = lines("backutils_effect_tool_outline",
-            RenderStateShard.LEQUAL_DEPTH_TEST);
+            RenderStateShard.NO_DEPTH_TEST);
 
     /**
      * The same with the depth test off: the part of the outline that a block stands in front of,
      * drawn through that block in blue, exactly as a buried face of the cube is.
      */
     private static final RenderType BURIED_OUTLINE = lines("backutils_effect_tool_outline_buried",
-            THROUGH_WALLS);
+            RenderStateShard.NO_DEPTH_TEST);
 
     private EffectToolPreviewRenderer() {}
 
@@ -567,6 +557,22 @@ public final class EffectToolPreviewRenderer {
     }
 
     /**
+     * Turns the depth test off for the tool drawing.
+     *
+     * <p>Explicit rather than left to a render type: {@code NO_DEPTH_TEST} is the no-op
+     * {@code "always"}/519 state, so it would inherit the world pass's enabled depth test.
+     */
+    private static void beginThroughWalls() {
+        RenderSystem.disableDepthTest();
+        RenderSystem.depthMask(false);
+    }
+
+    private static void endThroughWalls() {
+        RenderSystem.depthMask(true);
+        RenderSystem.enableDepthTest();
+    }
+
+    /**
      * Draws one cube, optionally turned about its own middle.
      *
      * <p>The turn is applied about the cube's centre rather than about its corner: a box bolted to a
@@ -575,6 +581,7 @@ public final class EffectToolPreviewRenderer {
      */
     private static void drawCube(PoseStack poses, MultiBufferSource.BufferSource buffers, Cube cube,
                                  Level level, Vec3 camera, Rgb colour, Quaternionf rotation) {
+        beginThroughWalls();
         boolean[] buried = new boolean[Face.ALL.size()];
         boolean behindWall = occludedFromCamera(level, camera, cube.centre());
         int buriedCount = 0;
@@ -628,6 +635,7 @@ public final class EffectToolPreviewRenderer {
         if (colour.equals(RED)) {
             drawOutline(poses, buffers, new EntityBox(cube.min(), cube.max()), level, camera, RED);
         }
+        endThroughWalls();
     }
 
     /**
@@ -721,6 +729,7 @@ public final class EffectToolPreviewRenderer {
      */
     private static void drawOutline(PoseStack poses, MultiBufferSource.BufferSource buffers,
                                     EntityBox box, Level level, Vec3 camera, Rgb colour) {
+        beginThroughWalls();
         boolean buried = occludes(level, box.centre())
                 || occludedFromCamera(level, camera, box.centre());
         for (int corner = 0; corner < EntityBox.CORNERS && !buried; corner++) {
@@ -738,6 +747,7 @@ public final class EffectToolPreviewRenderer {
         }
         drawEdges(poses, buffers, box, camera, colour, OUTLINE);
         RenderSystem.lineWidth(keep);
+        endThroughWalls();
     }
 
     /**
@@ -964,7 +974,7 @@ public final class EffectToolPreviewRenderer {
                 1536, false, false, RenderType.CompositeState.builder()
                         .setShaderState(RenderStateShard.POSITION_COLOR_SHADER)
                         .setTransparencyState(RenderStateShard.TRANSLUCENT_TRANSPARENCY)
-                        .setDepthTestState(THROUGH_WALLS)
+                        .setDepthTestState(RenderStateShard.NO_DEPTH_TEST)
                         .setCullState(RenderStateShard.NO_CULL)
                         .setLightmapState(RenderStateShard.NO_LIGHTMAP)
                         .setOverlayState(RenderStateShard.NO_OVERLAY)
