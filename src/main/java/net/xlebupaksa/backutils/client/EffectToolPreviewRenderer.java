@@ -198,11 +198,23 @@ public final class EffectToolPreviewRenderer {
             RenderStateShard.LEQUAL_DEPTH_TEST);
 
     /**
+     * A depth state that really turns the depth test off.
+     *
+     * <p>{@link RenderStateShard#NO_DEPTH_TEST} is not that: it is the {@code "always"} shard with
+     * function 519, and its setup/clear methods deliberately do nothing for 519. It therefore leaves
+     * whatever depth test the previous pass left enabled, which is why the markers disappeared behind
+     * solid blocks. A shard with any other function calls {@link RenderSystem#disableDepthTest()} on
+     * setup and {@link RenderSystem#enableDepthTest()} on clear.
+     */
+    private static final RenderStateShard.DepthTestStateShard THROUGH_WALLS =
+            new RenderStateShard.DepthTestStateShard("backutils_through_walls", 0);
+
+    /**
      * The same with the depth test off: the part of the outline that a block stands in front of,
      * drawn through that block in blue, exactly as a buried face of the cube is.
      */
     private static final RenderType BURIED_OUTLINE = lines("backutils_effect_tool_outline_buried",
-            RenderStateShard.NO_DEPTH_TEST);
+            THROUGH_WALLS);
 
     private EffectToolPreviewRenderer() {}
 
@@ -949,7 +961,7 @@ public final class EffectToolPreviewRenderer {
                 1536, false, false, RenderType.CompositeState.builder()
                         .setShaderState(RenderStateShard.POSITION_COLOR_SHADER)
                         .setTransparencyState(RenderStateShard.TRANSLUCENT_TRANSPARENCY)
-                        .setDepthTestState(RenderStateShard.NO_DEPTH_TEST)
+                        .setDepthTestState(THROUGH_WALLS)
                         .setCullState(RenderStateShard.NO_CULL)
                         .setLightmapState(RenderStateShard.NO_LIGHTMAP)
                         .setOverlayState(RenderStateShard.NO_OVERLAY)
