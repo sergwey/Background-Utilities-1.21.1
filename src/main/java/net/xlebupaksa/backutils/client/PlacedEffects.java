@@ -468,10 +468,11 @@ public final class PlacedEffects {
     public static List<Entry> places() {
         List<Entry> found = new ArrayList<>();
         for (Entry entry : ENTRIES.values()) {
-            // A culled effect is one the player is too far from to be drawn, so its cube is not drawn
-            // either: a box on an effect that is not there would be a place the delete tool offered and
-            // the server refused, and a cube nobody can see the effect under.
-            if (entry.placed() && !entry.culled()) found.add(entry);
+            // A culled effect has had its particles taken down because the player is outside its own
+            // render distance. Its delete marker still has to exist: the tool is what an operator
+            // uses to find and clean up an effect whose own drawing distance is short, and hiding the
+            // marker at exactly that moment is what made those effects unreachable.
+            if (entry.placed()) found.add(entry);
         }
         return found;
     }

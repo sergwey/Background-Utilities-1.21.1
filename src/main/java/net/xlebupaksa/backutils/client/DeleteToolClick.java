@@ -5,6 +5,7 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.Entity;
 import net.xlebupaksa.backutils.data.EffectPlacement;
 import net.xlebupaksa.backutils.item.DeleteToolItem;
 import net.xlebupaksa.backutils.item.EffectToolConfig;
@@ -173,6 +174,12 @@ public final class DeleteToolClick {
         if (block == null) return;
 
         EffectBlink.flashPlace(block.asLong());
+        EffectPlacement where = scene.hit().placement();
+        if (where.mode() == EffectToolConfig.Mode.ACCURATE) {
+            net.xlebupaksa.backutils.item.EffectToolPlacement.Point at = scene.hit()
+                    .anchor(EffectToolPreviewRenderer.drawnPartialTick());
+            EffectBlink.flashPlace(block.asLong(), at.x(), at.y(), at.z());
+        }
         // A block on a moving structure is named in that structure's own space, because that is what
         // its rows hold. The cube is drawn wherever the hull has carried it, so the world block under
         // the crosshair is not a place any row was written at: the row's own block and hull are.
@@ -181,7 +188,6 @@ public final class DeleteToolClick {
         // on three faces of one block are three places, and a click is about one of them. A block
         // placement has no face of its own and still empties the whole block, which is what its cube
         // has always said it would.
-        EffectPlacement where = scene.hit().placement();
         boolean side = where.mode() == EffectToolConfig.Mode.BLOCK_SIDE;
         EffectToolNetwork.sendDeletion(where.onSubLevel()
                 ? EffectDeletePayload.atBlock(where.blockX(), where.blockY(), where.blockZ(),
@@ -203,6 +209,15 @@ public final class DeleteToolClick {
         if (attached.isEmpty()) return false;
 
         EffectBlink.flashEntity(scene.entityId());
+        // The entity outline is the target marker; the small cube is the deletion feedback at the
+        // entity's own centre. Without this the fallback cube was drawn at the block under it.
+        Entity entity = scene.entity();
+        if (entity != null) {
+            double x = entity.getX();
+            double y = entity.getY() + entity.getBbHeight() / 2.0D;
+            double z = entity.getZ();
+            EffectBlink.flashPlace(BlockPos.containing(x, y, z).asLong(), x, y, z);
+        }
         EffectToolNetwork.sendDeletion(EffectDeletePayload.effects(attached));
         return true;
     }

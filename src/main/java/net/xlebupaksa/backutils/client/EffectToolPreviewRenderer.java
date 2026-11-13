@@ -417,7 +417,10 @@ public final class EffectToolPreviewRenderer {
         // and in the one colour a deletion leaves behind.
         for (long place : flashing) {
             if (!lit || anchoring(level, BlockPos.of(place), partialTick)) continue;
-            drawCube(poses, buffers, cubeAt(middleOf(BlockPos.of(place))), level, camera, RED);
+            EffectBlink.PlacePoint point = EffectBlink.pointOf(place);
+            Point at = point == null ? middleOf(BlockPos.of(place))
+                    : new Point(point.x(), point.y(), point.z());
+            drawCube(poses, buffers, cubeAt(at), level, camera, RED);
         }
 
         // The outlines: every entity this client is drawing an effect on, every entity an effect was

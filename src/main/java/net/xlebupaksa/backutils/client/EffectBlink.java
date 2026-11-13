@@ -53,6 +53,18 @@ final class EffectBlink {
     /** The places deleted a moment ago, by packed position, with the ticks each has left. */
     private static final Map<Long, Integer> PLACES = new HashMap<>();
 
+    /**
+     * Where a place's red cube belongs when the block centre is not the deletion point.
+     *
+     * <p>An accurate effect hangs in open air and an entity effect follows its entity; flooring either
+     * to a block would put the feedback in the block next to the thing that was actually removed.
+     * Absent means "the middle of the block", which is still right for a block placement.
+     */
+    private static final Map<Long, PlacePoint> PLACE_POINTS = new HashMap<>();
+
+    /** A plain point for the map above, so this class stays independent of Minecraft types. */
+    record PlacePoint(double x, double y, double z) {}
+
     /** The entities whose effects were deleted a moment ago, by entity id, and the ticks left. */
     private static final Map<Integer, Integer> ENTITIES = new HashMap<>();
 
@@ -79,6 +91,13 @@ final class EffectBlink {
      */
     static void flashPlace(long place) {
         PLACES.put(place, FLASH_TICKS);
+        PLACE_POINTS.remove(place);
+    }
+
+    /** Remembers a place that was not at the middle of its block, such as an accurate placement. */
+    static void flashPlace(long place, double x, double y, double z) {
+        PLACES.put(place, FLASH_TICKS);
+        PLACE_POINTS.put(place, new PlacePoint(x, y, z));
     }
 
     /** Remembers an entity as just deleted from, for the reason a place is remembered. */
@@ -106,6 +125,11 @@ final class EffectBlink {
      */
     static Set<Long> places() {
         return Set.copyOf(PLACES.keySet());
+    }
+
+    /** {@return where a deleted place should blink, or null for the middle of its block} */
+    static PlacePoint pointOf(long place) {
+        return PLACE_POINTS.get(place);
     }
 
     /** {@return true while an entity is still blinking from a deletion} */
@@ -148,6 +172,8 @@ final class EffectBlink {
     static void tick() {
         ticks++;
         age(PLACES);
+        // A point without a live flash would be a cube left behind after its second.
+        PLACE_POINTS.keySet().retainAll(PLACES.keySet());
         age(ENTITIES);
         age(ATTACHED);
     }
@@ -155,6 +181,7 @@ final class EffectBlink {
     /** Forgets every blink, which a level that is going away requires: nothing would be drawable. */
     static void clear() {
         PLACES.clear();
+        PLACE_POINTS.clear();
         ENTITIES.clear();
         ATTACHED.clear();
         ticks = 0;
