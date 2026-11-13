@@ -71,6 +71,7 @@ public class BackUtils {
         NeoForge.EVENT_BUS.addListener(ItemBehaviourEvents::onAttack);
         NeoForge.EVENT_BUS.addListener(ItemBehaviourEvents::onUse);
         NeoForge.EVENT_BUS.addListener(ItemBehaviourEvents::onUseStart);
+        NeoForge.EVENT_BUS.addListener(ItemBehaviourEvents::onUseStop);
         NeoForge.EVENT_BUS.addListener(ItemBehaviourEvents::onPlace);
         NeoForge.EVENT_BUS.addListener(ItemBehaviourEvents::onEaten);
         NeoForge.EVENT_BUS.addListener(AnvilCosts::onUpdate);

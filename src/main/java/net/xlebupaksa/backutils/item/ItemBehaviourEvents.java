@@ -24,9 +24,10 @@ import java.util.UUID;
  * by an operator in the item editor; this is what lets an ordinary player use an item that an
  * operator configured without every command failing on its own permissions.
  *
- * <p>The attack and use triggers use the item cooldown, which is per player and per item type. That
- * is the same cooldown the client draws over the hotbar slot, so the operator sees why the trigger
- * is not firing. Eating has no cooldown, as requested.
+ * <p>The attack and use triggers store their ready-at game time in the stack's own custom data,
+ * separately for attack and use. That is deliberately not vanilla's item cooldown: vanilla keys the
+ * hotbar cooldown by item type, which put every copy of a sword on cooldown. The trade-off is that
+ * there is no vanilla cooldown overlay on the hotbar slot. Eating has no cooldown, as requested.
  */
 public final class ItemBehaviourEvents {
 
@@ -38,6 +39,16 @@ public final class ItemBehaviourEvents {
      * treated as the same use.
      */
     private static final Map<UUID, Long> LAST_USE_TICK = new HashMap<>();
+
+    /**
+     * When each player began the use that is currently running.
+     *
+     * <p>An item with a use duration can fire Start again and again if something restarts the use
+     * (for example a command that stops it). The real Stop/Finish events clear this; the timeout is
+     * only a recovery path for a use that never reports one.
+     */
+    private static final Map<UUID, Long> USE_STARTED = new HashMap<>();
+    private static final long USE_START_RECOVERY_TICKS = 200L;
 
     /**
      * Behaviour commands are configured by an operator in the item editor, so they run with
@@ -80,7 +91,18 @@ public final class ItemBehaviourEvents {
         if (player.level().isClientSide()) return;
         ItemStack stack = event.getItem();
         if (stack.getItem() instanceof BlockItem) return;
+        long now = player.level().getGameTime();
+        Long started = USE_STARTED.get(player.getUUID());
+        if (started != null && now - started < USE_START_RECOVERY_TICKS) return;
+        USE_STARTED.put(player.getUUID(), now);
         run(player, stack, ItemBehaviour.from(stack).use, true, "use", null);
+    }
+
+    /** A use that stopped is free to start again, and its latch goes with it. */
+    public static void onUseStop(LivingEntityUseItemEvent.Stop event) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            USE_STARTED.remove(player.getUUID());
+        }
     }
 
     public static void onPlace(BlockEvent.EntityPlaceEvent event) {
@@ -100,11 +122,16 @@ public final class ItemBehaviourEvents {
      * the item cooldown still applies.
      */
     public static void onUnplaceableUseAttempt(ServerPlayer player, ItemStack stack) {
+        long now = player.level().getGameTime();
+        Long last = LAST_USE_TICK.get(player.getUUID());
+        if (last != null && now - last < 2) return;
+        LAST_USE_TICK.put(player.getUUID(), now);
         run(player, stack, ItemBehaviour.from(stack).use, true, "use", null);
     }
 
     public static void onEaten(LivingEntityUseItemEvent.Finish event) {
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
+        USE_STARTED.remove(player.getUUID());
         ItemStack stack = event.getItem();
         // Finish is also fired for things that are used rather than eaten. This trigger is for
         // food, so an item with no food component is left alone.

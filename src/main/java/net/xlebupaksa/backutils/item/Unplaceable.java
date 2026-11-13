@@ -1,6 +1,7 @@
 package net.xlebupaksa.backutils.item;
 
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.ItemStack;
@@ -44,8 +45,16 @@ public final class Unplaceable {
     public static void onPlace(BlockEvent.EntityPlaceEvent event) {
         Entity entity = event.getEntity();
         if (!(entity instanceof LivingEntity living)) return;
-        if (is(living.getMainHandItem()) || is(living.getOffhandItem())) {
-            event.setCanceled(true);
+        boolean main = is(living.getMainHandItem());
+        boolean off = is(living.getOffhandItem());
+        if (!main && !off) return;
+        event.setCanceled(true);
+        // The mixin refuses the normal path before this event, but a BlockItem subclass that
+        // overrides place() can still reach the event. Run the use trigger here too, for the same
+        // reason the mixin does: the failed attempt is the use.
+        if (living instanceof ServerPlayer player) {
+            ItemBehaviourEvents.onUnplaceableUseAttempt(player,
+                    main ? living.getMainHandItem() : living.getOffhandItem());
         }
     }
 }
