@@ -388,8 +388,16 @@ public class ItemAdvancedScreen extends Screen {
         enchantments.setOnUpdate(list -> {
             properties.enchantmentLevels.clear();
             properties.enchantmentLevels.addAll(list);
+            // Adding an enchantment is itself a request to write enchantments; leaving the group
+            // unticked would silently remove the line again on Apply.
+            if (!list.isEmpty()) properties.enchantments = true;
         });
         group.addConfigurator(enchantments);
+        group.addConfigurator(integer("backutils.item_editor.label.anvil_cost",
+                -1, 39, () -> properties.anvilCost,
+                value -> properties.anvilCost = value)
+                .setTips(Component.translatable(
+                        "backutils.item_editor.tooltip.anvil_cost")));
     }
 
     private void buildMisc(ConfiguratorGroup root) {

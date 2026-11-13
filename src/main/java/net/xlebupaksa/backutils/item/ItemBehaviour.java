@@ -26,6 +26,8 @@ import java.util.List;
 public final class ItemBehaviour {
 
     public static final String KEY = "backutils:item_behaviour";
+    /** Ready-at game times for a stack's triggers. Not part of the behaviour payload. */
+    public static final String COOLDOWN_KEY = "backutils:behaviour_cooldowns";
     public static final int MAX_COMMANDS = 32;
     public static final int MAX_COMMAND_LENGTH = 256;
     public static final float MAX_COOLDOWN_SECONDS = 3600.0f;
@@ -79,6 +81,33 @@ public final class ItemBehaviour {
         readTrigger(root, "use", out.use);
         readTrigger(root, "eaten", out.eaten);
         return out;
+    }
+
+    /**
+     * {@return true when a stack's trigger is ready at a game time}
+     *
+     * <p>The cooldown belongs to the stack, not to the item type. Vanilla's own cooldown is keyed by
+     * {@link net.minecraft.world.item.Item}, so using one enchanted sword would put every sword of
+     * that type on cooldown; this marker is in the stack's custom data and therefore travels with
+     * that one stack. It is deliberately not part of {@link #write}/{@link #read}: a cooldown is
+     * transient state, not an edit an operator made.
+     */
+    public static boolean ready(ItemStack stack, String trigger, long gameTime) {
+        if (stack == null || stack.isEmpty()) return true;
+        CustomData data = stack.get(DataComponents.CUSTOM_DATA);
+        if (data == null) return true;
+        CompoundTag root = data.copyTag().getCompound(COOLDOWN_KEY);
+        return root.getLong(trigger) <= gameTime;
+    }
+
+    /** Marks one trigger of one stack as ready again at a game time. */
+    public static void setCooldown(ItemStack stack, String trigger, long readyAt) {
+        if (stack == null || stack.isEmpty()) return;
+        CustomData.update(DataComponents.CUSTOM_DATA, stack, tag -> {
+            CompoundTag root = tag.getCompound(COOLDOWN_KEY);
+            root.putLong(trigger, readyAt);
+            tag.put(COOLDOWN_KEY, root);
+        });
     }
 
     /** Writes this behaviour onto a stack, or removes the marker when there is nothing to write. */

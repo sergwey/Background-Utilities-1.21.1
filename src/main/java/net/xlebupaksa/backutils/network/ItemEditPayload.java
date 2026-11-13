@@ -199,6 +199,7 @@ public record ItemEditPayload(EffectToolConfigPayload.Where where, int container
                 buf.writeVarInt(line.level());
             }
         }
+        buf.writeByte(advanced.anvilCost);
 
         buf.writeBoolean(advanced.fireResistant);
         buf.writeBoolean(advanced.glint);
@@ -281,6 +282,7 @@ public record ItemEditPayload(EffectToolConfigPayload.Where where, int container
                         buf.readUtf(MAX_ID), buf.readVarInt()));
             }
         }
+        a.anvilCost = buf.readByte();
 
         a.fireResistant = buf.readBoolean();
         a.glint = buf.readBoolean();

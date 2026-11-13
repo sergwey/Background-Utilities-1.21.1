@@ -5,6 +5,8 @@ import net.minecraft.core.Registry;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
@@ -13,9 +15,11 @@ import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.food.FoodProperties;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.alchemy.Potion;
 import net.minecraft.world.item.alchemy.PotionContents;
 import net.minecraft.world.item.component.DyedItemColor;
+import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.item.component.Unbreakable;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.ItemEnchantments;
@@ -48,6 +52,9 @@ public final class AdvancedItemProperties {
     /** One enchantment and its level, as the advanced screen holds it. */
     public record EnchantmentLevel(String id, int level) {}
 
+    /** Custom-data key for the item's anvil level cost, absent when vanilla decides it. */
+    public static final String ANVIL_COST_KEY = "backutils:anvil_cost";
+
     /** Consumable group. */
     public boolean consumable;
     public int nutrition;
@@ -69,6 +76,8 @@ public final class AdvancedItemProperties {
     /** Enchantments group. */
     public boolean enchantments;
     public final List<EnchantmentLevel> enchantmentLevels = new ArrayList<>();
+    /** {@code -1} leaves the vanilla anvil cost alone; 0..39 overrides it. */
+    public int anvilCost = -1;
 
     /** Misc group. */
     public boolean fireResistant;
@@ -118,6 +127,12 @@ public final class AdvancedItemProperties {
         if (color != null) out.dyedColor = color.rgb() & 0xFFFFFF;
 
         ItemEnchantments current = stack.get(DataComponents.ENCHANTMENTS);
+        // An enchanted book stores its enchantments in STORED_ENCHANTMENTS. Reading only
+        // ENCHANTMENTS made a book open with an empty list and writing ENCHANTMENTS back did
+        // nothing, which is the case where an enchantment added in Properties did not work.
+        if ((current == null || current.isEmpty()) && stack.is(Items.ENCHANTED_BOOK)) {
+            current = stack.get(DataComponents.STORED_ENCHANTMENTS);
+        }
         out.enchantments = current != null && !current.isEmpty();
         if (current != null) {
             for (var entry : current.entrySet()) {
@@ -127,6 +142,11 @@ public final class AdvancedItemProperties {
                 out.enchantmentLevels.add(new EnchantmentLevel(id.toString(), entry.getIntValue()));
             }
         }
+        int anvilCost = anvilCostOf(stack);
+        out.anvilCost = anvilCost;
+        // The cost belongs to the same group as the enchantments. An item carrying one but no
+        // enchantment component still has that group ticked so the number is not hidden.
+        if (anvilCost >= 0) out.enchantments = true;
 
         out.fireResistant = stack.get(DataComponents.FIRE_RESISTANT) != null;
         Boolean glintOverride = stack.get(DataComponents.ENCHANTMENT_GLINT_OVERRIDE);
@@ -240,10 +260,15 @@ public final class AdvancedItemProperties {
                 if (enchantment == null || line.level() <= 0) continue;
                 mutable.set(enchantment, clamp(line.level(), 1, 255));
             }
-            stack.set(DataComponents.ENCHANTMENTS, mutable.toImmutable());
+            boolean book = stack.is(Items.ENCHANTED_BOOK);
+            stack.set(book ? DataComponents.STORED_ENCHANTMENTS : DataComponents.ENCHANTMENTS,
+                    mutable.toImmutable());
+            stack.remove(book ? DataComponents.ENCHANTMENTS : DataComponents.STORED_ENCHANTMENTS);
         } else {
             stack.remove(DataComponents.ENCHANTMENTS);
+            stack.remove(DataComponents.STORED_ENCHANTMENTS);
         }
+        setAnvilCost(stack, enchantments ? anvilCost : -1);
 
         if (fireResistant) {
             stack.set(DataComponents.FIRE_RESISTANT, Unit.INSTANCE);
@@ -274,6 +299,23 @@ public final class AdvancedItemProperties {
         if (misc || durability) {
             stack.set(DataComponents.MAX_STACK_SIZE, size);
         }
+    }
+
+    /** {@return the item's anvil cost, or -1 when the vanilla cost should be used} */
+    public static int anvilCostOf(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return -1;
+        CustomData data = stack.get(DataComponents.CUSTOM_DATA);
+        if (data == null) return -1;
+        CompoundTag tag = data.copyTag();
+        if (!tag.contains(ANVIL_COST_KEY, Tag.TAG_INT)) return -1;
+        return clamp(tag.getInt(ANVIL_COST_KEY), 0, 39);
+    }
+
+    private static void setAnvilCost(ItemStack stack, int cost) {
+        CustomData.update(DataComponents.CUSTOM_DATA, stack, tag -> {
+            if (cost >= 0) tag.putInt(ANVIL_COST_KEY, clamp(cost, 0, 39));
+            else tag.remove(ANVIL_COST_KEY);
+        });
     }
 
     /** {@return true when either enchantment component on the stack has an entry} */
@@ -322,6 +364,9 @@ public final class AdvancedItemProperties {
                     return "An enchantment level must be between 1 and 255.";
                 }
             }
+        }
+        if (anvilCost < -1 || anvilCost > 39) {
+            return "Anvil cost must be -1 (vanilla) or between 0 and 39 levels.";
         }
         String behaviourProblem = behaviour.problem();
         if (behaviourProblem != null) return behaviourProblem;

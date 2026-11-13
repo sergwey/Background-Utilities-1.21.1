@@ -54,7 +54,7 @@ public final class ItemBehaviourEvents {
         if (event.isCanceled()) return;
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
         ItemStack stack = player.getMainHandItem();
-        run(player, stack, ItemBehaviour.from(stack).attack, true, event.getTarget());
+        run(player, stack, ItemBehaviour.from(stack).attack, true, "attack", event.getTarget());
     }
 
     public static void onUse(PlayerInteractEvent.RightClickItem event) {
@@ -72,7 +72,7 @@ public final class ItemBehaviourEvents {
         Long last = LAST_USE_TICK.get(player.getUUID());
         if (last != null && now - last < 2) return;
         LAST_USE_TICK.put(player.getUUID(), now);
-        run(player, stack, ItemBehaviour.from(stack).use, true, null);
+        run(player, stack, ItemBehaviour.from(stack).use, true, "use", null);
     }
 
     public static void onUseStart(LivingEntityUseItemEvent.Start event) {
@@ -80,7 +80,7 @@ public final class ItemBehaviourEvents {
         if (player.level().isClientSide()) return;
         ItemStack stack = event.getItem();
         if (stack.getItem() instanceof BlockItem) return;
-        run(player, stack, ItemBehaviour.from(stack).use, true, null);
+        run(player, stack, ItemBehaviour.from(stack).use, true, "use", null);
     }
 
     public static void onPlace(BlockEvent.EntityPlaceEvent event) {
@@ -89,7 +89,7 @@ public final class ItemBehaviourEvents {
         ItemStack stack = player.getMainHandItem();
         if (!(stack.getItem() instanceof BlockItem)) stack = player.getOffhandItem();
         if (!(stack.getItem() instanceof BlockItem)) return;
-        run(player, stack, ItemBehaviour.from(stack).use, true, null);
+        run(player, stack, ItemBehaviour.from(stack).use, true, "use", null);
     }
 
     /**
@@ -100,7 +100,7 @@ public final class ItemBehaviourEvents {
      * the item cooldown still applies.
      */
     public static void onUnplaceableUseAttempt(ServerPlayer player, ItemStack stack) {
-        run(player, stack, ItemBehaviour.from(stack).use, true, null);
+        run(player, stack, ItemBehaviour.from(stack).use, true, "use", null);
     }
 
     public static void onEaten(LivingEntityUseItemEvent.Finish event) {
@@ -109,15 +109,18 @@ public final class ItemBehaviourEvents {
         // Finish is also fired for things that are used rather than eaten. This trigger is for
         // food, so an item with no food component is left alone.
         if (stack.get(DataComponents.FOOD) == null) return;
-        run(player, stack, ItemBehaviour.from(stack).eaten, false, null);
+        run(player, stack, ItemBehaviour.from(stack).eaten, false, null, null);
     }
 
     private static void run(ServerPlayer player, ItemStack stack, ItemBehaviour.Trigger trigger,
-            boolean useCooldown, Entity target) {
+            boolean useCooldown, String cooldownKey, Entity target) {
         boolean hasCommands = !trigger.commands.isEmpty();
         boolean hasTargetCommands = target != null && !trigger.targetCommands.isEmpty();
         if (!trigger.enabled || (!hasCommands && !hasTargetCommands)) return;
-        if (useCooldown && player.getCooldowns().isOnCooldown(stack.getItem())) return;
+        long now = player.level().getGameTime();
+        if (useCooldown && cooldownKey != null && !ItemBehaviour.ready(stack, cooldownKey, now)) {
+            return;
+        }
 
         MinecraftServer server = player.getServer();
         if (server == null) return;
@@ -130,9 +133,12 @@ public final class ItemBehaviourEvents {
                     trigger.targetCommands);
         }
 
-        if (useCooldown && trigger.cooldownSeconds > 0.0f) {
+        if (useCooldown && cooldownKey != null && trigger.cooldownSeconds > 0.0f) {
             int ticks = Math.max(1, Math.round(trigger.cooldownSeconds * 20.0f));
-            player.getCooldowns().addCooldown(stack.getItem(), ticks);
+            ItemBehaviour.setCooldown(stack, cooldownKey, now + ticks);
+            // The cooldown lives on the stack, so the slot has to be sent again for the client to
+            // have the same marker. It is not the vanilla item cooldown, which is per item type.
+            player.getInventory().setChanged();
         }
     }
 
