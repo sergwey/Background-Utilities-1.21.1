@@ -16,7 +16,11 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
@@ -516,17 +520,18 @@ public final class EffectToolPreviewRenderer {
     // ------------------------------------------------------------------
 
     /**
-     * Draws the six faces of the cube: its own colour where a face is out in the open, blue where it
-     * is inside something.
+     * Draws the six faces of the cube: its own colour where a face is visible, blue where it is
+     * inside something or behind a block from the camera.
      *
-     * <p>A face is buried when the block beyond it is one that occludes, and every face is buried
-     * when the block the cube stands in is: a cube inside a wall is hidden from all six sides
-     * whichever way the blocks around it are arranged.
+     * <p>Buriedness is per face. The physical test is the block beyond the face; the other test is a
+     * ray from the camera to the face's middle, because the cube is drawn through the world and a
+     * marker behind a wall has to say so in its colour. Neither test forces all six faces blue from
+     * the cube's centre alone: a cube resting on a surface has only its underside in the ground.
      *
      * <p><b>Both passes are drawn through the world</b>, with no depth test at all. A cube is a report
-     * of where an effect is, and an effect inside a wall is exactly when that report matters most —
-     * so nothing the world stands in front of it may take it away. What being buried changes is a
-     * face's colour and not whether the face is drawn.
+     * of where an effect is, and an effect inside or behind a wall is exactly when that report matters
+     * most — so nothing the world stands in front of it may take it away. What being buried changes is
+     * a face's colour and not whether the face is drawn.
      *
      * <p>Each face is drawn once, into the pass it belongs to, rather than the blue being laid over
      * the cube's colour on the buried faces: two translucent colours over one another blend, and a
@@ -555,10 +560,15 @@ public final class EffectToolPreviewRenderer {
      */
     private static void drawCube(PoseStack poses, MultiBufferSource.BufferSource buffers, Cube cube,
                                  Level level, Vec3 camera, Rgb colour, Quaternionf rotation) {
-        boolean insideBlock = occludes(level, cube.centre());
         boolean[] buried = new boolean[Face.ALL.size()];
         for (int i = 0; i < Face.ALL.size(); i++) {
-            buried[i] = insideBlock || occludes(level, cube.probe(Face.ALL.get(i)));
+            // Per face. Forcing every face blue when the centre happened to be in a block made a
+            // cube that only rested on the surface look entirely buried, and hid the red hover on
+            // exactly the markers whose sides were still visible. A face is also blue when a block
+            // stands between it and the camera: the cube is drawn through walls, so this is how the
+            // drawing says which parts of it are behind one.
+            buried[i] = occludes(level, cube.probe(Face.ALL.get(i)))
+                    || occludedFromCamera(level, camera, cube.faceCentre(Face.ALL.get(i)));
         }
 
         poses.pushPose();
@@ -582,6 +592,13 @@ public final class EffectToolPreviewRenderer {
         drawFaces(pose, buffers, CUBE, BLUE, cube.size(), buried, true, BURIED_ALPHA);
 
         poses.popPose();
+
+        // A hovered or just-deleted cube keeps a red frame. Its faces can all be buried in a wall,
+        // where the blue pass is the only face colour that survives; without a frame the marker the
+        // crosshair is actually on would have no red on it at all.
+        if (colour.equals(RED)) {
+            drawOutline(poses, buffers, new EntityBox(cube.min(), cube.max()), level, camera, RED);
+        }
     }
 
     /**
@@ -665,7 +682,8 @@ public final class EffectToolPreviewRenderer {
      * holder for a self-mode tool, or the one the delete tool is pointed at.
      *
      * <p>The twelve edges of the entity's own box, in the colour of the reading, and in blue with the
-     * depth test off where the box is buried in a block — the same reading as the cube's buried
+     * depth test off where the box is buried in a block or has a block between it and the camera — the
+     * same reading as the cube's buried
      * faces, so the two drawings say "here, but inside something" the same way.
      *
      * <p>The whole box is drawn through the world when any part of it is buried rather than each
@@ -674,14 +692,21 @@ public final class EffectToolPreviewRenderer {
      */
     private static void drawOutline(PoseStack poses, MultiBufferSource.BufferSource buffers,
                                     EntityBox box, Level level, Vec3 camera, Rgb colour) {
-        boolean buried = occludes(level, box.centre());
+        boolean buried = occludes(level, box.centre())
+                || occludedFromCamera(level, camera, box.centre());
         for (int corner = 0; corner < EntityBox.CORNERS && !buried; corner++) {
-            buried = occludes(level, cornerOf(box, corner));
+            Point cornerAt = cornerOf(box, corner);
+            buried = occludes(level, cornerAt) || occludedFromCamera(level, camera, cornerAt);
         }
 
         float keep = RenderSystem.getShaderLineWidth();
         RenderSystem.lineWidth(OUTLINE_WIDTH);
-        if (buried) drawEdges(poses, buffers, box, camera, BLUE, BURIED_OUTLINE);
+        if (buried) {
+            drawEdges(poses, buffers, box, camera, BLUE, BURIED_OUTLINE);
+            // A red hover on a buried marker is the one thing that must not disappear behind the
+            // wall it is in: draw the red through the world as well, over the blue.
+            if (colour.equals(RED)) drawEdges(poses, buffers, box, camera, RED, BURIED_OUTLINE);
+        }
         drawEdges(poses, buffers, box, camera, colour, OUTLINE);
         RenderSystem.lineWidth(keep);
     }
@@ -870,6 +895,28 @@ public final class EffectToolPreviewRenderer {
         BlockPos pos = BlockPos.containing(probe.x(), probe.y(), probe.z());
         BlockState state = level.getBlockState(pos);
         return state.canOcclude();
+    }
+
+    /**
+     * {@return true when a block stands between the camera and a point}
+     *
+     * <p>The cube is deliberately drawn without a depth test, so the only thing that can say a
+     * marker is behind a wall is a ray from the camera. Non-occluding blocks are stepped through
+     * rather than treated as walls, so glass and leaves do not turn a marker blue.
+     */
+    private static boolean occludedFromCamera(Level level, Vec3 camera, Point target) {
+        Vec3 end = new Vec3(target.x(), target.y(), target.z());
+        Vec3 start = camera;
+        for (int step = 0; step < 8; step++) {
+            BlockHitResult hit = level.clip(new ClipContext(start, end,
+                    ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE,
+                    CollisionContext.empty()));
+            if (hit.getType() == HitResult.Type.MISS) return false;
+            if (level.getBlockState(hit.getBlockPos()).canOcclude()) return true;
+            if (hit.getLocation().distanceToSqr(end) < 1.0E-6D) return false;
+            start = hit.getLocation().add(end.subtract(start).normalize().scale(0.01D));
+        }
+        return false;
     }
 
     /**
