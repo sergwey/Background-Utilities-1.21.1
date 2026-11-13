@@ -68,11 +68,11 @@ import java.util.Set;
  * cube is put around, which is why the colour is a parameter of the drawing rather than a constant
  * inside it.
  *
- * <p>Drawn inside the level's own frame, at the stage after the translucent blocks, so it takes its
- * place among the things in the world rather than being painted over the finished picture. It is
- * the client of the player holding the tool that draws it, in the first person view of that player
- * alone: no part of this reaches a server or another player, and the third person view is left
- * alone because the tool is aimed from an eye the holder has stepped away from there.
+ * <p>Drawn inside the level's own frame, at the last stage after the level, so no later world pass can
+ * paint over a marker that has to stay visible through geometry. It is the client of the player
+ * holding the tool that draws it, in the first person view of that player alone: no part of this
+ * reaches a server or another player, and the third person view is left alone because the tool is
+ * aimed from an eye the holder has stepped away from there.
  *
  * <p>Where the effect goes is decided by {@link EffectToolPlacement}, which knows nothing of the
  * game; what the crosshair is on by {@link EffectToolAim}; and which effect the delete tool would
@@ -224,7 +224,7 @@ public final class EffectToolPreviewRenderer {
     @SubscribeEvent
     @SuppressWarnings("unused") // called by the event bus
     public static void onRenderLevelStage(RenderLevelStageEvent event) {
-        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS) return;
+        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_LEVEL) return;
 
         Minecraft minecraft = Minecraft.getInstance();
         Player player = minecraft.player;
@@ -561,14 +561,18 @@ public final class EffectToolPreviewRenderer {
     private static void drawCube(PoseStack poses, MultiBufferSource.BufferSource buffers, Cube cube,
                                  Level level, Vec3 camera, Rgb colour, Quaternionf rotation) {
         boolean[] buried = new boolean[Face.ALL.size()];
+        boolean behindWall = false;
+        int buriedCount = 0;
         for (int i = 0; i < Face.ALL.size(); i++) {
             // Per face. Forcing every face blue when the centre happened to be in a block made a
             // cube that only rested on the surface look entirely buried, and hid the red hover on
             // exactly the markers whose sides were still visible. A face is also blue when a block
             // stands between it and the camera: the cube is drawn through walls, so this is how the
             // drawing says which parts of it are behind one.
-            buried[i] = occludes(level, cube.probe(Face.ALL.get(i)))
-                    || occludedFromCamera(level, camera, cube.faceCentre(Face.ALL.get(i)));
+            boolean occluded = occludedFromCamera(level, camera, cube.faceCentre(Face.ALL.get(i)));
+            buried[i] = occludes(level, cube.probe(Face.ALL.get(i))) || occluded;
+            behindWall |= occluded;
+            if (buried[i]) buriedCount++;
         }
 
         poses.pushPose();
@@ -592,6 +596,18 @@ public final class EffectToolPreviewRenderer {
         drawFaces(pose, buffers, CUBE, BLUE, cube.size(), buried, true, BURIED_ALPHA);
 
         poses.popPose();
+
+        // A marker whose faces are behind a wall also gets a blue edge pass. The faces alone are
+        // translucent against a block texture and are easy to lose; the edges are what make a marker
+        // visible through the wall at all. A cube wholly inside a block gets the same frame even if
+        // the camera is inside that block and the ray misses it.
+        if (behindWall || buriedCount == Face.ALL.size()) {
+            float keep = RenderSystem.getShaderLineWidth();
+            RenderSystem.lineWidth(OUTLINE_WIDTH);
+            drawEdges(poses, buffers, new EntityBox(cube.min(), cube.max()), camera, BLUE,
+                    BURIED_OUTLINE);
+            RenderSystem.lineWidth(keep);
+        }
 
         // A hovered or just-deleted cube keeps a red frame. Its faces can all be buried in a wall,
         // where the blue pass is the only face colour that survives; without a frame the marker the
