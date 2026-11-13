@@ -413,7 +413,7 @@
   "backutils.item_editor.label.commands": "Команды",
   "backutils.item_editor.label.commands_as_target": "Команды от цели",
   "backutils.item_editor.tooltip.trigger.attack": "Выполняет команды, когда вы бьёте моба или игрока, держа этот предмет в основной руке.",
-  "backutils.item_editor.tooltip.trigger.use": "Выполняет команды при правом клике этим предметом, включая размещение блока.",
+  "backutils.item_editor.tooltip.trigger.use": "Выполняет команды при правом клике этим предметом, включая размещение блока. Неразмещаемый блок выполняет их при неудачной попытке размещения.",
   "backutils.item_editor.tooltip.trigger.eaten": "Выполняет команды после того, как вы доели этот предмет.",
   "backutils.item_editor.tooltip.trigger.cooldown": "Сколько секунд ждать перед повторным срабатыванием. 0 — при каждом ударе или использовании.",
   "backutils.item_editor.tooltip.commands": "Команды выполняются на сервере сверху вниз от вашего имени с правами оператора, без ведущего слэша. Перетаскивайте маркер «=», чтобы изменить порядок.",

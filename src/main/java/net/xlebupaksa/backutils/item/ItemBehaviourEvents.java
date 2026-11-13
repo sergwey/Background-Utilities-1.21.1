@@ -92,6 +92,17 @@ public final class ItemBehaviourEvents {
         run(player, stack, ItemBehaviour.from(stack).use, true, null);
     }
 
+    /**
+     * The use trigger for an unplaceable block.
+     *
+     * <p>Such a block never reaches {@link BlockEvent.EntityPlaceEvent}, because the placement is
+     * refused before it. The attempt itself is therefore the use that should run the commands, and
+     * the item cooldown still applies.
+     */
+    public static void onUnplaceableUseAttempt(ServerPlayer player, ItemStack stack) {
+        run(player, stack, ItemBehaviour.from(stack).use, true, null);
+    }
+
     public static void onEaten(LivingEntityUseItemEvent.Finish event) {
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
         ItemStack stack = event.getItem();

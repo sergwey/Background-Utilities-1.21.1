@@ -413,7 +413,7 @@
   "backutils.item_editor.label.commands": "Commands",
   "backutils.item_editor.label.commands_as_target": "Commands as target",
   "backutils.item_editor.tooltip.trigger.attack": "Runs the commands when you hit a mob or player while holding this item in your main hand.",
-  "backutils.item_editor.tooltip.trigger.use": "Runs the commands when you right-click with this item, including placing it as a block.",
+  "backutils.item_editor.tooltip.trigger.use": "Runs the commands when you right-click with this item, including placing it as a block. An unplaceable block runs them on the failed placement attempt instead.",
   "backutils.item_editor.tooltip.trigger.eaten": "Runs the commands after you finish eating this item.",
   "backutils.item_editor.tooltip.trigger.cooldown": "Seconds before this trigger can run again. 0 means every hit or use.",
   "backutils.item_editor.tooltip.commands": "Commands run on the server from top to bottom as you, with operator permission, without the leading slash. Drag the '=' handle to reorder them.",

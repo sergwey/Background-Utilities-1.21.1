@@ -1,8 +1,10 @@
 package net.xlebupaksa.backutils.mixin;
 
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.context.BlockPlaceContext;
+import net.xlebupaksa.backutils.item.ItemBehaviourEvents;
 import net.xlebupaksa.backutils.item.Unplaceable;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -17,6 +19,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * rejection, which is the ghost the operator sees. Returning {@link InteractionResult#FAIL} from
  * the shared {@link BlockItem#place} path stops the prediction on the client as well as the
  * placement on the server.
+ *
+ * <p>Because this happens before {@code EntityPlaceEvent}, the attempt is also where an
+ * unplaceable item's use trigger is run: otherwise refusing the placement would silently swallow
+ * the use.
  */
 @Mixin(BlockItem.class)
 public abstract class BlockItemMixin {
@@ -26,6 +32,12 @@ public abstract class BlockItemMixin {
             CallbackInfoReturnable<InteractionResult> callback) {
         if (Unplaceable.is(context.getItemInHand())) {
             callback.setReturnValue(InteractionResult.FAIL);
+            // The server-side placement event never fires for this attempt, so this is where the
+            // use trigger gets its chance. It runs only on the server and only for a real player.
+            if (!context.getLevel().isClientSide()
+                    && context.getPlayer() instanceof ServerPlayer player) {
+                ItemBehaviourEvents.onUnplaceableUseAttempt(player, context.getItemInHand());
+            }
         }
     }
 }
