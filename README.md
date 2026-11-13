@@ -178,10 +178,12 @@ vanilla command away from the people who have it.
 - `/roll`, `/hroll` — `[selector] [maximum] [reason]`, each part optional. `/hroll` withholds the
   whole line for the server's configured delay and then the players who witnessed it remember it
 - `/playradius`, `/playbox`, `/stopzone`, `/log <targets> <message>`
-- `/execute raycast entity|pos|block <distance> ignoreAll|hitAny|hitSolid [run <command>]` — turns
-  the executing entity's view into the command source: an entity, the exact hit point, or the centre
-  of the hit block. `ignoreAll` ignores blocks, `hitAny` stops at any non-air block, `hitSolid` only
-  at full blocks, and `-1` uses the 256-block maximum
+- `/execute raycast entity|pos|block <distance> ignoreAll|hitAny|hitSolid [<execute modifiers>] run <command>`
+  — a step inside the execute chain, not a command of its own: `as`, `at`, `positioned`, `if` and
+  `run` can follow it. It turns the current source's view into a new source: an entity, the exact
+  hit point, or the centre of the hit block. It can also be reached after `as <entity>`, and the ray
+  then starts from that entity. `ignoreAll` ignores blocks, `hitAny` stops at any non-air block,
+  `hitSolid` only at full blocks, and `-1` uses the 256-block maximum
 - `/clientchest [<page>|<name>]`, `/cc [<page>|<name>]` — the client chest, pages counted from one;
   `import` moves a library left behind by NBT Editor into this one
 
