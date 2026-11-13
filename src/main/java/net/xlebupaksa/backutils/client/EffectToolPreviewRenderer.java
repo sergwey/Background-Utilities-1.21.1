@@ -652,6 +652,9 @@ public final class EffectToolPreviewRenderer {
                                   RenderType type, Rgb colour, double size, boolean[] buried,
                                   boolean wanted, float alpha) {
         VertexConsumer into = buffers.getBuffer(type);
+        // getBuffer may flush an earlier LEQUAL type and leave depth testing enabled; turn it off
+        // again after that flush and before this pass's vertices are built.
+        RenderSystem.disableDepthTest();
         for (int i = 0; i < Face.ALL.size(); i++) {
             if (buried[i] == wanted) drawFace(pose, into, size, Face.ALL.get(i), colour, alpha);
         }
@@ -764,6 +767,7 @@ public final class EffectToolPreviewRenderer {
                 box.min().z() - camera.z());
         PoseStack.Pose pose = poses.last();
         VertexConsumer into = buffers.getBuffer(type);
+        RenderSystem.disableDepthTest();
 
         for (int from = 0; from < EntityBox.CORNERS; from++) {
             for (int axis = 0; axis < 3; axis++) {
