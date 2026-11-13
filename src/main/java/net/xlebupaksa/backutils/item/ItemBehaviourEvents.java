@@ -3,6 +3,7 @@ package net.xlebupaksa.backutils.item;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.event.entity.living.LivingEntityUseItemEvent;
@@ -43,7 +44,7 @@ public final class ItemBehaviourEvents {
         if (event.isCanceled()) return;
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
         ItemStack stack = player.getMainHandItem();
-        run(player, stack, ItemBehaviour.from(stack).attack, true);
+        run(player, stack, ItemBehaviour.from(stack).attack, true, event.getTarget());
     }
 
     public static void onUse(PlayerInteractEvent.RightClickItem event) {
@@ -61,7 +62,7 @@ public final class ItemBehaviourEvents {
         Long last = LAST_USE_TICK.get(player.getUUID());
         if (last != null && now - last < 2) return;
         LAST_USE_TICK.put(player.getUUID(), now);
-        run(player, stack, ItemBehaviour.from(stack).use, true);
+        run(player, stack, ItemBehaviour.from(stack).use, true, null);
     }
 
     public static void onUseStart(LivingEntityUseItemEvent.Start event) {
@@ -69,7 +70,7 @@ public final class ItemBehaviourEvents {
         if (player.level().isClientSide()) return;
         ItemStack stack = event.getItem();
         if (stack.getItem() instanceof BlockItem) return;
-        run(player, stack, ItemBehaviour.from(stack).use, true);
+        run(player, stack, ItemBehaviour.from(stack).use, true, null);
     }
 
     public static void onPlace(BlockEvent.EntityPlaceEvent event) {
@@ -78,7 +79,7 @@ public final class ItemBehaviourEvents {
         ItemStack stack = player.getMainHandItem();
         if (!(stack.getItem() instanceof BlockItem)) stack = player.getOffhandItem();
         if (!(stack.getItem() instanceof BlockItem)) return;
-        run(player, stack, ItemBehaviour.from(stack).use, true);
+        run(player, stack, ItemBehaviour.from(stack).use, true, null);
     }
 
     public static void onEaten(LivingEntityUseItemEvent.Finish event) {
@@ -87,26 +88,38 @@ public final class ItemBehaviourEvents {
         // Finish is also fired for things that are used rather than eaten. This trigger is for
         // food, so an item with no food component is left alone.
         if (stack.get(DataComponents.FOOD) == null) return;
-        run(player, stack, ItemBehaviour.from(stack).eaten, false);
+        run(player, stack, ItemBehaviour.from(stack).eaten, false, null);
     }
 
     private static void run(ServerPlayer player, ItemStack stack, ItemBehaviour.Trigger trigger,
-            boolean useCooldown) {
-        if (!trigger.enabled || trigger.commands.isEmpty()) return;
+            boolean useCooldown, Entity target) {
+        boolean hasCommands = !trigger.commands.isEmpty();
+        boolean hasTargetCommands = target != null && !trigger.targetCommands.isEmpty();
+        if (!trigger.enabled || (!hasCommands && !hasTargetCommands)) return;
         if (useCooldown && player.getCooldowns().isOnCooldown(stack.getItem())) return;
 
         MinecraftServer server = player.getServer();
         if (server == null) return;
-        for (String raw : trigger.commands) {
-            String command = raw == null ? "" : raw.trim();
-            if (command.isEmpty()) continue;
-            if (command.startsWith("/")) command = command.substring(1);
-            server.getCommands().performPrefixedCommand(player.createCommandSourceStack(), command);
+        if (hasCommands) {
+            execute(server, player.createCommandSourceStack(), trigger.commands);
+        }
+        if (hasTargetCommands && !target.isRemoved()) {
+            execute(server, target.createCommandSourceStack(), trigger.targetCommands);
         }
 
         if (useCooldown && trigger.cooldownSeconds > 0.0f) {
             int ticks = Math.max(1, Math.round(trigger.cooldownSeconds * 20.0f));
             player.getCooldowns().addCooldown(stack.getItem(), ticks);
+        }
+    }
+
+    private static void execute(MinecraftServer server,
+            net.minecraft.commands.CommandSourceStack source, java.util.List<String> commands) {
+        for (String raw : commands) {
+            String command = raw == null ? "" : raw.trim();
+            if (command.isEmpty()) continue;
+            if (command.startsWith("/")) command = command.substring(1);
+            server.getCommands().performPrefixedCommand(source, command);
         }
     }
 }

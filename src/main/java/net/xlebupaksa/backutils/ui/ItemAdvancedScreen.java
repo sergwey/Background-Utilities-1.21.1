@@ -239,18 +239,18 @@ public class ItemAdvancedScreen extends Screen {
 
     private void buildBehaviour(ConfiguratorGroup root) {
         addBehaviourTrigger(root, "backutils.item_editor.label.when_attacked",
-                properties.behaviour.attack, true,
+                properties.behaviour.attack, true, true,
                 "backutils.item_editor.tooltip.trigger.attack");
         addBehaviourTrigger(root, "backutils.item_editor.label.when_used",
-                properties.behaviour.use, true,
+                properties.behaviour.use, true, false,
                 "backutils.item_editor.tooltip.trigger.use");
         addBehaviourTrigger(root, "backutils.item_editor.label.when_eaten",
-                properties.behaviour.eaten, false,
+                properties.behaviour.eaten, false, false,
                 "backutils.item_editor.tooltip.trigger.eaten");
     }
 
     private void addBehaviourTrigger(ConfiguratorGroup root, String label,
-            ItemBehaviour.Trigger trigger, boolean cooldown, String tipKey) {
+            ItemBehaviour.Trigger trigger, boolean cooldown, boolean asTarget, String tipKey) {
         ToggleGroup group = new ToggleGroup(Text.of(label), !trigger.enabled, trigger.enabled,
                 value -> trigger.enabled = value);
         group.setTips(Component.translatable(tipKey));
@@ -264,21 +264,28 @@ public class ItemAdvancedScreen extends Screen {
                             "backutils.item_editor.tooltip.trigger.cooldown")));
         }
 
-        ArrayConfiguratorGroup<String> commands = new ArrayConfiguratorGroup<>(
-                Text.of("backutils.item_editor.label.commands"), true,
-                () -> trigger.commands,
-                this::commandConfigurator,
-                true);
-        commands.setAddDefault(() -> "");
-        commands.setCanRemove(true);
-        commands.setCanReorder(true);
-        commands.setTips(Component.translatable("backutils.item_editor.tooltip.commands"));
-        commands.setOnUpdate(list -> {
-            trigger.commands.clear();
-            trigger.commands.addAll(list);
-        });
-        group.addConfigurator(commands);
+        addCommandList(group, "backutils.item_editor.label.commands",
+                "backutils.item_editor.tooltip.commands", trigger.commands);
+        if (asTarget) {
+            addCommandList(group, "backutils.item_editor.label.commands_as_target",
+                    "backutils.item_editor.tooltip.commands_as_target", trigger.targetCommands);
+        }
         root.addConfigurator(group);
+    }
+
+    private void addCommandList(ConfiguratorGroup group, String label, String tipKey,
+            java.util.List<String> commands) {
+        ArrayConfiguratorGroup<String> list = new ArrayConfiguratorGroup<>(
+                Text.of(label), true, () -> commands, this::commandConfigurator, true);
+        list.setAddDefault(() -> "");
+        list.setCanRemove(true);
+        list.setCanReorder(true);
+        list.setTips(Component.translatable(tipKey));
+        list.setOnUpdate(updated -> {
+            commands.clear();
+            commands.addAll(updated);
+        });
+        group.addConfigurator(list);
     }
 
     private Configurator commandConfigurator(Supplier<String> getter, Consumer<String> setter) {

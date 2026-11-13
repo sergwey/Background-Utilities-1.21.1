@@ -67,7 +67,8 @@ log, and a pair of tools for placing and removing visual effects.
   properties...** button opens the second screen: its Properties tab changes attributes, consumable
   stats and effects, durability, dyed colour, enchantments and miscellaneous flags including a block
   item that refuses to be placed; Behaviour runs ordered commands when the item is used to attack,
-  used or eaten, with a cooldown on the first two. The advanced edits share
+  used or eaten, with a cooldown on the first two. The attack trigger can also run a second list as
+  the entity that was hit. The advanced edits share
   the main screen's draft, and the Apply at the top of the advanced screen is the same write as the
   main screen's Apply, so either one writes the edit and the main one is not required first.
 - **Zone music.** `/playradius` and `/playbox` play a sound to the players inside a region, and

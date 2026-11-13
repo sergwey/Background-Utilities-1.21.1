@@ -33,6 +33,7 @@ public final class ItemBehaviour {
     private static final String ENABLED = "enabled";
     private static final String COOLDOWN = "cooldown";
     private static final String COMMANDS = "commands";
+    private static final String TARGET_COMMANDS = "target_commands";
 
     public final Trigger attack = new Trigger(1.0f);
     public final Trigger use = new Trigger(1.0f);
@@ -46,7 +47,8 @@ public final class ItemBehaviour {
     /** {@return true when at least one trigger has anything to store} */
     public boolean isEmpty() {
         for (Trigger trigger : all()) {
-            if (trigger.enabled || !trigger.commands.isEmpty()) return false;
+            if (trigger.enabled || !trigger.commands.isEmpty()
+                    || !trigger.targetCommands.isEmpty()) return false;
         }
         return true;
     }
@@ -61,6 +63,8 @@ public final class ItemBehaviour {
             to.cooldownSeconds = from.cooldownSeconds;
             to.commands.clear();
             to.commands.addAll(from.commands);
+            to.targetCommands.clear();
+            to.targetCommands.addAll(from.targetCommands);
         }
     }
 
@@ -106,9 +110,18 @@ public final class ItemBehaviour {
             if (trigger.commands.size() > MAX_COMMANDS) {
                 return "A trigger runs at most " + MAX_COMMANDS + " commands.";
             }
+            if (trigger.targetCommands.size() > MAX_COMMANDS) {
+                return "A target trigger runs at most " + MAX_COMMANDS + " commands.";
+            }
             for (String command : trigger.commands) {
                 if (command != null && command.length() > MAX_COMMAND_LENGTH) {
                     return "A command is longer than " + MAX_COMMAND_LENGTH + " characters.";
+                }
+            }
+            for (String command : trigger.targetCommands) {
+                if (command != null && command.length() > MAX_COMMAND_LENGTH) {
+                    return "A target command is longer than " + MAX_COMMAND_LENGTH
+                            + " characters.";
                 }
             }
         }
@@ -124,6 +137,12 @@ public final class ItemBehaviour {
             buf.writeVarInt(count);
             for (int i = 0; i < count; i++) {
                 String command = trigger.commands.get(i);
+                buf.writeUtf(command == null ? "" : command, MAX_COMMAND_LENGTH);
+            }
+            int targetCount = Math.min(trigger.targetCommands.size(), MAX_COMMANDS);
+            buf.writeVarInt(targetCount);
+            for (int i = 0; i < targetCount; i++) {
+                String command = trigger.targetCommands.get(i);
                 buf.writeUtf(command == null ? "" : command, MAX_COMMAND_LENGTH);
             }
         }
@@ -143,6 +162,14 @@ public final class ItemBehaviour {
             for (int i = 0; i < count; i++) {
                 trigger.commands.add(buf.readUtf(MAX_COMMAND_LENGTH));
             }
+            int targetCount = buf.readVarInt();
+            if (targetCount < 0 || targetCount > MAX_COMMANDS) {
+                throw new DecoderException(
+                        "An item behaviour announced " + targetCount + " target commands");
+            }
+            for (int i = 0; i < targetCount; i++) {
+                trigger.targetCommands.add(buf.readUtf(MAX_COMMAND_LENGTH));
+            }
         }
         return out;
     }
@@ -157,6 +184,11 @@ public final class ItemBehaviour {
         int count = Math.min(commands.size(), MAX_COMMANDS);
         for (int i = 0; i < count; i++) {
             trigger.commands.add(commands.getString(i));
+        }
+        ListTag targetCommands = tag.getList(TARGET_COMMANDS, Tag.TAG_STRING);
+        int targetCount = Math.min(targetCommands.size(), MAX_COMMANDS);
+        for (int i = 0; i < targetCount; i++) {
+            trigger.targetCommands.add(targetCommands.getString(i));
         }
     }
 
@@ -173,6 +205,15 @@ public final class ItemBehaviour {
                             Math.min(command.length(), MAX_COMMAND_LENGTH))));
         }
         tag.put(COMMANDS, commands);
+        ListTag targetCommands = new ListTag();
+        int targetCount = Math.min(trigger.targetCommands.size(), MAX_COMMANDS);
+        for (int i = 0; i < targetCount; i++) {
+            String command = trigger.targetCommands.get(i);
+            targetCommands.add(net.minecraft.nbt.StringTag.valueOf(
+                    command == null ? "" : command.substring(0,
+                            Math.min(command.length(), MAX_COMMAND_LENGTH))));
+        }
+        tag.put(TARGET_COMMANDS, targetCommands);
         root.put(key, tag);
     }
 
@@ -182,6 +223,11 @@ public final class ItemBehaviour {
         public boolean enabled;
         public float cooldownSeconds;
         public final List<String> commands = new ArrayList<>();
+        /**
+         * Commands run as the entity that was hit. Kept on every trigger so the data format is
+         * uniform, but only the attack trigger exposes and uses it.
+         */
+        public final List<String> targetCommands = new ArrayList<>();
 
         private Trigger(float cooldownSeconds) {
             this.cooldownSeconds = cooldownSeconds;
