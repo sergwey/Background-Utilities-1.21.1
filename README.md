@@ -52,6 +52,12 @@ log, and a pair of tools for placing and removing visual effects.
   optional typing sound — in the corner menu. Operators write display names and manage any player's
   profiles from the administrator menu. A player's markup is checked against an allow-list; an
   operator's is held to its shape only.
+- **Notes.** The administrator menu's player view has a Notes tab: shared, paged notes about a
+  player, readable by every operator and never shown to the player. It opens read-only; **Edit**
+  takes an exclusive server-side lease, and another operator sees who is editing rather than a
+  silent overwrite. Saves are whole-document and version-checked, so a lost lease or a stale draft
+  cannot replace newer text. When SymbolChat is installed, its picker is offered in edit mode and
+  inserts a symbol at the caret; it is not available while reading.
 - **Effect and delete tools.** The effect tool places a Photon effect: block, block side, entity,
   self or accurate placement, with auto-rotation, a lifetime, a delay, a scale, a rotation and an
   offset, and a preview of where it would land. A block aimed at part of a moving structure — a ship,

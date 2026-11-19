@@ -436,7 +436,7 @@ public final class AdminNetwork {
     }
 
     /** {@return the UUID behind a name, online or from the server's cache, or null} */
-    private static UUID resolveUuid(ServerPlayer admin, String name) {
+    static UUID resolveUuid(ServerPlayer admin, String name) {
         ServerPlayer online = admin.getServer() == null ? null
                 : admin.getServer().getPlayerList().getPlayerByName(name);
         return online != null ? online.getUUID() : offlineUuid(admin, name);

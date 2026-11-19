@@ -16,6 +16,7 @@ import net.xlebupaksa.backutils.network.LogHistoryCache;
 import net.xlebupaksa.backutils.network.AdminConfigCache;
 import net.xlebupaksa.backutils.network.AdminConfigFeedbackCache;
 import net.xlebupaksa.backutils.network.AdminMemoryCache;
+import net.xlebupaksa.backutils.network.AdminNotesCache;
 import net.xlebupaksa.backutils.network.AdminProfileCache;
 import net.xlebupaksa.backutils.network.AdminProfileFeedbackCache;
 import net.xlebupaksa.backutils.network.BannerTextCache;
@@ -117,6 +118,7 @@ public final class RoleplayLogHudLayer {
         // One player's memory is the server's rows too, and its lines carry the administrator's note:
         // the next server's own answer replaces it, and until then the wrong server's must not be read.
         AdminMemoryCache.clear();
+        AdminNotesCache.clear();
         // The profiles and the palette belong to the server just left, as do its settings.
         ProfileListCache.clear();
         ProfileFeedbackCache.clear();

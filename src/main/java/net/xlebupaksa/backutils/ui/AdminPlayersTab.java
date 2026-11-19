@@ -68,9 +68,11 @@ public final class AdminPlayersTab {
     private final Tab chatHeader = new Tab();
     private final Tab namesHeader = new Tab();
     private final Tab memoryHeader = new Tab();
+    private final Tab notesHeader = new Tab();
     private final AdminProfileTab chat = new AdminProfileTab(false);
     private final AdminProfileTab names = new AdminProfileTab(true);
     private final AdminMemoryPanel memory = new AdminMemoryPanel();
+    private final AdminNotesTab notes = new AdminNotesTab();
 
     /** The row elements of the player list, for their background repaint. */
     private final List<UIElement> playerRows = new ArrayList<>();
@@ -114,6 +116,7 @@ public final class AdminPlayersTab {
         chat.layout(innerWidth, innerHeight);
         names.layout(innerWidth, innerHeight);
         memory.layout(innerWidth, innerHeight);
+        notes.layout(innerWidth, innerHeight);
     }
 
     /** Brings the list, or the open player, up to date with whatever the server last sent. */
@@ -125,12 +128,13 @@ public final class AdminPlayersTab {
         // Only the half in view follows the server. The two profile panels share one cache, and both
         // reading it would have them taking turns asking for the kind the other one is not showing,
         // which rebuilds the visible list with the other kind's rows on every round trip.
+        notes.sync();
         Tab shown = tabs.getSelectedTab();
         if (shown == namesHeader) {
             names.sync();
         } else if (shown == chatHeader) {
             chat.sync();
-        } else {
+        } else if (shown == memoryHeader) {
             memory.sync();
         }
     }
@@ -138,10 +142,10 @@ public final class AdminPlayersTab {
     /** {@return true while a text field in this tab has the keyboard, so ctrl+C must not take it} */
     public boolean typing() {
         if (selected.isEmpty()) return filter.isFocused();
-        // Only the memory filter can be in view once a player is open. The other two panels have their
-        // own filters, but they are hidden while the memory tab is the one drawn, and a field that was
-        // focused before Back was pressed must not swallow ctrl+C for a list it is no longer beside.
-        return tabs.getSelectedTab() == memoryHeader && memory.typing();
+        // Only the notes editor and the memory filter can be in view and still need a text field; a
+        // field focused before Back must not swallow ctrl+C for a list it left.
+        return tabs.getSelectedTab() == notesHeader ? notes.typing()
+                : tabs.getSelectedTab() == memoryHeader && memory.typing();
     }
 
     /** Writes the captions again in the language the client is set to now. */
@@ -150,15 +154,18 @@ public final class AdminPlayersTab {
         chatHeader.text.setText(Text.of("backutils.admin.tab.chat"), false);
         namesHeader.text.setText(Text.of("backutils.admin.tab.names"), false);
         memoryHeader.text.setText(Text.of("backutils.admin.tab.memory"), false);
+        notesHeader.text.setText(Text.of("backutils.admin.tab.notes"), false);
         filter.textFieldStyle(s -> s.placeholder(
                 Component.translatable("backutils.profiles.search.players")));
         chat.relabel();
         names.relabel();
         memory.relabel();
+        notes.relabel();
     }
 
-    /** {@return true when the memory tab is in view and copied its selection} */
+    /** {@return true when the notes or memory tab is in view and copied its selection} */
     public boolean copySelection() {
+        if (tabs.getSelectedTab() == notesHeader) return notes.copySelection();
         return tabs.getSelectedTab() == memoryHeader && memory.copySelection();
     }
 
@@ -209,6 +216,11 @@ public final class AdminPlayersTab {
         tabs.addTab(chatHeader, chat.root());
         tabs.addTab(namesHeader, names.root());
         tabs.addTab(memoryHeader, memory.root());
+        notesHeader.text.setText(Text.of("backutils.admin.tab.notes"), false);
+        tabs.addTab(notesHeader, notes.root());
+        tabs.setOnTabSelected(tab -> {
+            if (tab != notesHeader) notes.hideSymbols();
+        });
         // The same trailing "+" entry the client's own lists have: an administrator may start a
         // profile for this player, and the editor closes back into this menu.
         chat.setCreateRow(true, null);
@@ -230,22 +242,65 @@ public final class AdminPlayersTab {
     // ------------------------------------------------------------------
 
     private void showPlayer(String name) {
+        if (!notes.canLeave()) {
+            focusNotes();
+            notes.focusWarning();
+            return;
+        }
         selected = name;
         who.setText(name, false);
         // Fixed targets: the panels show this player's profiles without asking who again.
         chat.setTarget(name);
         names.setTarget(name);
         memory.setPlayer(name);
+        notes.setPlayer(name);
         browse.setDisplay(false);
         detail.setDisplay(true);
     }
 
     private void showPlayers() {
+        if (!notes.canLeave()) {
+            focusNotes();
+            notes.focusWarning();
+            return;
+        }
         selected = "";
         memory.setPlayer("");
+        notes.setPlayer("");
         browse.setDisplay(true);
         detail.setDisplay(false);
         rebuildPlayers();
+    }
+
+    /** Keeps the edit lock alive even when another tab of the player view is showing. */
+    public void tick() {
+        notes.tick();
+    }
+
+    /** {@return true when closing the screen would not throw away a note draft} */
+    public boolean canCloseNotes() {
+        return notes.canClose();
+    }
+
+    public void warnNotesClose() {
+        notes.focusWarning();
+    }
+
+    /** Puts the player detail and the Notes tab in front, for a warning that must be seen. */
+    public void focusNotes() {
+        if (selected.isEmpty()) return;
+        browse.setDisplay(false);
+        detail.setDisplay(true);
+        tabs.selectTab(notesHeader);
+        notes.focusWarning();
+    }
+
+    public void releaseNotes() {
+        notes.release();
+    }
+
+    public void hideNotesSymbols() {
+        notes.hideSymbols();
     }
 
     // ------------------------------------------------------------------

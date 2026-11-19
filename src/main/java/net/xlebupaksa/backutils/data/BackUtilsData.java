@@ -14,6 +14,7 @@ public class BackUtilsData {
     private final SilenceData silenceData;
     private final MusicZoneData musicZoneData;
     private final EffectData effectData;
+    private final NoteData noteData;
 
     public BackUtilsData(Path worldPath) {
         Path dbDir = worldPath.resolve("serverconfig").resolve("backutils");
@@ -30,6 +31,7 @@ public class BackUtilsData {
         this.silenceData = new SilenceData(worldPath);
         this.musicZoneData = new MusicZoneData(worldPath);
         this.effectData = new EffectData(worldPath);
+        this.noteData = new NoteData(worldPath);
 
         initAll();
     }
@@ -42,6 +44,7 @@ public class BackUtilsData {
         silenceData.initDb();
         musicZoneData.initDb();
         effectData.initDb();
+        noteData.initDb();
     }
 
     public NameData names() { return nameData; }
@@ -51,4 +54,5 @@ public class BackUtilsData {
     public SilenceData silences() { return silenceData; }
     public MusicZoneData musicZones() { return musicZoneData; }
     public EffectData effects() { return effectData; }
+    public NoteData notes() { return noteData; }
 }

@@ -1,7 +1,8 @@
-**Background Utilities** adds a witness-based action log, dice, chat and display-name profiles, two
-chat channels, a client-side library of items that follows a player between servers, an operator's
-tools for placing and removing visual effects, and control over player names — the tags above their
-heads, and whether a name is listed at all — for NeoForge 1.21.1.
+**Background Utilities** adds a witness-based action log, dice, chat and display-name profiles,
+shared administrator notes about a player, two chat channels, a client-side library of items that
+follows a player between servers, an operator's tools for placing and removing visual effects, and
+control over player names — the tags above their heads, and whether a name is listed at all — for
+NeoForge 1.21.1.
 
 ## Install
 
@@ -12,7 +13,7 @@ heads, and whether a name is listed at all — for NeoForge 1.21.1.
    - **Photon 2.2.7 or newer** — optional; without it the effect tool configures and previews but
      places nothing
    - **Symbol Chat** — optional; it is a Fabric mod, so it also needs Sinytra Connector and the
-     Forgified Fabric API, and all it adds is the item editor's symbol button
+     Forgified Fabric API, and it adds the symbol buttons in the item editor and administrator notes
 3. On a server, the same jars go in the server's `mods/` folder. The mod keeps its databases in
    `serverconfig/backutils/`, inside the directory the server runs in.
 

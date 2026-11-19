@@ -20,6 +20,7 @@ import dev.vfyjxf.taffy.style.AlignItems;
 import dev.vfyjxf.taffy.style.FlexDirection;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -991,12 +992,41 @@ public final class BackUtilsAdminScreen extends Screen {
      */
     private void onTabChanged(Tab tab) {
         formSelected = tab != built.logTab;
+        if (tab != built.playersTab && built.players != null) built.players.hideNotesSymbols();
         layoutAll();
         // Asked for when the tab is first opened as well as on the open of the menu: a reply can be
         // lost, and an empty config tab looks like a bug.
         if (tab == built.configTab && AdminConfigCache.rows().isEmpty()) {
             AdminConfigNetwork.request();
         }
+    }
+
+    /** Mounts a vanilla widget above the ldlib surface, for SymbolChat's reflection-built menu. */
+    public void addOverlayWidget(AbstractWidget widget) {
+        addRenderableWidget(widget);
+    }
+
+    /** Removes one previously mounted overlay, if it is still a child of this screen. */
+    public void removeOverlayWidget(AbstractWidget widget) {
+        removeWidget(widget);
+    }
+
+    @Override
+    public void tick() {
+        super.tick();
+        if (built != null && built.players != null) built.players.tick();
+    }
+
+    @Override
+    public void onClose() {
+        if (built != null && built.players != null && !built.players.canCloseNotes()) {
+            if (built.tabView != null) built.tabView.selectTab(built.playersTab);
+            built.players.focusNotes();
+            built.players.warnNotesClose();
+            return;
+        }
+        if (built != null && built.players != null) built.players.releaseNotes();
+        super.onClose();
     }
 
     @Override
