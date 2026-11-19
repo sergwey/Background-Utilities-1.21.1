@@ -163,6 +163,17 @@ public final class AdminPlayersTab {
         notes.relabel();
     }
 
+    /** Selects the whole note page, from the screen's Ctrl+A, whether or not it had focus. */
+    public boolean selectAllNotes() {
+        return tabs.getSelectedTab() == notesHeader && !selected.isEmpty()
+                && notes.selectAllText();
+    }
+
+    /** Copies the selected note text, or the current page when nothing is selected. */
+    public boolean copyNotes() {
+        return tabs.getSelectedTab() == notesHeader && notes.copySelection();
+    }
+
     /** {@return true when the notes or memory tab is in view and copied its selection} */
     public boolean copySelection() {
         if (tabs.getSelectedTab() == notesHeader) return notes.copySelection();

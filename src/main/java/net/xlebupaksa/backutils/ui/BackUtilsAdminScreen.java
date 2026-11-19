@@ -1174,15 +1174,28 @@ public final class BackUtilsAdminScreen extends Screen {
      */
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (keyCode == GLFW.GLFW_KEY_C && Screen.hasControlDown()) {
-            if (built.tabView.getSelectedTab() == built.playersTab
-                    && !built.players.typing() && built.players.copySelection()) {
+        if (Screen.hasControlDown()) {
+            if (keyCode == GLFW.GLFW_KEY_A
+                    && built.tabView.getSelectedTab() == built.playersTab
+                    && built.players.selectAllNotes()) {
                 return true;
             }
-            if (built.tabView.getSelectedTab() == built.logTab
-                    && !built.logFilter.isFocused() && !built.filterField.isFocused()
-                    && copySelection()) {
-                return true;
+            if (keyCode == GLFW.GLFW_KEY_C) {
+                // Notes are handled explicitly: their text area is sometimes read-only, and the
+                // page must still be selectable and copyable then.
+                if (built.tabView.getSelectedTab() == built.playersTab
+                        && built.players.copyNotes()) {
+                    return true;
+                }
+                if (built.tabView.getSelectedTab() == built.playersTab
+                        && !built.players.typing() && built.players.copySelection()) {
+                    return true;
+                }
+                if (built.tabView.getSelectedTab() == built.logTab
+                        && !built.logFilter.isFocused() && !built.filterField.isFocused()
+                        && copySelection()) {
+                    return true;
+                }
             }
         }
         return super.keyPressed(keyCode, scanCode, modifiers);

@@ -8,7 +8,6 @@ import com.lowdragmc.lowdraglib2.gui.ui.data.Vertical;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.Button;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.Label;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.TextArea;
-import com.lowdragmc.lowdraglib2.gui.ui.event.UIEvent;
 import dev.vfyjxf.taffy.style.FlexDirection;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.AbstractWidget;
@@ -20,7 +19,6 @@ import net.xlebupaksa.backutils.network.AdminNotesCache;
 import net.xlebupaksa.backutils.network.NoteFeedbackPayload;
 import net.xlebupaksa.backutils.network.NoteNetwork;
 import net.xlebupaksa.backutils.network.NoteStatePayload;
-import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -219,12 +217,22 @@ public final class AdminNotesTab {
     }
 
     public boolean copySelection() {
-        if (player.isEmpty()) return false;
-        String text = currentText();
+        if (player.isEmpty() || symbolMenu != null) return false;
+        String selected = editor.selectedText();
+        String text = selected.isEmpty() ? currentText() : selected;
+        if (text.isEmpty()) return false;
         Minecraft.getInstance().keyboardHandler.setClipboard(text);
         status.setText(Text.of("backutils.notes.copied"), false);
         status.textStyle(t -> t.fontSize(9f).textColor(AdminListStyle.MUTED)
                 .textShadow(false).adaptiveWidth(true));
+        return true;
+    }
+
+    /** Selects the whole page, whatever has focus; used by the screen's Ctrl+A. */
+    public boolean selectAllText() {
+        if (player.isEmpty() || symbolMenu != null) return false;
+        editor.focus();
+        editor.selectAllText();
         return true;
     }
 
@@ -939,21 +947,37 @@ public final class AdminNotesTab {
             return editorEditable && super.isEditable();
         }
 
-        /**
-         * Ctrl+A and Ctrl+C belong to the text area even while it is read-only.
-         *
-         * <p>The base area declines every chord when it is not editable, which leaves the screen's
-         * list-copy handler to decide what to do with them; in a read-only note that would be
-         * nothing. Letting these two through is what makes select-all and copy work without a
-         * separate Copy button. Paste and cut remain guarded by the base area.
-         */
-        @Override
-        public boolean ownsKey(UIEvent event) {
-            if (event.isCtrlDown() && !event.isAltDown()
-                    && (event.keyCode == GLFW.GLFW_KEY_A || event.keyCode == GLFW.GLFW_KEY_C)) {
-                return true;
+        void selectAllText() {
+            selectAll();
+        }
+
+        /** The selected lines, as the base area's private copy helper would build them. */
+        String selectedText() {
+            if (!hasSelection()) return "";
+            List<String> lines = getLines();
+            int startLine = Math.max(0, Math.min(getSelStartLine(), getSelEndLine()));
+            int endLine = Math.max(0, Math.max(getSelStartLine(), getSelEndLine()));
+            int startCol = getSelStartLine() <= getSelEndLine() ? getSelStartCol() : getSelEndCol();
+            int endCol = getSelStartLine() <= getSelEndLine() ? getSelEndCol() : getSelStartCol();
+            if (lines.isEmpty() || startLine >= lines.size()) return "";
+            endLine = Math.min(endLine, lines.size() - 1);
+            String first = lines.get(startLine);
+            String last = lines.get(endLine);
+            if (startLine == endLine) {
+                int from = Math.max(0, Math.min(getSelStartCol(), getSelEndCol()));
+                int to = Math.max(from, Math.min(Math.max(getSelStartCol(), getSelEndCol()),
+                        first.length()));
+                return first.substring(from, to);
             }
-            return super.ownsKey(event);
+            startCol = Math.max(0, Math.min(startCol, first.length()));
+            endCol = Math.max(0, Math.min(endCol, last.length()));
+            StringBuilder out = new StringBuilder();
+            out.append(first.substring(startCol)).append('\n');
+            for (int line = startLine + 1; line < endLine; line++) {
+                out.append(lines.get(line)).append('\n');
+            }
+            out.append(last, 0, endCol);
+            return out.toString();
         }
 
         void insertSymbol(String symbol) {
